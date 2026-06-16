@@ -5,6 +5,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Ama local index cache (file-backed SqliteStore for the dev HTTP server)
+.ama/
+
 # beads: commit issues.jsonl + the audit log, but never the local Dolt database
 .beads/*.db
 .beads/dolt/

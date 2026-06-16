@@ -17,6 +17,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "serve": "node dist/mcp/server.js",
+    "serve:http": "node dist/mcp/http.js",
+    "serve:dev": "AMA_DB=.ama/index.db AMA_ROOT=. tsx watch src/mcp/http.ts",
     "format": "biome format --write .",
     "lint": "biome check ."
   },
@@ -28,6 +30,7 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.0",
     "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
     "vitest": "^3.0.0"
   }
 }

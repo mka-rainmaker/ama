@@ -95,6 +95,7 @@ Full runbook: [`docs/SELF_IMPROVEMENT_LOOP.md`](docs/SELF_IMPROVEMENT_LOOP.md).
 | Pick work | `bd ready` → `bd update <id> --claim` |
 | File a discovered gap | `bd create "…" -t task -l <area> --deps discovered-from:<id>` |
 | Run the MCP server | `node dist/mcp/server.js` (after `npm run build`) |
+| Restart-free dev loop | `npm run serve:dev` (HTTP from source, live reload) → point `.mcp.json` at `http://localhost:7077/mcp`; see `docs/SELF_IMPROVEMENT_LOOP.md` |
 | Finish an iteration | `bd close <id> -r …` → `bd export -o .beads/issues.jsonl` → `git add .beads/` → branch → commit → ff `main` |
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->

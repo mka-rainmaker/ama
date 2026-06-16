@@ -103,6 +103,52 @@ Test-only changes don't need this — `npm test` (vitest) runs the TypeScript so
 suite always reflects your edits. The rebuild + restart cycle is only for the server you query through
 MCP. (See also: `rtk` compacts command output — use `rtk proxy npx vitest run` to see raw errors.)
 
+The **HTTP dev loop** below removes this rebuild + restart step entirely when iterating on analyzer code.
+
+---
+
+## Restart-free dev loop (HTTP + live reload)
+
+The rebuild + restart above is the price of the **stdio** transport: Claude Code *spawns* the server
+and owns its stdin/stdout, so picking up changed code means killing and relaunching that process —
+which only Claude Code can do, and Node can't hot-swap its own modules in place. Running Ama as a
+**standalone HTTP server from source** inverts that lifecycle and removes the friction.
+
+1. Start the dev server in a terminal (leave it running):
+
+   ```sh
+   npm run serve:dev    # tsx watch src/mcp/http.ts — restarts on any src/ change
+   ```
+
+   It serves MCP over Streamable HTTP on `http://localhost:7077/mcp`, persists the graph to
+   `.ama/index.db`, and reopens that index for the repo root (`AMA_ROOT=.`) at startup.
+
+2. Point `.mcp.json` at the URL instead of the stdio command, and restart Claude Code **once** to read it:
+
+   ```json
+   {
+     "mcpServers": {
+       "ama": { "type": "http", "url": "http://localhost:7077/mcp" }
+     }
+   }
+   ```
+
+   The committed `.mcp.json` stays stdio so a fresh clone works with no terminal server — switch locally
+   when you want the dev loop.
+
+Now edit Ama's own analyzer/server code and the change is **live on your next tool call**, no Claude
+Code restart:
+
+- `tsx watch` restarts the standalone server whenever a `src/` file changes.
+- On restart the persistent SQLite index **reopens in ~1 ms** instead of re-indexing (ndw.2), and
+  **connect-time catch-up** (gd5.4) reconciles anything that changed while it bounced.
+- Claude Code's next request transparently **reconnects** to the URL, so you query the freshly-built
+  analyzer immediately.
+
+Because the server is now a process you *connect to* rather than one the client *spawns*, restarting it
+no longer severs the session or drops the index. `run the loop` works under either transport; the HTTP
+setup just removes the build + restart step when iterating on Ama's own code.
+
 ---
 
 ## Known gaps to expect

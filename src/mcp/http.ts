@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import * as fs from "node:fs";
 import * as http from "node:http";
+import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
@@ -103,6 +105,7 @@ export async function main(): Promise<void> {
   // AMA_ROOT too, reopen that project's index at startup so a restart skips the
   // full re-index and connect-time catch-up reconciles any drift.
   const dbPath = process.env.AMA_DB;
+  if (dbPath) fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
   const session = dbPath
     ? new AmaSession(createDefaultIndexer(() => new SqliteStore(dbPath)))
     : new AmaSession();
