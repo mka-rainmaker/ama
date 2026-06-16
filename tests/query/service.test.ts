@@ -88,3 +88,47 @@ describe("QueryService implements queries", () => {
     expect(q.findImplementations("doesNotExist")).toEqual([]);
   });
 });
+
+const importsRoot = path.resolve(here, "../fixtures/ts-imports");
+
+describe("QueryService imports queries", () => {
+  let q: QueryService;
+  beforeAll(async () => {
+    const store = new InMemoryStore();
+    const { nodes, edges } = await new TypeScriptAnalyzer().analyze(importsRoot, [
+      "lib.ts",
+      "barrel.ts",
+      "main.ts",
+    ]);
+    for (const n of nodes) store.addNode(n);
+    for (const e of edges) store.addEdge(e);
+    q = new QueryService(store, importsRoot);
+  });
+
+  it("finds the symbols a file imports", () => {
+    const names = q
+      .findImports("main.ts")
+      .map((n) => n.name)
+      .sort();
+    expect(names).toEqual(["Widget", "greet", "makeDefault"]);
+  });
+
+  it("finds every file that imports a symbol, including via a re-export barrel", () => {
+    const names = q
+      .findImporters("greet")
+      .map((n) => n.name)
+      .sort();
+    expect(names).toEqual(["barrel.ts", "main.ts"]);
+  });
+
+  it("finds the single file importing a symbol used in one place", () => {
+    const names = q.findImporters("Widget").map((n) => n.name);
+    expect(names).toEqual(["main.ts"]);
+  });
+
+  it("returns empty for a file that imports nothing and for unknown refs", () => {
+    expect(q.findImports("lib.ts")).toEqual([]);
+    expect(q.findImports("doesNotExist")).toEqual([]);
+    expect(q.findImporters("doesNotExist")).toEqual([]);
+  });
+});

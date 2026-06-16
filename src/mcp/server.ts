@@ -95,6 +95,28 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
   );
 
   server.registerTool(
+    "find_importers",
+    {
+      description: "Every file that imports (or re-exports) a symbol.",
+      inputSchema: {
+        symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
+      },
+    },
+    async ({ symbol }) => json(session.findImporters(symbol)),
+  );
+
+  server.registerTool(
+    "find_imports",
+    {
+      description: "The symbols a file imports (or re-exports).",
+      inputSchema: {
+        file: z.string().describe("File node id (repo-relative path) or basename."),
+      },
+    },
+    async ({ file }) => json(session.findImports(file)),
+  );
+
+  server.registerTool(
     "get_code_snippet",
     {
       description: "A symbol's verbatim source.",

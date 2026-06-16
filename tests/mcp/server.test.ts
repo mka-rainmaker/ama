@@ -153,3 +153,44 @@ describe("MCP implements tools", () => {
     expect(names).toEqual(["Greeter", "Named"]);
   });
 });
+
+const importsRoot = path.resolve(here, "../fixtures/ts-imports");
+
+describe("MCP imports tools", () => {
+  async function indexedClient(): Promise<Client> {
+    const client = await connectClient();
+    await client.callTool({
+      name: "index_repository",
+      arguments: { path: importsRoot },
+    });
+    return client;
+  }
+
+  it("find_imports lists the symbols a file imports", async () => {
+    const client = await indexedClient();
+    const imports = JSON.parse(
+      firstText(
+        await client.callTool({
+          name: "find_imports",
+          arguments: { file: "main.ts" },
+        }),
+      ),
+    );
+    const names = imports.map((n: { name: string }) => n.name).sort();
+    expect(names).toEqual(["Widget", "greet", "makeDefault"]);
+  });
+
+  it("find_importers lists every file importing a symbol, including via re-export", async () => {
+    const client = await indexedClient();
+    const importers = JSON.parse(
+      firstText(
+        await client.callTool({
+          name: "find_importers",
+          arguments: { symbol: "greet" },
+        }),
+      ),
+    );
+    const names = importers.map((n: { name: string }) => n.name).sort();
+    expect(names).toEqual(["barrel.ts", "main.ts"]);
+  });
+});

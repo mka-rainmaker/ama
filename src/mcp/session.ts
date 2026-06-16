@@ -62,6 +62,14 @@ export class AmaSession {
     return this.requireQuery().findInterfaces(ref);
   }
 
+  findImporters(ref: string): GraphNode[] {
+    return this.requireQuery().findImporters(ref);
+  }
+
+  findImports(ref: string): GraphNode[] {
+    return this.requireQuery().findImports(ref);
+  }
+
   getCodeSnippet(ref: string): Snippet | undefined {
     return this.requireQuery().getCodeSnippet(ref);
   }

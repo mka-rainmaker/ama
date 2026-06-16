@@ -91,6 +91,32 @@ export class QueryService {
     return [...interfaces.values()];
   }
 
+  /** Files that import (or re-export) the referenced symbol. */
+  findImporters(ref: string): GraphNode[] {
+    const targets = this.resolve(ref);
+    const importers = new Map<string, GraphNode>();
+    for (const target of targets) {
+      for (const edge of this.store.edgesTo(target.id, "Imports")) {
+        const file = this.store.getNode(edge.from);
+        if (file) importers.set(file.id, file);
+      }
+    }
+    return [...importers.values()];
+  }
+
+  /** Symbols the referenced file imports (or re-exports). */
+  findImports(ref: string): GraphNode[] {
+    const sources = this.resolve(ref);
+    const imports = new Map<string, GraphNode>();
+    for (const source of sources) {
+      for (const edge of this.store.edgesFrom(source.id, "Imports")) {
+        const imported = this.store.getNode(edge.to);
+        if (imported) imports.set(imported.id, imported);
+      }
+    }
+    return [...imports.values()];
+  }
+
   /** Verbatim source for a symbol, or undefined if it has no known location. */
   getCodeSnippet(ref: string): Snippet | undefined {
     const node = this.resolve(ref).find((n) => n.range);
