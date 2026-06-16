@@ -26,6 +26,14 @@ export interface IndexStats {
   languages: LanguageCoverage[];
 }
 
+/** What a catch-up {@link Indexer.sync} reconciled. */
+export interface SyncResult {
+  /** Repo-relative paths re-indexed because they were new or modified. */
+  changed: string[];
+  /** Repo-relative paths dropped because they no longer exist (or analyze). */
+  removed: string[];
+}
+
 /**
  * Turns a directory into a graph: discover source files, hand each to the
  * analyzer that claims its extension, and collect the resulting nodes/edges
@@ -100,6 +108,35 @@ export class Indexer {
     store.reconcileFile(rel, nodes, edges);
     store.recordFile(fingerprint(root, rel));
   }
+
+  /**
+   * Catch-up reconcile: compare the tree on disk against the stored fingerprints
+   * and re-index everything that drifted — files added or modified since the
+   * last index, and files that have since vanished. Detection is cheap
+   * (size + mtime, with a content hash only as the tiebreaker), and unchanged
+   * files are skipped entirely. The manual counterpart to the live watcher.
+   */
+  async sync(store: Store, root: string): Promise<SyncResult> {
+    const changed: string[] = [];
+    const removed: string[] = [];
+    const current = new Set<string>();
+    for (const rel of discoverFiles(root)) {
+      if (this.registry.forFile(rel)) current.add(rel);
+    }
+    for (const rel of current) {
+      const meta = store.getFile(rel);
+      if (meta && !isStale(root, rel, meta)) continue;
+      await this.reindexFile(store, root, rel);
+      changed.push(rel);
+    }
+    for (const meta of store.allFiles()) {
+      if (!current.has(meta.path)) {
+        await this.reindexFile(store, root, meta.path); // gone on disk → removeFile
+        removed.push(meta.path);
+      }
+    }
+    return { changed, removed };
+  }
 }
 
 /**
@@ -118,6 +155,20 @@ function fingerprint(root: string, rel: string): FileMeta {
   const stat = fs.statSync(abs);
   const hash = crypto.createHash("sha1").update(fs.readFileSync(abs)).digest("hex");
   return { path: rel, size: stat.size, mtimeMs: stat.mtimeMs, hash };
+}
+
+/**
+ * Whether a file differs from its recorded fingerprint. Size and mtime are the
+ * cheap first check; the content hash is consulted only when they are
+ * inconclusive (mtime can change without the bytes changing), so an unchanged
+ * file is never re-hashed.
+ */
+function isStale(root: string, rel: string, meta: FileMeta): boolean {
+  const abs = path.resolve(root, rel);
+  const stat = fs.statSync(abs);
+  if (stat.size === meta.size && stat.mtimeMs === meta.mtimeMs) return false;
+  const hash = crypto.createHash("sha1").update(fs.readFileSync(abs)).digest("hex");
+  return hash !== meta.hash;
 }
 
 /** Repo-relative paths of every file under `root`, skipping ignored trees. */

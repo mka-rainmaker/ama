@@ -1,3 +1,5 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -40,10 +42,38 @@ describe("MCP server", () => {
     );
     expect(status.indexed).toBe(true);
     expect(status.fileCount).toBe(2);
+    expect(status.pendingSync).toBe(0);
     expect(status.languages[0]).toMatchObject({
       language: "typescript",
       tier: "deep",
     });
+  });
+
+  it("sync_index reconciles a file changed on disk after indexing", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ama-mcp-sync-"));
+    try {
+      fs.writeFileSync(path.join(dir, "m.ts"), "export function before(): void {}\n");
+      const client = await connectClient();
+      await client.callTool({ name: "index_repository", arguments: { path: dir } });
+
+      fs.writeFileSync(
+        path.join(dir, "m.ts"),
+        "export function before(): void {}\nexport function afterSync(): void {}\n",
+      );
+      const result = JSON.parse(
+        firstText(await client.callTool({ name: "sync_index", arguments: {} })),
+      );
+      expect(result.changed).toContain("m.ts");
+
+      const hits = JSON.parse(
+        firstText(
+          await client.callTool({ name: "search_symbol", arguments: { query: "afterSync" } }),
+        ),
+      );
+      expect(hits.map((n: { name: string }) => n.name)).toContain("afterSync");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

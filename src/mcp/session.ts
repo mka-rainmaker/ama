@@ -2,7 +2,7 @@ import * as path from "node:path";
 import type { GraphNode } from "../graph/index.js";
 import { Debouncer } from "../indexer/debouncer.js";
 import { createDefaultIndexer } from "../indexer/indexer.js";
-import type { IndexStats, Indexer, LanguageCoverage } from "../indexer/indexer.js";
+import type { IndexStats, Indexer, LanguageCoverage, SyncResult } from "../indexer/indexer.js";
 import { FileWatcher } from "../indexer/watcher.js";
 import { QueryService } from "../query/service.js";
 import type { SearchOptions, Snippet } from "../query/service.js";
@@ -20,6 +20,8 @@ export type IndexStatus =
       edgeCount: number;
       fileCount: number;
       languages: LanguageCoverage[];
+      /** Edits the auto-syncer has queued but not yet re-indexed (0 if not watching). */
+      pendingSync: number;
     };
 
 /**
@@ -91,10 +93,37 @@ export class AmaSession {
     this.debouncer = undefined;
   }
 
+  /**
+   * Manually reconcile files that changed on disk since the last index — a
+   * catch-up that does not need a live watcher. Returns what it re-indexed and
+   * removed, and refreshes the cached counts.
+   */
+  async sync(): Promise<SyncResult> {
+    if (!this.store || !this.stats) {
+      throw new Error("Nothing indexed yet — call index_repository first.");
+    }
+    const result = await this.indexer.sync(this.store, this.stats.root);
+    this.stats = {
+      ...this.stats,
+      nodeCount: this.store.nodeCount,
+      edgeCount: this.store.edgeCount,
+      fileCount: this.store.allFiles().length,
+    };
+    return result;
+  }
+
   indexStatus(): IndexStatus {
     if (!this.stats) return { indexed: false };
     const { root, nodeCount, edgeCount, fileCount, languages } = this.stats;
-    return { indexed: true, root, nodeCount, edgeCount, fileCount, languages };
+    return {
+      indexed: true,
+      root,
+      nodeCount,
+      edgeCount,
+      fileCount,
+      languages,
+      pendingSync: this.debouncer?.pendingCount ?? 0,
+    };
   }
 
   searchSymbol(query: string, opts?: SearchOptions): GraphNode[] {

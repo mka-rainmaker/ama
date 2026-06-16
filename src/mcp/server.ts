@@ -32,10 +32,22 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     "index_status",
     {
       description:
-        "Whether anything is indexed, with node/edge counts and per-language coverage + tier.",
+        "Whether anything is indexed, with node/edge counts, per-language coverage + tier, " +
+        "and how many edits are pending auto-sync.",
       inputSchema: {},
     },
     async () => json(session.indexStatus()),
+  );
+
+  server.registerTool(
+    "sync_index",
+    {
+      description:
+        "Reconcile files that changed on disk since indexing (a manual catch-up). " +
+        "Returns the repo-relative paths re-indexed and removed.",
+      inputSchema: {},
+    },
+    async () => json(await session.sync()),
   );
 
   server.registerTool(
