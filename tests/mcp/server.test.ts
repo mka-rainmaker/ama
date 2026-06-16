@@ -225,3 +225,44 @@ describe("MCP imports tools", () => {
     expect(names).toEqual(["barrel.ts", "main.ts"]);
   });
 });
+
+const usesTypeRoot = path.resolve(here, "../fixtures/ts-usestype");
+
+describe("MCP UsesType tools", () => {
+  async function indexedClient(): Promise<Client> {
+    const client = await connectClient();
+    await client.callTool({
+      name: "index_repository",
+      arguments: { path: usesTypeRoot },
+    });
+    return client;
+  }
+
+  it("find_type_users lists every symbol that uses a type", async () => {
+    const client = await indexedClient();
+    const users = JSON.parse(
+      firstText(
+        await client.callTool({
+          name: "find_type_users",
+          arguments: { type: "Widget" },
+        }),
+      ),
+    );
+    const names = users.map((n: { qualifiedName: string }) => n.qualifiedName).sort();
+    expect(names).toEqual(["Factory.make", "Holder", "build", "many"]);
+  });
+
+  it("find_types_used lists the types a symbol uses", async () => {
+    const client = await indexedClient();
+    const types = JSON.parse(
+      firstText(
+        await client.callTool({
+          name: "find_types_used",
+          arguments: { symbol: "build" },
+        }),
+      ),
+    );
+    const names = types.map((n: { name: string }) => n.name).sort();
+    expect(names).toEqual(["Gadget", "Widget"]);
+  });
+});

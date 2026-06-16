@@ -223,6 +223,14 @@ export class AmaSession {
     return this.requireQuery().findImports(ref);
   }
 
+  findTypeUsers(ref: string): GraphNode[] {
+    return this.requireQuery().findTypeUsers(ref);
+  }
+
+  findTypesUsed(ref: string): GraphNode[] {
+    return this.requireQuery().findTypesUsed(ref);
+  }
+
   getCodeSnippet(ref: string): Snippet | undefined {
     return this.requireQuery().getCodeSnippet(ref);
   }

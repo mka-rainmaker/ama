@@ -133,3 +133,48 @@ describe("QueryService imports queries", () => {
     expect(q.findImporters("doesNotExist")).toEqual([]);
   });
 });
+
+const usesTypeRoot = path.resolve(here, "../fixtures/ts-usestype");
+
+describe("QueryService UsesType queries", () => {
+  let q: QueryService;
+  beforeAll(async () => {
+    const store = new InMemoryStore();
+    const { nodes, edges } = await new TypeScriptAnalyzer().analyze(usesTypeRoot, ["usetype.ts"]);
+    for (const n of nodes) store.addNode(n);
+    for (const e of edges) store.addEdge(e);
+    q = new QueryService(store, usesTypeRoot);
+  });
+
+  it("finds every symbol that uses a type in a param/return/property", () => {
+    const names = q
+      .findTypeUsers("Widget")
+      .map((n) => n.qualifiedName)
+      .sort();
+    // Widget annotates build's param, make's param, Holder's property, and many's array param.
+    expect(names).toEqual(["Factory.make", "Holder", "build", "many"]);
+  });
+
+  it("finds users of a type referenced only as a return type", () => {
+    const names = q
+      .findTypeUsers("Gadget")
+      .map((n) => n.qualifiedName)
+      .sort();
+    expect(names).toEqual(["Factory.make", "build"]);
+  });
+
+  it("finds the types a symbol uses, attributing properties to the enclosing class", () => {
+    const fromBuild = q
+      .findTypesUsed("build")
+      .map((n) => n.name)
+      .sort();
+    expect(fromBuild).toEqual(["Gadget", "Widget"]);
+    expect(q.findTypesUsed("Holder").map((n) => n.name)).toEqual(["Widget"]);
+  });
+
+  it("returns empty for a primitive-only signature and for unknown refs", () => {
+    expect(q.findTypesUsed("plain")).toEqual([]);
+    expect(q.findTypesUsed("doesNotExist")).toEqual([]);
+    expect(q.findTypeUsers("doesNotExist")).toEqual([]);
+  });
+});

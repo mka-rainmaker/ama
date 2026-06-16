@@ -117,6 +117,32 @@ export class QueryService {
     return [...imports.values()];
   }
 
+  /** Symbols that use the referenced type in a parameter, return, or property. */
+  findTypeUsers(ref: string): GraphNode[] {
+    const targets = this.resolve(ref);
+    const users = new Map<string, GraphNode>();
+    for (const target of targets) {
+      for (const edge of this.store.edgesTo(target.id, "UsesType")) {
+        const user = this.store.getNode(edge.from);
+        if (user) users.set(user.id, user);
+      }
+    }
+    return [...users.values()];
+  }
+
+  /** Types the referenced symbol uses in a parameter, return, or property. */
+  findTypesUsed(ref: string): GraphNode[] {
+    const sources = this.resolve(ref);
+    const types = new Map<string, GraphNode>();
+    for (const source of sources) {
+      for (const edge of this.store.edgesFrom(source.id, "UsesType")) {
+        const type = this.store.getNode(edge.to);
+        if (type) types.set(type.id, type);
+      }
+    }
+    return [...types.values()];
+  }
+
   /** Verbatim source for a symbol, or undefined if it has no known location. */
   getCodeSnippet(ref: string): Snippet | undefined {
     const node = this.resolve(ref).find((n) => n.range);

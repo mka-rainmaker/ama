@@ -162,6 +162,28 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
   );
 
   server.registerTool(
+    "find_type_users",
+    {
+      description: "Every symbol that uses a type in a parameter, return, or property.",
+      inputSchema: {
+        type: z.string().describe("Type id, simple name, or dotted qualified name."),
+      },
+    },
+    queryTool(session, ({ type }: { type: string }) => session.findTypeUsers(type)),
+  );
+
+  server.registerTool(
+    "find_types_used",
+    {
+      description: "The named types a symbol uses in its parameters, return, or properties.",
+      inputSchema: {
+        symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
+      },
+    },
+    queryTool(session, ({ symbol }: { symbol: string }) => session.findTypesUsed(symbol)),
+  );
+
+  server.registerTool(
     "get_code_snippet",
     {
       description: "A symbol's verbatim source.",
