@@ -11,11 +11,12 @@ import type { AnalysisResult, Analyzer } from "../types.js";
  *  1. Structural — emit nodes (File, Function, Class, Interface, Enum, Method)
  *     and `Defines` edges, recording each declaration's AST node so later
  *     references can be linked back to graph ids.
- *  2. Resolution — through the type checker, emit a `Calls` edge from the
- *     enclosing function/method to each call's callee, and an `Implements` edge
- *     from each class to the interfaces it implements. References to symbols
- *     outside the analyzed set (library code) resolve to no node and are
- *     skipped, so the graph only asserts edges it can actually back.
+ *  2. Resolution — through the type checker, emit `Calls` edges (enclosing
+ *     function/method → callee), `Inherits`/`Implements` edges (class → base
+ *     class / interface), and `Imports` edges (file → each symbol it imports or
+ *     re-exports). References to symbols outside the analyzed set (library code)
+ *     resolve to no node and are skipped, so the graph only asserts edges it can
+ *     actually back.
  */
 export class TypeScriptAnalyzer implements Analyzer {
   readonly language = "typescript";
@@ -46,11 +47,12 @@ export class TypeScriptAnalyzer implements Analyzer {
     }
 
     const checker = program.getTypeChecker();
-    for (const [abs] of relByAbs) {
+    for (const [abs, rel] of relByAbs) {
       const sf = program.getSourceFile(abs);
       if (sf) {
         this.collectCalls(sf, undefined, declToId, checker, edges);
         this.collectHeritage(sf, declToId, checker, edges);
+        this.collectImports(sf, fileId(rel), declToId, checker, edges);
       }
     }
 
@@ -153,6 +155,42 @@ export class TypeScriptAnalyzer implements Analyzer {
     }
     node.forEachChild((child) => this.collectHeritage(child, declToId, checker, edges));
   }
+
+  /**
+   * Emit an `Imports` edge from a file to each symbol it imports, and from a
+   * re-exporting file (`export { x } from "./m.js"`) to the re-exported symbol.
+   * Import/re-export bindings are aliases, so the edge target is the symbol's
+   * original declaration — even through a chain of barrels.
+   */
+  private collectImports(
+    sf: ts.SourceFile,
+    fromId: string,
+    declToId: Map<ts.Node, string>,
+    checker: ts.TypeChecker,
+    edges: GraphEdge[],
+  ): void {
+    const link = (name: ts.Node): void => {
+      const to = resolveImport(name, checker, declToId);
+      if (to) edges.push({ from: fromId, to, kind: "Imports" });
+    };
+    // Imports can only appear as top-level statements in an ES module.
+    for (const stmt of sf.statements) {
+      if (ts.isImportDeclaration(stmt) && stmt.importClause) {
+        const { name, namedBindings } = stmt.importClause;
+        if (name) link(name); // default import
+        if (namedBindings && ts.isNamedImports(namedBindings)) {
+          for (const spec of namedBindings.elements) link(spec.name);
+        }
+      } else if (
+        ts.isExportDeclaration(stmt) &&
+        stmt.moduleSpecifier && // `export { x }` without a source is a local export, not a re-export
+        stmt.exportClause &&
+        ts.isNamedExports(stmt.exportClause)
+      ) {
+        for (const spec of stmt.exportClause.elements) link(spec.name);
+      }
+    }
+  }
 }
 
 /** Map a declaration node to a (kind, name) pair, or undefined if it isn't one. */
@@ -206,6 +244,22 @@ function resolveHeritage(
   }
   // Interfaces are type-only, so they have no valueDeclaration — use declarations.
   const decl = symbol.declarations?.[0];
+  return decl ? declToId.get(decl) : undefined;
+}
+
+/** Resolve an imported or re-exported name to its original declaration's node id. */
+function resolveImport(
+  name: ts.Node,
+  checker: ts.TypeChecker,
+  declToId: Map<ts.Node, string>,
+): string | undefined {
+  let symbol = checker.getSymbolAtLocation(name);
+  if (!symbol) return undefined;
+  // Import/re-export bindings are aliases; follow the chain to the real declaration.
+  if (symbol.flags & ts.SymbolFlags.Alias) {
+    symbol = checker.getAliasedSymbol(symbol);
+  }
+  const decl = symbol.valueDeclaration ?? symbol.declarations?.[0];
   return decl ? declToId.get(decl) : undefined;
 }
 
