@@ -76,6 +76,9 @@ export class TypeScriptAnalyzer implements Analyzer {
       tier: "deep",
       range: rangeOf(sf, sf),
     });
+    // Register the file itself so module references (namespace imports,
+    // star re-exports) — which alias to the SourceFile — resolve to this node.
+    declToId.set(sf, id);
     sf.forEachChild((child) => this.visit(child, sf, rel, id, "", nodes, edges, declToId));
   }
 
@@ -178,16 +181,25 @@ export class TypeScriptAnalyzer implements Analyzer {
       if (ts.isImportDeclaration(stmt) && stmt.importClause) {
         const { name, namedBindings } = stmt.importClause;
         if (name) link(name); // default import
-        if (namedBindings && ts.isNamedImports(namedBindings)) {
-          for (const spec of namedBindings.elements) link(spec.name);
+        if (namedBindings) {
+          if (ts.isNamedImports(namedBindings)) {
+            for (const spec of namedBindings.elements) link(spec.name);
+          } else {
+            link(namedBindings.name); // `import * as ns` — aliases the module file
+          }
         }
       } else if (
         ts.isExportDeclaration(stmt) &&
-        stmt.moduleSpecifier && // `export { x }` without a source is a local export, not a re-export
-        stmt.exportClause &&
-        ts.isNamedExports(stmt.exportClause)
+        stmt.moduleSpecifier // `export { x }` without a source is a local export, not a re-export
       ) {
-        for (const spec of stmt.exportClause.elements) link(spec.name);
+        const { exportClause } = stmt;
+        if (!exportClause) {
+          link(stmt.moduleSpecifier); // `export * from` — no named clause; targets the module file
+        } else if (ts.isNamedExports(exportClause)) {
+          for (const spec of exportClause.elements) link(spec.name);
+        } else {
+          link(exportClause.name); // `export * as ns from` — aliases the module file
+        }
       }
     }
   }

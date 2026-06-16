@@ -177,7 +177,8 @@ describe("MCP imports tools", () => {
       ),
     );
     const names = imports.map((n: { name: string }) => n.name).sort();
-    expect(names).toEqual(["Widget", "greet", "makeDefault"]);
+    // `lib.ts` is the File node — main.ts's `import * as lib` targets the whole module.
+    expect(names).toEqual(["Widget", "greet", "lib.ts", "makeDefault"]);
   });
 
   it("find_importers lists every file importing a symbol, including via re-export", async () => {

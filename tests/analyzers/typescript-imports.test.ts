@@ -12,7 +12,12 @@ const lib = (qualifiedName: string) => symbolId({ file: "lib.ts", qualifiedName 
 describe("TypeScriptAnalyzer imports resolution", () => {
   let result: AnalysisResult;
   beforeAll(async () => {
-    result = await new TypeScriptAnalyzer().analyze(root, ["lib.ts", "barrel.ts", "main.ts"]);
+    result = await new TypeScriptAnalyzer().analyze(root, [
+      "lib.ts",
+      "barrel.ts",
+      "main.ts",
+      "ns-barrel.ts",
+    ]);
   });
 
   const importsEdges = () => result.edges.filter((e) => e.kind === "Imports");
@@ -42,6 +47,29 @@ describe("TypeScriptAnalyzer imports resolution", () => {
     expect(importsEdges().some((e) => e.from === fileId("main.ts") && e.to === lib("greet"))).toBe(
       true,
     );
+  });
+
+  it("links a namespace import to the imported module's File node", () => {
+    // main.ts: `import * as lib from "./lib.js"` aliases the whole module,
+    // so the edge targets lib.ts's File node, not any single declaration.
+    expect(
+      importsEdges().some((e) => e.from === fileId("main.ts") && e.to === fileId("lib.ts")),
+    ).toBe(true);
+  });
+
+  it("links a star re-export to the re-exported module's File node", () => {
+    // barrel.ts: `export * from "./lib.js"` has no named clause to resolve,
+    // so the edge targets lib.ts's File node.
+    expect(
+      importsEdges().some((e) => e.from === fileId("barrel.ts") && e.to === fileId("lib.ts")),
+    ).toBe(true);
+  });
+
+  it("links a namespace re-export to the re-exported module's File node", () => {
+    // ns-barrel.ts: `export * as lib from "./lib.js"` aliases the whole module.
+    expect(
+      importsEdges().some((e) => e.from === fileId("ns-barrel.ts") && e.to === fileId("lib.ts")),
+    ).toBe(true);
   });
 
   it("does not emit Imports edges from a file that imports nothing", () => {

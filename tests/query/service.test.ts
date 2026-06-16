@@ -110,7 +110,8 @@ describe("QueryService imports queries", () => {
       .findImports("main.ts")
       .map((n) => n.name)
       .sort();
-    expect(names).toEqual(["Widget", "greet", "makeDefault"]);
+    // `lib.ts` is the File node — main.ts's `import * as lib` targets the whole module.
+    expect(names).toEqual(["Widget", "greet", "lib.ts", "makeDefault"]);
   });
 
   it("finds every file that imports a symbol, including via a re-export barrel", () => {
