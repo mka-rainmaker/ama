@@ -112,3 +112,44 @@ describe("MCP query tools", () => {
     expect(snip.text).toContain("return 42;");
   });
 });
+
+const implRoot = path.resolve(here, "../fixtures/ts-implements");
+
+describe("MCP implements tools", () => {
+  async function indexedClient(): Promise<Client> {
+    const client = await connectClient();
+    await client.callTool({
+      name: "index_repository",
+      arguments: { path: implRoot },
+    });
+    return client;
+  }
+
+  it("find_implementations lists every class implementing an interface", async () => {
+    const client = await indexedClient();
+    const impls = JSON.parse(
+      firstText(
+        await client.callTool({
+          name: "find_implementations",
+          arguments: { symbol: "Greeter" },
+        }),
+      ),
+    );
+    const names = impls.map((n: { qualifiedName: string }) => n.qualifiedName).sort();
+    expect(names).toEqual(["FriendlyGreeter", "Person"]);
+  });
+
+  it("find_interfaces lists the interfaces a class implements", async () => {
+    const client = await indexedClient();
+    const ifaces = JSON.parse(
+      firstText(
+        await client.callTool({
+          name: "find_interfaces",
+          arguments: { symbol: "Person" },
+        }),
+      ),
+    );
+    const names = ifaces.map((n: { qualifiedName: string }) => n.qualifiedName).sort();
+    expect(names).toEqual(["Greeter", "Named"]);
+  });
+});

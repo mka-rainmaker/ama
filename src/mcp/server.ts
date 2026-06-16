@@ -73,6 +73,28 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
   );
 
   server.registerTool(
+    "find_implementations",
+    {
+      description: "Every class that implements an interface.",
+      inputSchema: {
+        symbol: z.string().describe("Interface id, simple name, or dotted qualified name."),
+      },
+    },
+    async ({ symbol }) => json(session.findImplementations(symbol)),
+  );
+
+  server.registerTool(
+    "find_interfaces",
+    {
+      description: "The interfaces a class implements.",
+      inputSchema: {
+        symbol: z.string().describe("Class id, simple name, or dotted qualified name."),
+      },
+    },
+    async ({ symbol }) => json(session.findInterfaces(symbol)),
+  );
+
+  server.registerTool(
     "get_code_snippet",
     {
       description: "A symbol's verbatim source.",

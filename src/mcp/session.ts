@@ -54,6 +54,14 @@ export class AmaSession {
     return this.requireQuery().findCallees(ref);
   }
 
+  findImplementations(ref: string): GraphNode[] {
+    return this.requireQuery().findImplementations(ref);
+  }
+
+  findInterfaces(ref: string): GraphNode[] {
+    return this.requireQuery().findInterfaces(ref);
+  }
+
   getCodeSnippet(ref: string): Snippet | undefined {
     return this.requireQuery().getCodeSnippet(ref);
   }

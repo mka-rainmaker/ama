@@ -53,3 +53,38 @@ describe("QueryService", () => {
     expect(q.getCodeSnippet("doesNotExist")).toBeUndefined();
   });
 });
+
+const implRoot = path.resolve(here, "../fixtures/ts-implements");
+
+describe("QueryService implements queries", () => {
+  let q: QueryService;
+  beforeAll(async () => {
+    const store = new InMemoryStore();
+    const { nodes, edges } = await new TypeScriptAnalyzer().analyze(implRoot, ["impl.ts"]);
+    for (const n of nodes) store.addNode(n);
+    for (const e of edges) store.addEdge(e);
+    q = new QueryService(store, implRoot);
+  });
+
+  it("finds every class that implements an interface", () => {
+    const names = q
+      .findImplementations("Greeter")
+      .map((n) => n.qualifiedName)
+      .sort();
+    expect(names).toEqual(["FriendlyGreeter", "Person"]);
+  });
+
+  it("finds the interfaces a class implements", () => {
+    const names = q
+      .findInterfaces("Person")
+      .map((n) => n.qualifiedName)
+      .sort();
+    expect(names).toEqual(["Greeter", "Named"]);
+  });
+
+  it("returns empty for a class with no heritage and unknown symbols", () => {
+    expect(q.findInterfaces("Plain")).toEqual([]);
+    expect(q.findImplementations("Plain")).toEqual([]);
+    expect(q.findImplementations("doesNotExist")).toEqual([]);
+  });
+});

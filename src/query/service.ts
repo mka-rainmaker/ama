@@ -65,6 +65,32 @@ export class QueryService {
     return [...callees.values()];
   }
 
+  /** Classes that implement the referenced interface. */
+  findImplementations(ref: string): GraphNode[] {
+    const targets = this.resolve(ref);
+    const implementers = new Map<string, GraphNode>();
+    for (const target of targets) {
+      for (const edge of this.store.edgesTo(target.id, "Implements")) {
+        const cls = this.store.getNode(edge.from);
+        if (cls) implementers.set(cls.id, cls);
+      }
+    }
+    return [...implementers.values()];
+  }
+
+  /** Interfaces the referenced class implements. */
+  findInterfaces(ref: string): GraphNode[] {
+    const sources = this.resolve(ref);
+    const interfaces = new Map<string, GraphNode>();
+    for (const source of sources) {
+      for (const edge of this.store.edgesFrom(source.id, "Implements")) {
+        const iface = this.store.getNode(edge.to);
+        if (iface) interfaces.set(iface.id, iface);
+      }
+    }
+    return [...interfaces.values()];
+  }
+
   /** Verbatim source for a symbol, or undefined if it has no known location. */
   getCodeSnippet(ref: string): Snippet | undefined {
     const node = this.resolve(ref).find((n) => n.range);
