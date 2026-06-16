@@ -362,7 +362,7 @@ describe("MCP UsesType tools", () => {
       ),
     );
     const names = users.map((n: { qualifiedName: string }) => n.qualifiedName).sort();
-    expect(names).toEqual(["Factory.make", "Holder", "build", "many"]);
+    expect(names).toEqual(["Factory.make", "Holder.item", "build", "many"]);
   });
 
   it("find_types_used lists the types a symbol uses", async () => {

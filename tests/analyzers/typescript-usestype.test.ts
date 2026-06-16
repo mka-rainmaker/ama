@@ -28,10 +28,12 @@ describe("TypeScriptAnalyzer UsesType resolution", () => {
     expect(has(id("Factory.make"), id("Gadget"))).toBe(true);
   });
 
-  it("attributes a property's type to its enclosing class (properties aren't nodes yet)", () => {
-    expect(has(id("Holder"), id("Widget"))).toBe(true);
-    // No member-level node exists, so nothing is attributed to a phantom property id.
-    expect(usesType().some((e) => e.from === id("Holder.item"))).toBe(false);
+  it("attributes a property's type to the property node, not the enclosing class", () => {
+    // Properties are now their own nodes, so the UsesType edge sits on the
+    // property — `Holder.item` → `Widget` — and no longer on the class.
+    expect(result.nodes.find((n) => n.id === id("Holder.item"))?.kind).toBe("Property");
+    expect(has(id("Holder.item"), id("Widget"))).toBe(true);
+    expect(has(id("Holder"), id("Widget"))).toBe(false);
   });
 
   it("finds type references nested inside composite annotations", () => {

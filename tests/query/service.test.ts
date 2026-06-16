@@ -249,8 +249,8 @@ describe("QueryService UsesType queries", () => {
       .findTypeUsers("Widget")
       .map((n) => n.qualifiedName)
       .sort();
-    // Widget annotates build's param, make's param, Holder's property, and many's array param.
-    expect(names).toEqual(["Factory.make", "Holder", "build", "many"]);
+    // Widget annotates build's param, make's param, the Holder.item property node, and many's array.
+    expect(names).toEqual(["Factory.make", "Holder.item", "build", "many"]);
   });
 
   it("finds users of a type referenced only as a return type", () => {
@@ -261,13 +261,15 @@ describe("QueryService UsesType queries", () => {
     expect(names).toEqual(["Factory.make", "build"]);
   });
 
-  it("finds the types a symbol uses, attributing properties to the enclosing class", () => {
+  it("finds the types a symbol uses, attributing properties to the property node", () => {
     const fromBuild = q
       .findTypesUsed("build")
       .map((n) => n.name)
       .sort();
     expect(fromBuild).toEqual(["Gadget", "Widget"]);
-    expect(q.findTypesUsed("Holder").map((n) => n.name)).toEqual(["Widget"]);
+    // The property is its own node now: Holder.item uses Widget; the class itself uses nothing.
+    expect(q.findTypesUsed("Holder.item").map((n) => n.name)).toEqual(["Widget"]);
+    expect(q.findTypesUsed("Holder")).toEqual([]);
   });
 
   it("returns empty for a primitive-only signature and for unknown refs", () => {

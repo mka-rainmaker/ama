@@ -272,6 +272,12 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
   if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
     return { kind: "Method", name: node.name.text };
   }
+  if (
+    (ts.isPropertyDeclaration(node) || ts.isPropertySignature(node)) &&
+    ts.isIdentifier(node.name)
+  ) {
+    return { kind: "Property", name: node.name.text };
+  }
   return undefined;
 }
 

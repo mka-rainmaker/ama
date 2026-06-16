@@ -12,7 +12,8 @@ export type NodeKind =
   | "Enum"
   | "TypeAlias"
   | "Function"
-  | "Method";
+  | "Method"
+  | "Property";
 
 export type EdgeKind = "Defines" | "Calls" | "Inherits" | "Implements" | "UsesType" | "Imports";
 
