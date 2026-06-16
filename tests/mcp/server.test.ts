@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createServer } from "../../src/mcp/server.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -140,6 +140,51 @@ describe("MCP query tools", () => {
       ),
     );
     expect(snip.text).toContain("return 42;");
+  });
+});
+
+describe("MCP tool-call logging", () => {
+  const realEnv = process.env.AMA_LOG_TOOLS;
+  afterEach(() => {
+    // Reflect.deleteProperty (not `delete`) truly removes the var — assigning
+    // `undefined` would stringify to "undefined" (truthy) in process.env.
+    if (realEnv === undefined) Reflect.deleteProperty(process.env, "AMA_LOG_TOOLS");
+    else process.env.AMA_LOG_TOOLS = realEnv;
+    vi.restoreAllMocks();
+  });
+
+  it("prints one stderr line per tool call (name + reply summary) when AMA_LOG_TOOLS is set", async () => {
+    process.env.AMA_LOG_TOOLS = "1";
+    const lines: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      lines.push(args.join(" "));
+    });
+
+    const client = await connectClient();
+    await client.callTool({ name: "index_repository", arguments: { path: callsRoot } });
+    await client.callTool({ name: "find_callers", arguments: { symbol: "helper" } });
+
+    // index_repository reports its counts; find_callers reports a result count.
+    expect(lines.some((l) => l.includes("[ama] index_repository") && l.includes("nodes"))).toBe(
+      true,
+    );
+    expect(lines.some((l) => l.includes("[ama] find_callers") && l.includes("2 results"))).toBe(
+      true,
+    );
+  });
+
+  it("stays silent when AMA_LOG_TOOLS is unset", async () => {
+    Reflect.deleteProperty(process.env, "AMA_LOG_TOOLS");
+    const lines: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      lines.push(args.join(" "));
+    });
+
+    const client = await connectClient();
+    await client.callTool({ name: "index_repository", arguments: { path: callsRoot } });
+    await client.callTool({ name: "find_callers", arguments: { symbol: "helper" } });
+
+    expect(lines.some((l) => l.includes("[ama]"))).toBe(false);
   });
 });
 

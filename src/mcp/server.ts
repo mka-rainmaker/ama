@@ -33,6 +33,62 @@ function queryTool<A>(session: AmaSession, run: (args: A) => unknown) {
   };
 }
 
+/** Compact `key=value` rendering of a tool's arguments for a log line. */
+function argsHint(args: unknown): string {
+  if (!args || typeof args !== "object") return "";
+  const pairs = Object.entries(args as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `${k}=${String(v)}`);
+  return pairs.length ? ` ${pairs.join(", ")}` : "";
+}
+
+/** A one-glance summary of a tool result — list length, index counts, etc. */
+function resultHint(result: unknown): string {
+  const content = (result as { content?: Array<{ text?: string }> } | undefined)?.content;
+  if (!content?.length) return "ok";
+  const stale = content.length > 1 ? "stale, " : "";
+  const text = content[content.length - 1]?.text ?? "";
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return `${stale}${text.slice(0, 60)}`;
+  }
+  if (Array.isArray(data)) {
+    return `${stale}${data.length} result${data.length === 1 ? "" : "s"}`;
+  }
+  if (data && typeof data === "object") {
+    const o = data as Record<string, unknown>;
+    if ("nodeCount" in o) return `${stale}${o.nodeCount} nodes, ${o.edgeCount} edges`;
+    if ("changed" in o) {
+      const changed = (o.changed as unknown[] | undefined)?.length ?? 0;
+      const removed = (o.removed as unknown[] | undefined)?.length ?? 0;
+      return `${stale}${changed} changed, ${removed} removed`;
+    }
+    if ("startLine" in o) return `${stale}${o.file}:${o.startLine}-${o.endLine}`;
+    return `${stale}ok`;
+  }
+  return `${stale}none`;
+}
+
+/**
+ * Wrap a tool handler so each invocation prints one stderr line when
+ * AMA_LOG_TOOLS is set — the tool name, its arguments, and a short summary of
+ * the reply — purely so the dev loop can see a tool was really called. Logging
+ * goes to stderr only, leaving the stdout JSON-RPC stream untouched; the
+ * `serve:dev` script turns it on. Reads the env per call so it can be toggled
+ * without rebuilding the wrapper.
+ */
+function tap<A, R>(name: string, run: (args: A) => R | Promise<R>): (args: A) => Promise<R> {
+  return async (args: A) => {
+    const result = await run(args);
+    if (process.env.AMA_LOG_TOOLS) {
+      console.error(`[ama] ${name}${argsHint(args)} → ${resultHint(result)}`);
+    }
+    return result;
+  };
+}
+
 /**
  * Build the MCP server exposing Ama's tools over one {@link AmaSession}. Pure
  * construction — no transport — so it can be driven by an in-memory client in
@@ -53,7 +109,9 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         path: z.string().describe("Directory to index (absolute or relative)."),
       },
     },
-    async ({ path }) => json(await session.indexRepository(path)),
+    tap("index_repository", async ({ path }: { path: string }) =>
+      json(await session.indexRepository(path)),
+    ),
   );
 
   server.registerTool(
@@ -64,10 +122,10 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         "and how many edits are pending auto-sync.",
       inputSchema: {},
     },
-    async () => {
+    tap("index_status", async () => {
       await session.catchUpIfNeeded();
       return json(session.indexStatus());
-    },
+    }),
   );
 
   server.registerTool(
@@ -78,7 +136,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         "Returns the repo-relative paths re-indexed and removed.",
       inputSchema: {},
     },
-    async () => json(await session.sync()),
+    tap("sync_index", async () => json(await session.sync())),
   );
 
   server.registerTool(
@@ -90,8 +148,11 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         limit: z.number().int().positive().optional().describe("Max results."),
       },
     },
-    queryTool(session, ({ query, limit }: { query: string; limit?: number }) =>
-      session.searchSymbol(query, { limit }),
+    tap(
+      "search_symbol",
+      queryTool(session, ({ query, limit }: { query: string; limit?: number }) =>
+        session.searchSymbol(query, { limit }),
+      ),
     ),
   );
 
@@ -103,7 +164,10 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
       },
     },
-    queryTool(session, ({ symbol }: { symbol: string }) => session.findCallers(symbol)),
+    tap(
+      "find_callers",
+      queryTool(session, ({ symbol }: { symbol: string }) => session.findCallers(symbol)),
+    ),
   );
 
   server.registerTool(
@@ -114,7 +178,10 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
       },
     },
-    queryTool(session, ({ symbol }: { symbol: string }) => session.findCallees(symbol)),
+    tap(
+      "find_callees",
+      queryTool(session, ({ symbol }: { symbol: string }) => session.findCallees(symbol)),
+    ),
   );
 
   server.registerTool(
@@ -125,7 +192,10 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Interface id, simple name, or dotted qualified name."),
       },
     },
-    queryTool(session, ({ symbol }: { symbol: string }) => session.findImplementations(symbol)),
+    tap(
+      "find_implementations",
+      queryTool(session, ({ symbol }: { symbol: string }) => session.findImplementations(symbol)),
+    ),
   );
 
   server.registerTool(
@@ -136,7 +206,10 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Class id, simple name, or dotted qualified name."),
       },
     },
-    queryTool(session, ({ symbol }: { symbol: string }) => session.findInterfaces(symbol)),
+    tap(
+      "find_interfaces",
+      queryTool(session, ({ symbol }: { symbol: string }) => session.findInterfaces(symbol)),
+    ),
   );
 
   server.registerTool(
@@ -147,7 +220,10 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
       },
     },
-    queryTool(session, ({ symbol }: { symbol: string }) => session.findImporters(symbol)),
+    tap(
+      "find_importers",
+      queryTool(session, ({ symbol }: { symbol: string }) => session.findImporters(symbol)),
+    ),
   );
 
   server.registerTool(
@@ -158,7 +234,10 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         file: z.string().describe("File node id (repo-relative path) or basename."),
       },
     },
-    queryTool(session, ({ file }: { file: string }) => session.findImports(file)),
+    tap(
+      "find_imports",
+      queryTool(session, ({ file }: { file: string }) => session.findImports(file)),
+    ),
   );
 
   server.registerTool(
@@ -169,7 +248,10 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         type: z.string().describe("Type id, simple name, or dotted qualified name."),
       },
     },
-    queryTool(session, ({ type }: { type: string }) => session.findTypeUsers(type)),
+    tap(
+      "find_type_users",
+      queryTool(session, ({ type }: { type: string }) => session.findTypeUsers(type)),
+    ),
   );
 
   server.registerTool(
@@ -180,7 +262,10 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
       },
     },
-    queryTool(session, ({ symbol }: { symbol: string }) => session.findTypesUsed(symbol)),
+    tap(
+      "find_types_used",
+      queryTool(session, ({ symbol }: { symbol: string }) => session.findTypesUsed(symbol)),
+    ),
   );
 
   server.registerTool(
@@ -191,7 +276,10 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
       },
     },
-    queryTool(session, ({ symbol }: { symbol: string }) => session.getCodeSnippet(symbol)),
+    tap(
+      "get_code_snippet",
+      queryTool(session, ({ symbol }: { symbol: string }) => session.getCodeSnippet(symbol)),
+    ),
   );
 
   return server;
