@@ -264,13 +264,13 @@ export class TypeScriptAnalyzer implements Analyzer {
   }
 
   /**
-   * Emit a `UsesType` edge for each named type referenced in a parameter type,
-   * a function/method return type, or a property type, attributed to the nearest
-   * enclosing emitted symbol — the function or method for its params and return,
-   * and (until properties become nodes) the class or interface for its members'
-   * types. Composite annotations are walked, so `Widget[]` or `Map<K, Widget>`
-   * still link to `Widget`. Types outside the analyzed set (`number`, library
-   * types) resolve to no node and are skipped.
+   * Emit a `UsesType` edge for each named type referenced in a parameter, a
+   * function/method return type, a property type, or a generic instantiation's
+   * type arguments (`f<Widget>()`, `new Box<Widget>()`, `extends Base<Widget>`),
+   * attributed to the nearest enclosing emitted symbol. Composite annotations are
+   * walked, so `Widget[]` or `Map<K, Widget>` still link to `Widget`. Types
+   * outside the analyzed set (`number`, library types) resolve to no node and are
+   * skipped.
    */
   private collectTypeUsages(
     node: ts.Node,
@@ -289,6 +289,13 @@ export class TypeScriptAnalyzer implements Analyzer {
       ts.isMethodSignature(node)
     ) {
       if (node.type) annotations.push(node.type); // return type
+    } else if (
+      ts.isCallExpression(node) ||
+      ts.isNewExpression(node) ||
+      ts.isExpressionWithTypeArguments(node)
+    ) {
+      // Generic instantiation: `f<Widget>()`, `new Box<Widget>()`, `extends Base<Widget>`.
+      if (node.typeArguments) annotations.push(...node.typeArguments);
     }
     if (enclosingId) {
       for (const annotation of annotations) {
