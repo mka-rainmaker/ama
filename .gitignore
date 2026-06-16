@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# beads: commit issues.jsonl + the audit log, but never the local Dolt database
+.beads/*.db
+.beads/dolt/
+.beads/.dolt/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Logs / coverage
+*.log
+coverage/
