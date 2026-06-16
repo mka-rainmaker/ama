@@ -185,6 +185,19 @@ describe("MCP query tools", () => {
     );
     expect(hits.map((n: { qualifiedName: string }) => n.qualifiedName)).toEqual(["helper"]);
   });
+
+  it("explore returns matches by file, relationships, and blast radius", async () => {
+    const client = await indexedClient();
+    const ex = JSON.parse(
+      firstText(await client.callTool({ name: "explore", arguments: { question: "compute" } })),
+    );
+    expect(ex.byFile["calls.ts"].map((n: { qualifiedName: string }) => n.qualifiedName)).toEqual([
+      "Service.compute",
+    ]);
+    expect(ex.blastRadius.map((n: { qualifiedName: string }) => n.qualifiedName)).toEqual([
+      "Service.run",
+    ]);
+  });
 });
 
 describe("MCP tool-call logging", () => {

@@ -5,7 +5,13 @@ import { createDefaultIndexer } from "../indexer/indexer.js";
 import type { IndexStats, Indexer, LanguageCoverage, SyncResult } from "../indexer/indexer.js";
 import { FileWatcher, type WatchSource } from "../indexer/watcher.js";
 import { QueryService } from "../query/service.js";
-import type { GraphSchema, NodeView, SearchOptions, Snippet } from "../query/service.js";
+import type {
+  Exploration,
+  GraphSchema,
+  NodeView,
+  SearchOptions,
+  Snippet,
+} from "../query/service.js";
 import type { Store } from "../store/types.js";
 import { type ServerStamp, serverStamp } from "./build-info.js";
 
@@ -259,6 +265,10 @@ export class AmaSession {
 
   affected(files: string[]): GraphNode[] {
     return this.requireQuery().affected(files);
+  }
+
+  explore(question: string): Exploration {
+    return this.requireQuery().explore(question);
   }
 
   private requireQuery(): QueryService {

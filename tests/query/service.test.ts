@@ -117,6 +117,17 @@ describe("QueryService", () => {
     expect(names).toContain("main");
     expect(names).toContain("Service.compute");
   });
+
+  it("explores a question: matches grouped by file, relationships, and blast radius", () => {
+    const ex = q.explore("compute");
+    // "compute" matches the Service.compute method, in calls.ts.
+    expect(ex.byFile["calls.ts"]?.map((n) => n.qualifiedName)).toEqual(["Service.compute"]);
+    const rel = ex.relationships.find((r) => r.symbol === "Service.compute");
+    expect(rel?.callers.map((n) => n.qualifiedName)).toEqual(["Service.run"]);
+    expect(rel?.callees.map((n) => n.name)).toEqual(["helper"]);
+    // Changing compute would affect its transitive caller, Service.run.
+    expect(ex.blastRadius.map((n) => n.qualifiedName)).toEqual(["Service.run"]);
+  });
 });
 
 const implRoot = path.resolve(here, "../fixtures/ts-implements");

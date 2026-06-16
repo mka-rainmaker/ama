@@ -40,6 +40,18 @@ export interface GraphSchema {
   edges: Record<string, number>;
 }
 
+/** A one-call overview of a question: matching symbols grouped by file, their
+ *  caller/callee relationships, and the combined transitive blast radius. */
+export interface Exploration {
+  question: string;
+  /** Symbols whose name matches the question, grouped by their file. */
+  byFile: Record<string, GraphNode[]>;
+  /** For each match: who calls it and what it calls. */
+  relationships: { symbol: string; callers: GraphNode[]; callees: GraphNode[] }[];
+  /** Transitive callers of all matches — what changing them would affect. */
+  blastRadius: GraphNode[];
+}
+
 /**
  * Read-side of the graph: the four MVP questions an agent asks, answered from
  * the store. A "symbol reference" is either an exact node id (e.g.
@@ -315,6 +327,32 @@ export class QueryService {
       collect(edge.to);
     }
     return [...importers.values()];
+  }
+
+  /**
+   * A one-call overview answering "what's going on around X?": symbols whose
+   * name matches `question`, grouped by file, each with its callers and callees,
+   * plus the combined transitive blast radius. Composes searchSymbol,
+   * findCallers/findCallees, and impactAnalysis — no new graph logic.
+   */
+  explore(question: string): Exploration {
+    const matches = this.searchSymbol(question);
+    const byFile: Record<string, GraphNode[]> = {};
+    for (const match of matches) {
+      const group = byFile[match.file] ?? [];
+      group.push(match);
+      byFile[match.file] = group;
+    }
+    const relationships = matches.map((match) => ({
+      symbol: match.qualifiedName || match.name,
+      callers: this.findCallers(match.id),
+      callees: this.findCallees(match.id),
+    }));
+    const blast = new Map<string, GraphNode>();
+    for (const match of matches) {
+      for (const affected of this.impactAnalysis(match.id)) blast.set(affected.id, affected);
+    }
+    return { question, byFile, relationships, blastRadius: [...blast.values()] };
   }
 
   /** Verbatim source for a symbol, or undefined if it has no known location. */

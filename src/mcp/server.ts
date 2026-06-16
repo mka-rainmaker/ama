@@ -369,6 +369,22 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
+  server.registerTool(
+    "explore",
+    {
+      description:
+        "A one-call overview of a question: matching symbols grouped by file, their " +
+        "caller/callee relationships, and the combined blast radius.",
+      inputSchema: {
+        question: z.string().describe("A name or term to explore around."),
+      },
+    },
+    tap(
+      "explore",
+      queryTool(session, ({ question }: { question: string }) => session.explore(question)),
+    ),
+  );
+
   return server;
 }
 
