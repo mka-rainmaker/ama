@@ -66,6 +66,9 @@ export class SqliteStore implements Store {
       );
       CREATE INDEX IF NOT EXISTS edges_from ON edges(from_id);
       CREATE INDEX IF NOT EXISTS edges_to ON edges(to_id);
+      -- (from, to, kind) identifies an edge; the unique index lets INSERT OR
+      -- IGNORE collapse the same fact emitted twice into a single row.
+      CREATE UNIQUE INDEX IF NOT EXISTS edges_unique ON edges(from_id, to_id, kind);
       CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(name, id UNINDEXED);
       CREATE TABLE IF NOT EXISTS files (
         path     TEXT PRIMARY KEY,
@@ -101,8 +104,9 @@ export class SqliteStore implements Store {
   }
 
   addEdge(edge: GraphEdge): void {
+    // OR IGNORE drops a duplicate (from, to, kind) via the edges_unique index.
     this.db
-      .prepare("INSERT INTO edges (from_id, to_id, kind) VALUES (?, ?, ?)")
+      .prepare("INSERT OR IGNORE INTO edges (from_id, to_id, kind) VALUES (?, ?, ?)")
       .run(edge.from, edge.to, edge.kind);
   }
 

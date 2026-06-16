@@ -54,6 +54,21 @@ export function runStoreContract(label: string, makeStore: () => Store): void {
       expect(store.edgesTo("target", "Calls").map((e) => e.from)).toEqual(["x", "y"]);
     });
 
+    it("dedupes identical (from, to, kind) edges", () => {
+      const store = makeStore();
+      // The same fact emitted twice (e.g. `greet()` and an aliased `lib.greet()`
+      // resolving to one target) must collapse to a single edge.
+      store.addEdge({ from: "a", to: "b", kind: "Calls" });
+      store.addEdge({ from: "a", to: "b", kind: "Calls" });
+      expect(store.edgeCount).toBe(1);
+      expect(store.edgesFrom("a", "Calls")).toEqual([{ from: "a", to: "b", kind: "Calls" }]);
+      expect(store.edgesTo("b", "Calls")).toEqual([{ from: "a", to: "b", kind: "Calls" }]);
+      // A different kind to the same target is a distinct edge, not a duplicate.
+      store.addEdge({ from: "a", to: "b", kind: "Imports" });
+      expect(store.edgeCount).toBe(2);
+      expect(store.edgesFrom("a")).toHaveLength(2);
+    });
+
     it("iterates every node and tracks counts", () => {
       const store = makeStore();
       store.addNode(node({ id: "n1", name: "n1" }));

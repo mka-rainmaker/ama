@@ -15,6 +15,8 @@ export class InMemoryStore implements Store {
   private readonly byName = new Map<string, GraphNode[]>();
   private readonly outgoing = new Map<string, GraphEdge[]>();
   private readonly incoming = new Map<string, GraphEdge[]>();
+  /** `from\0to\0kind` keys of edges already stored, so identical edges collapse. */
+  private readonly edgeKeys = new Set<string>();
   private readonly files = new Map<string, FileMeta>();
   private readonly meta = new Map<string, string>();
 
@@ -26,6 +28,11 @@ export class InMemoryStore implements Store {
   }
 
   addEdge(edge: GraphEdge): void {
+    // An edge is identified by (from, to, kind); the same fact emitted twice
+    // (e.g. a direct and an aliased call to one target) collapses to one edge.
+    const key = JSON.stringify([edge.from, edge.to, edge.kind]);
+    if (this.edgeKeys.has(key)) return;
+    this.edgeKeys.add(key);
     this.edges.push(edge);
     push(this.outgoing, edge.from, edge);
     push(this.incoming, edge.to, edge);
