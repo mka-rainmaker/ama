@@ -45,6 +45,25 @@ export interface Store {
   getFile(path: string): FileMeta | undefined;
   allFiles(): FileMeta[];
 
+  /**
+   * Remove everything a file owns: its fingerprint, its nodes, and the edges
+   * that originate from those nodes. Edges owned by *other* files are left
+   * untouched — so an inbound edge may briefly dangle into a removed node until
+   * that other file is itself re-indexed. The reconcile primitive behind
+   * single-file re-indexing.
+   */
+  removeFile(path: string): void;
+
+  /**
+   * Apply a file's freshly-analyzed nodes and edges as a *minimal delta*: upsert
+   * its nodes, drop only the symbols that disappeared, and reconcile the edges
+   * it owns (those leaving its nodes) to exactly `edges`. Unchanged data and
+   * everything owned by other files is left in place, so an edit churns only
+   * what actually changed. Handles both creating and editing a file;
+   * {@link removeFile} handles deletion.
+   */
+  reconcileFile(path: string, nodes: GraphNode[], edges: GraphEdge[]): void;
+
   /** Persist (or replace) an arbitrary string value, e.g. coverage metadata. */
   setMeta(key: string, value: string): void;
   getMeta(key: string): string | undefined;

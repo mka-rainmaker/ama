@@ -4,6 +4,7 @@ import { createDefaultIndexer } from "../indexer/indexer.js";
 import type { IndexStats, Indexer, LanguageCoverage } from "../indexer/indexer.js";
 import { QueryService } from "../query/service.js";
 import type { SearchOptions, Snippet } from "../query/service.js";
+import type { Store } from "../store/types.js";
 
 export type IndexStatus =
   | { indexed: false }
@@ -23,6 +24,7 @@ export type IndexStatus =
  * standing up a stdio server.
  */
 export class AmaSession {
+  private store?: Store;
   private query?: QueryService;
   private stats?: IndexStats;
 
@@ -31,9 +33,29 @@ export class AmaSession {
   async indexRepository(root: string): Promise<IndexStats> {
     const abs = path.resolve(root);
     const { store, stats } = await this.indexer.index(abs);
+    this.store = store;
     this.query = new QueryService(store, abs);
     this.stats = stats;
     return stats;
+  }
+
+  /**
+   * Re-index a single file that changed on disk, updating the live graph in
+   * place (no full rebuild, same store, so existing queries keep working).
+   * Counts are refreshed; language coverage is unchanged by a single-file edit.
+   */
+  async reindexFile(rel: string): Promise<IndexStats> {
+    if (!this.store || !this.stats) {
+      throw new Error("Nothing indexed yet — call index_repository first.");
+    }
+    await this.indexer.reindexFile(this.store, this.stats.root, rel);
+    this.stats = {
+      ...this.stats,
+      nodeCount: this.store.nodeCount,
+      edgeCount: this.store.edgeCount,
+      fileCount: this.store.allFiles().length,
+    };
+    return this.stats;
   }
 
   indexStatus(): IndexStatus {

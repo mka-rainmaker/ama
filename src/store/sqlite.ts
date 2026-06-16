@@ -100,6 +100,9 @@ export class SqliteStore implements Store {
         node.range?.endLine ?? null,
         node.tier,
       );
+    // Keep the FTS row idempotent too: re-adding an id (a re-indexed file) must
+    // not leave a stale duplicate behind, since fts5 has no INSERT OR REPLACE.
+    this.db.prepare("DELETE FROM nodes_fts WHERE id = ?").run(node.id);
     this.db.prepare("INSERT INTO nodes_fts (name, id) VALUES (?, ?)").run(node.name, node.id);
   }
 
@@ -194,6 +197,51 @@ export class SqliteStore implements Store {
       .map((r) => rowToFile(r as unknown as FileRow));
   }
 
+  removeFile(path: string): void {
+    // Order matters: the edge/fts deletes reference the file's nodes, so they
+    // must run before the nodes themselves are gone. Edges arriving from other
+    // files (to_id in this file) are deliberately left in place.
+    const owned = "(SELECT id FROM nodes WHERE file = ?)";
+    this.db.prepare(`DELETE FROM edges WHERE from_id IN ${owned}`).run(path);
+    this.db.prepare(`DELETE FROM nodes_fts WHERE id IN ${owned}`).run(path);
+    this.db.prepare("DELETE FROM nodes WHERE file = ?").run(path);
+    this.db.prepare("DELETE FROM files WHERE path = ?").run(path);
+  }
+
+  reconcileFile(path: string, nodes: GraphNode[], edges: GraphEdge[]): void {
+    const newIds = new Set(nodes.map((n) => n.id));
+    const oldIds = (
+      this.db.prepare("SELECT id FROM nodes WHERE file = ?").all(path) as Array<{ id: string }>
+    ).map((r) => r.id);
+    // 1. Drop symbols that disappeared (and the edges leaving them).
+    const delEdgesFrom = this.db.prepare("DELETE FROM edges WHERE from_id = ?");
+    const delFts = this.db.prepare("DELETE FROM nodes_fts WHERE id = ?");
+    const delNode = this.db.prepare("DELETE FROM nodes WHERE id = ?");
+    for (const id of oldIds) {
+      if (newIds.has(id)) continue;
+      delEdgesFrom.run(id);
+      delFts.run(id);
+      delNode.run(id);
+    }
+    // 2. Upsert the file's current nodes (addNode is idempotent).
+    for (const n of nodes) this.addNode(n);
+    // 3. Reconcile the edges the file owns to exactly `edges`: delete the ones
+    //    no longer emitted, then add the rest (INSERT OR IGNORE dedupes).
+    const fresh = new Set(edges.map(edgeKey));
+    const owned = this.db
+      .prepare(
+        "SELECT from_id, to_id, kind FROM edges WHERE from_id IN (SELECT id FROM nodes WHERE file = ?)",
+      )
+      .all(path) as unknown as EdgeRow[];
+    const delEdge = this.db.prepare(
+      "DELETE FROM edges WHERE from_id = ? AND to_id = ? AND kind = ?",
+    );
+    for (const e of owned) {
+      if (!fresh.has(edgeKey(rowToEdge(e)))) delEdge.run(e.from_id, e.to_id, e.kind);
+    }
+    for (const e of edges) this.addEdge(e);
+  }
+
   setMeta(key: string, value: string): void {
     this.db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)").run(key, value);
   }
@@ -226,6 +274,11 @@ function rowToNode(r: NodeRow): GraphNode {
 
 function rowToEdge(r: EdgeRow): GraphEdge {
   return { from: r.from_id, to: r.to_id, kind: r.kind as EdgeKind };
+}
+
+/** Canonical identity of an edge: its (from, to, kind) triple, as printable JSON. */
+function edgeKey(e: GraphEdge): string {
+  return JSON.stringify([e.from, e.to, e.kind]);
 }
 
 function rowToFile(r: FileRow): FileMeta {

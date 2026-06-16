@@ -51,10 +51,10 @@ export class TypeScriptAnalyzer implements Analyzer {
     for (const [abs, rel] of relByAbs) {
       const sf = program.getSourceFile(abs);
       if (sf) {
-        this.collectCalls(sf, undefined, declToId, checker, edges);
-        this.collectHeritage(sf, declToId, checker, edges);
-        this.collectTypeUsages(sf, undefined, declToId, checker, edges);
-        this.collectImports(sf, fileId(rel), declToId, checker, edges);
+        this.collectCalls(sf, undefined, declToId, checker, edges, root);
+        this.collectHeritage(sf, declToId, checker, edges, root);
+        this.collectTypeUsages(sf, undefined, declToId, checker, edges, root);
+        this.collectImports(sf, fileId(rel), declToId, checker, edges, root);
       }
     }
 
@@ -125,10 +125,11 @@ export class TypeScriptAnalyzer implements Analyzer {
     declToId: Map<ts.Node, string>,
     checker: ts.TypeChecker,
     edges: GraphEdge[],
+    root: string,
   ): void {
     node.forEachChild((child) => {
       if (ts.isCallExpression(child) && enclosingId) {
-        const callee = resolveCallee(child, checker, declToId);
+        const callee = resolveCallee(child, checker, declToId, root);
         if (callee) edges.push({ from: enclosingId, to: callee, kind: "Calls" });
       }
       const childId = declToId.get(child);
@@ -136,7 +137,7 @@ export class TypeScriptAnalyzer implements Analyzer {
         childId && (ts.isFunctionDeclaration(child) || ts.isMethodDeclaration(child))
           ? childId
           : enclosingId;
-      this.collectCalls(child, nextEnclosing, declToId, checker, edges);
+      this.collectCalls(child, nextEnclosing, declToId, checker, edges, root);
     });
   }
 
@@ -146,6 +147,7 @@ export class TypeScriptAnalyzer implements Analyzer {
     declToId: Map<ts.Node, string>,
     checker: ts.TypeChecker,
     edges: GraphEdge[],
+    root: string,
   ): void {
     if (ts.isClassDeclaration(node)) {
       const from = declToId.get(node);
@@ -153,12 +155,12 @@ export class TypeScriptAnalyzer implements Analyzer {
         // On a class, `extends` is inheritance; `implements` is interface conformance.
         const kind = clause.token === ts.SyntaxKind.ExtendsKeyword ? "Inherits" : "Implements";
         for (const type of clause.types) {
-          const to = from && resolveHeritage(type.expression, checker, declToId);
+          const to = from && resolveHeritage(type.expression, checker, declToId, root);
           if (from && to) edges.push({ from, to, kind });
         }
       }
     }
-    node.forEachChild((child) => this.collectHeritage(child, declToId, checker, edges));
+    node.forEachChild((child) => this.collectHeritage(child, declToId, checker, edges, root));
   }
 
   /**
@@ -173,9 +175,10 @@ export class TypeScriptAnalyzer implements Analyzer {
     declToId: Map<ts.Node, string>,
     checker: ts.TypeChecker,
     edges: GraphEdge[],
+    root: string,
   ): void {
     const link = (name: ts.Node): void => {
-      const to = resolveImport(name, checker, declToId);
+      const to = resolveImport(name, checker, declToId, root);
       if (to) edges.push({ from: fromId, to, kind: "Imports" });
     };
     // Imports can only appear as top-level statements in an ES module.
@@ -221,6 +224,7 @@ export class TypeScriptAnalyzer implements Analyzer {
     declToId: Map<ts.Node, string>,
     checker: ts.TypeChecker,
     edges: GraphEdge[],
+    root: string,
   ): void {
     const annotations: ts.TypeNode[] = [];
     if (ts.isParameter(node) || ts.isPropertyDeclaration(node) || ts.isPropertySignature(node)) {
@@ -235,7 +239,7 @@ export class TypeScriptAnalyzer implements Analyzer {
     if (enclosingId) {
       for (const annotation of annotations) {
         for (const ref of typeReferencesIn(annotation)) {
-          const to = resolveTypeRef(ref.typeName, checker, declToId);
+          const to = resolveTypeRef(ref.typeName, checker, declToId, root);
           // A type used inside its own declaration's signature is noise, not a usage.
           if (to && to !== enclosingId) edges.push({ from: enclosingId, to, kind: "UsesType" });
         }
@@ -243,7 +247,7 @@ export class TypeScriptAnalyzer implements Analyzer {
     }
     node.forEachChild((child) => {
       const childId = declToId.get(child);
-      this.collectTypeUsages(child, childId ?? enclosingId, declToId, checker, edges);
+      this.collectTypeUsages(child, childId ?? enclosingId, declToId, checker, edges, root);
     });
   }
 }
@@ -273,17 +277,18 @@ function resolveCallee(
   call: ts.CallExpression,
   checker: ts.TypeChecker,
   declToId: Map<ts.Node, string>,
+  root: string,
 ): string | undefined {
   let symbol = checker.getSymbolAtLocation(call.expression);
   if (!symbol) {
     const decl = checker.getResolvedSignature(call)?.declaration;
-    return decl ? declToId.get(decl) : undefined;
+    return decl ? (declToId.get(decl) ?? nodeIdForDecl(decl, root)) : undefined;
   }
   if (symbol.flags & ts.SymbolFlags.Alias) {
     symbol = checker.getAliasedSymbol(symbol);
   }
   const decl = symbol.valueDeclaration ?? symbol.declarations?.[0];
-  return decl ? declToId.get(decl) : undefined;
+  return decl ? (declToId.get(decl) ?? nodeIdForDecl(decl, root)) : undefined;
 }
 
 /** Resolve a heritage type reference (e.g. the `I` in `implements I`) to a node id. */
@@ -291,6 +296,7 @@ function resolveHeritage(
   expr: ts.Expression,
   checker: ts.TypeChecker,
   declToId: Map<ts.Node, string>,
+  root: string,
 ): string | undefined {
   let symbol = checker.getSymbolAtLocation(expr);
   if (!symbol) return undefined;
@@ -299,7 +305,7 @@ function resolveHeritage(
   }
   // Interfaces are type-only, so they have no valueDeclaration — use declarations.
   const decl = symbol.declarations?.[0];
-  return decl ? declToId.get(decl) : undefined;
+  return decl ? (declToId.get(decl) ?? nodeIdForDecl(decl, root)) : undefined;
 }
 
 /** Resolve an imported or re-exported name to its original declaration's node id. */
@@ -307,6 +313,7 @@ function resolveImport(
   name: ts.Node,
   checker: ts.TypeChecker,
   declToId: Map<ts.Node, string>,
+  root: string,
 ): string | undefined {
   let symbol = checker.getSymbolAtLocation(name);
   if (!symbol) return undefined;
@@ -315,7 +322,7 @@ function resolveImport(
     symbol = checker.getAliasedSymbol(symbol);
   }
   const decl = symbol.valueDeclaration ?? symbol.declarations?.[0];
-  return decl ? declToId.get(decl) : undefined;
+  return decl ? (declToId.get(decl) ?? nodeIdForDecl(decl, root)) : undefined;
 }
 
 /** Resolve a type reference's name (e.g. the `Foo` in `x: Foo`) to a node id. */
@@ -323,6 +330,7 @@ function resolveTypeRef(
   name: ts.EntityName,
   checker: ts.TypeChecker,
   declToId: Map<ts.Node, string>,
+  root: string,
 ): string | undefined {
   let symbol = checker.getSymbolAtLocation(name);
   if (!symbol) return undefined;
@@ -331,7 +339,53 @@ function resolveTypeRef(
   }
   // Types are usually type-only (no valueDeclaration), so prefer declarations.
   const decl = symbol.declarations?.[0] ?? symbol.valueDeclaration;
-  return decl ? declToId.get(decl) : undefined;
+  return decl ? (declToId.get(decl) ?? nodeIdForDecl(decl, root)) : undefined;
+}
+
+/**
+ * The graph id a declaration *would* receive from a structural walk, computed
+ * from its location alone. This lets resolution target a node in a file the
+ * current pass never walked — the cross-file case during single-file
+ * re-indexing, where `declToId` only holds the one changed file. Returns
+ * undefined for declarations a walk would not emit (nested functions, library
+ * code outside `root`), so the graph never asserts an edge it cannot back.
+ *
+ * It mirrors {@link visit}'s reachability exactly: a node exists only as a
+ * top-level declaration, or as a member of a top-level class/interface.
+ */
+function nodeIdForDecl(node: ts.Node, root: string): string | undefined {
+  // Module references (namespace imports / star re-exports) target the File node.
+  if (ts.isSourceFile(node)) {
+    const rel = repoRel(root, node.fileName);
+    return rel === undefined ? undefined : fileId(rel);
+  }
+  const self = describe(node);
+  if (!self) return undefined;
+  const rel = repoRel(root, node.getSourceFile().fileName);
+  if (rel === undefined) return undefined;
+  const parent = node.parent;
+  if (parent && ts.isSourceFile(parent)) {
+    return symbolId({ file: rel, qualifiedName: self.name });
+  }
+  if (
+    parent &&
+    (ts.isClassDeclaration(parent) || ts.isInterfaceDeclaration(parent)) &&
+    parent.name &&
+    parent.parent &&
+    ts.isSourceFile(parent.parent)
+  ) {
+    return symbolId({ file: rel, qualifiedName: `${parent.name.text}.${self.name}` });
+  }
+  return undefined;
+}
+
+/** Repo-relative path of an absolute file, or undefined if it falls outside the
+ * indexed tree (a different package, or `node_modules`). */
+function repoRel(root: string, fileName: string): string | undefined {
+  const rel = path.relative(root, fileName);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return undefined;
+  if (rel.split(path.sep).includes("node_modules")) return undefined;
+  return rel;
 }
 
 /** Every type reference within a type annotation, including those nested in

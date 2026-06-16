@@ -83,6 +83,25 @@ export class Indexer {
       },
     };
   }
+
+  /**
+   * Re-index a single changed file into an existing store, in place. Re-analyzes
+   * just `rel` and reconciles its delta (so an edit churns only what changed);
+   * if `rel` was deleted or is no longer analyzable, its data is dropped instead.
+   * Edges from `rel` into files this pass never walks still resolve, because the
+   * analyzer falls back to location-derived ids for nodes already in the store.
+   */
+  async reindexFile(store: Store, root: string, rel: string): Promise<void> {
+    const abs = path.resolve(root, rel);
+    const analyzer = this.registry.forFile(rel);
+    if (!analyzer || !fs.existsSync(abs)) {
+      store.removeFile(rel);
+      return;
+    }
+    const { nodes, edges } = await analyzer.analyze(root, [rel]);
+    store.reconcileFile(rel, nodes, edges);
+    store.recordFile(fingerprint(root, rel));
+  }
 }
 
 /**

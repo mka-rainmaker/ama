@@ -123,6 +123,98 @@ export function runStoreContract(label: string, makeStore: () => Store): void {
       expect(store.allFiles()).toHaveLength(1);
     });
 
+    it("removeFile drops a file's nodes and the edges they own, keeping other files", () => {
+      const store = makeStore();
+      store.addNode(node({ id: "a#1", name: "one", file: "src/a.ts" }));
+      store.addNode(node({ id: "a#2", name: "two", file: "src/a.ts" }));
+      store.addNode(node({ id: "b#1", name: "three", file: "src/b.ts" }));
+      store.addEdge({ from: "a#1", to: "a#2", kind: "Calls" }); // a owns (intra-file)
+      store.addEdge({ from: "a#1", to: "b#1", kind: "Calls" }); // a owns, points into b
+      store.addEdge({ from: "b#1", to: "a#1", kind: "Calls" }); // b owns, points into a
+      store.recordFile({ path: "src/a.ts", size: 1, mtimeMs: 1, hash: "a" });
+      store.recordFile({ path: "src/b.ts", size: 1, mtimeMs: 1, hash: "b" });
+
+      store.removeFile("src/a.ts");
+
+      // a's nodes are gone; b's remain.
+      expect(store.getNode("a#1")).toBeUndefined();
+      expect(store.getNode("a#2")).toBeUndefined();
+      expect(store.getNode("b#1")).toBeDefined();
+      expect([...store.allNodes()].map((n) => n.id)).toEqual(["b#1"]);
+      expect(store.nodeCount).toBe(1);
+      expect(store.nodesByName("one")).toEqual([]);
+
+      // Edges a owned are gone; the edge b owns survives (even though it now
+      // dangles into a removed node — that is the documented reconcile trade-off).
+      expect(store.edgesFrom("a#1")).toEqual([]);
+      expect(store.edgeCount).toBe(1);
+      expect(store.edgesFrom("b#1", "Calls")).toEqual([{ from: "b#1", to: "a#1", kind: "Calls" }]);
+
+      // a's fingerprint is gone; b's remains.
+      expect(store.getFile("src/a.ts")).toBeUndefined();
+      expect(store.getFile("src/b.ts")).toBeDefined();
+    });
+
+    it("removeFile is a no-op for a file with nothing indexed", () => {
+      const store = makeStore();
+      store.addNode(node({ id: "b#1", name: "three", file: "src/b.ts" }));
+      store.removeFile("src/zzz.ts");
+      expect(store.nodeCount).toBe(1);
+      expect(store.getNode("b#1")).toBeDefined();
+    });
+
+    it("reconcileFile applies a minimal delta: upsert, add, drop, keep others", () => {
+      const store = makeStore();
+      store.addNode(node({ id: "a#foo", name: "foo", file: "a.ts" }));
+      store.addNode(node({ id: "a#bar", name: "bar", file: "a.ts" }));
+      store.addNode(node({ id: "b#main", name: "main", file: "b.ts" }));
+      store.addEdge({ from: "a#foo", to: "a#bar", kind: "Calls" }); // owned, to be dropped
+      store.addEdge({ from: "a#foo", to: "x#ext", kind: "Calls" }); // owned, unchanged
+      store.addEdge({ from: "b#main", to: "a#foo", kind: "Calls" }); // inbound, must survive
+
+      // New analysis of a.ts: bar removed, foo kept (range changed), baz added.
+      const newFoo = node({
+        id: "a#foo",
+        name: "foo",
+        file: "a.ts",
+        range: { startLine: 9, endLine: 9 },
+      });
+      const newBaz = node({ id: "a#baz", name: "baz", file: "a.ts" });
+      store.reconcileFile(
+        "a.ts",
+        [newFoo, newBaz],
+        [
+          { from: "a#foo", to: "x#ext", kind: "Calls" }, // unchanged owned edge
+          { from: "a#baz", to: "a#foo", kind: "Calls" }, // new owned edge
+        ],
+      );
+
+      // Nodes: bar dropped, baz added, foo upserted in place, b untouched.
+      expect(store.getNode("a#bar")).toBeUndefined();
+      expect(store.getNode("a#baz")).toBeDefined();
+      expect(store.getNode("a#foo")?.range).toEqual({ startLine: 9, endLine: 9 });
+      expect(store.getNode("b#main")).toBeDefined();
+      // Upsert must not duplicate the by-name index entry.
+      expect(store.nodesByName("foo")).toHaveLength(1);
+
+      // Owned edges reconciled: foo->bar gone, foo->ext kept, baz->foo added.
+      expect(store.edgesFrom("a#foo", "Calls").map((e) => e.to)).toEqual(["x#ext"]);
+      expect(store.edgesFrom("a#baz", "Calls").map((e) => e.to)).toEqual(["a#foo"]);
+      // The inbound edge owned by b survives the reconcile.
+      expect(store.edgesTo("a#foo", "Calls").map((e) => e.from)).toContain("b#main");
+    });
+
+    it("reconcileFile adds a brand-new file's nodes and edges", () => {
+      const store = makeStore();
+      store.reconcileFile(
+        "new.ts",
+        [node({ id: "new#f", name: "f", file: "new.ts" })],
+        [{ from: "new#f", to: "dep", kind: "Calls" }],
+      );
+      expect(store.getNode("new#f")).toBeDefined();
+      expect(store.edgesFrom("new#f", "Calls").map((e) => e.to)).toEqual(["dep"]);
+    });
+
     it("persists arbitrary key/value metadata", () => {
       const store = makeStore();
       expect(store.getMeta("coverage")).toBeUndefined();

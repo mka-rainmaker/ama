@@ -21,6 +21,10 @@ export class InMemoryStore implements Store {
   private readonly meta = new Map<string, string>();
 
   addNode(node: GraphNode): void {
+    // Idempotent upsert: re-adding an existing id (a re-indexed file) replaces
+    // the node without leaving a stale by-name entry behind.
+    const prev = this.nodes.get(node.id);
+    if (prev) this.unindexName(prev);
     this.nodes.set(node.id, node);
     const sameName = this.byName.get(node.name);
     if (sameName) sameName.push(node);
@@ -30,7 +34,7 @@ export class InMemoryStore implements Store {
   addEdge(edge: GraphEdge): void {
     // An edge is identified by (from, to, kind); the same fact emitted twice
     // (e.g. a direct and an aliased call to one target) collapses to one edge.
-    const key = JSON.stringify([edge.from, edge.to, edge.kind]);
+    const key = edgeKey(edge);
     if (this.edgeKeys.has(key)) return;
     this.edgeKeys.add(key);
     this.edges.push(edge);
@@ -100,6 +104,67 @@ export class InMemoryStore implements Store {
     return [...this.files.values()];
   }
 
+  removeFile(path: string): void {
+    const owned = new Set<string>();
+    for (const [id, n] of this.nodes) {
+      if (n.file === path) owned.add(id);
+    }
+    for (const id of owned) {
+      const n = this.nodes.get(id);
+      this.nodes.delete(id);
+      if (n) this.unindexName(n);
+    }
+    // An edge a file owns leaves one of its nodes; keep every other edge.
+    this.resetEdges(this.edges.filter((e) => !owned.has(e.from)));
+    this.files.delete(path);
+  }
+
+  reconcileFile(path: string, nodes: GraphNode[], edges: GraphEdge[]): void {
+    const newIds = new Set(nodes.map((n) => n.id));
+    const oldIds = new Set<string>();
+    for (const n of this.nodes.values()) {
+      if (n.file === path) oldIds.add(n.id);
+    }
+    // 1. Drop symbols that disappeared from the file (their edges go in step 3).
+    for (const id of oldIds) {
+      if (newIds.has(id)) continue;
+      const n = this.nodes.get(id);
+      this.nodes.delete(id);
+      if (n) this.unindexName(n);
+    }
+    // 2. Upsert the file's current nodes (addNode is idempotent).
+    for (const n of nodes) this.addNode(n);
+    // 3. Reconcile the edges the file owns (those leaving any node it held
+    //    before or after) to exactly `edges`: drop the no-longer-emitted ones,
+    //    then add the rest — addEdge dedupes, so unchanged edges are no-ops.
+    const owners = new Set([...oldIds, ...newIds]);
+    const fresh = new Set(edges.map(edgeKey));
+    const stale = new Set(this.edges.filter((e) => owners.has(e.from) && !fresh.has(edgeKey(e))));
+    if (stale.size) this.resetEdges(this.edges.filter((e) => !stale.has(e)));
+    for (const e of edges) this.addEdge(e);
+  }
+
+  /** Drop a node from the by-name index. */
+  private unindexName(node: GraphNode): void {
+    const remaining = this.byName.get(node.name)?.filter((x) => x.id !== node.id);
+    if (remaining?.length) this.byName.set(node.name, remaining);
+    else this.byName.delete(node.name);
+  }
+
+  /** Replace the edge list and rebuild the adjacency indexes from it. */
+  private resetEdges(kept: GraphEdge[]): void {
+    this.edges.length = 0;
+    this.outgoing.clear();
+    this.incoming.clear();
+    this.edgeKeys.clear();
+    for (const e of kept) {
+      this.edges.push(e);
+      push(this.outgoing, e.from, e);
+      push(this.incoming, e.to, e);
+      this.edgeKeys.add(edgeKey(e));
+    }
+  }
+
   setMeta(key: string, value: string): void {
     this.meta.set(key, value);
   }
@@ -113,4 +178,10 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const existing = map.get(key);
   if (existing) existing.push(value);
   else map.set(key, [value]);
+}
+
+/** Canonical identity of an edge: its (from, to, kind) triple, as printable JSON
+ * (never a NUL-delimited string — that would mark the source file binary). */
+function edgeKey(e: GraphEdge): string {
+  return JSON.stringify([e.from, e.to, e.kind]);
 }
