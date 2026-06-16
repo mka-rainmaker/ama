@@ -61,6 +61,43 @@ export class QueryService {
     return opts.kind ? hits.filter((n) => n.kind === opts.kind) : hits;
   }
 
+  /**
+   * Full-text search over symbol *bodies* (not names): symbols whose verbatim
+   * source contains `query`, case-insensitively. Each file is read once and
+   * sliced per symbol; File nodes are excluded so a hit points at the containing
+   * symbol. This is the in-memory tier — a plain substring scan, not an FTS
+   * index (the SQLite store can specialize it later).
+   */
+  searchCode(query: string, opts: { limit?: number } = {}): GraphNode[] {
+    const needle = query.toLowerCase();
+    const limit = opts.limit ?? 50;
+    const byFile = new Map<string, GraphNode[]>();
+    for (const node of this.store.allNodes()) {
+      if (!node.range || node.kind === "File") continue;
+      const group = byFile.get(node.file) ?? [];
+      group.push(node);
+      byFile.set(node.file, group);
+    }
+    const matches: GraphNode[] = [];
+    for (const [file, nodes] of byFile) {
+      let lines: string[];
+      try {
+        lines = fs.readFileSync(path.resolve(this.root, file), "utf8").split("\n");
+      } catch {
+        continue; // a file that vanished since indexing — skip it
+      }
+      for (const node of nodes) {
+        if (!node.range) continue;
+        const body = lines.slice(node.range.startLine - 1, node.range.endLine).join("\n");
+        if (body.toLowerCase().includes(needle)) {
+          matches.push(node);
+          if (matches.length >= limit) return matches;
+        }
+      }
+    }
+    return matches;
+  }
+
   /** Symbols that call the referenced symbol. */
   findCallers(ref: string): GraphNode[] {
     const targets = this.resolve(ref);

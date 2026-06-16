@@ -205,6 +205,10 @@ export class AmaSession {
     return this.requireQuery().searchSymbol(query, opts);
   }
 
+  searchCode(query: string, opts?: { limit?: number }): GraphNode[] {
+    return this.requireQuery().searchCode(query, opts);
+  }
+
   findCallers(ref: string): GraphNode[] {
     return this.requireQuery().findCallers(ref);
   }

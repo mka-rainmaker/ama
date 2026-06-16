@@ -351,6 +351,24 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
+  server.registerTool(
+    "search_code",
+    {
+      description:
+        "Full-text search over symbol bodies — find code containing a string, not just by name.",
+      inputSchema: {
+        query: z.string().describe("Text to find inside symbol source (case-insensitive)."),
+        limit: z.number().int().positive().optional().describe("Max results."),
+      },
+    },
+    tap(
+      "search_code",
+      queryTool(session, ({ query, limit }: { query: string; limit?: number }) =>
+        session.searchCode(query, { limit }),
+      ),
+    ),
+  );
+
   return server;
 }
 

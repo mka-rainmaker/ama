@@ -100,6 +100,23 @@ describe("QueryService", () => {
     expect(schema.edges.Calls).toBe(3);
     expect(schema.edges.Defines).toBeGreaterThan(0);
   });
+
+  it("searches full text over symbol bodies, case-insensitively", () => {
+    // Only helper's body contains the literal `return 42`.
+    expect(q.searchCode("return 42").map((n) => n.qualifiedName)).toEqual(["helper"]);
+    expect(q.searchCode("RETURN 42").map((n) => n.qualifiedName)).toEqual(["helper"]);
+    expect(q.searchCode("no-such-text-here")).toEqual([]);
+  });
+
+  it("matches every symbol whose body contains the query", () => {
+    const names = q
+      .searchCode("helper()")
+      .map((n) => n.qualifiedName)
+      .sort();
+    // main and Service.compute both call helper().
+    expect(names).toContain("main");
+    expect(names).toContain("Service.compute");
+  });
 });
 
 const implRoot = path.resolve(here, "../fixtures/ts-implements");

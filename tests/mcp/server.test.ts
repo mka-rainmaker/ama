@@ -177,6 +177,14 @@ describe("MCP query tools", () => {
     expect(schema.nodes.Class).toBe(1);
     expect(schema.edges.Calls).toBe(3);
   });
+
+  it("search_code finds symbols by what's inside their body", async () => {
+    const client = await indexedClient();
+    const hits = JSON.parse(
+      firstText(await client.callTool({ name: "search_code", arguments: { query: "return 42" } })),
+    );
+    expect(hits.map((n: { qualifiedName: string }) => n.qualifiedName)).toEqual(["helper"]);
+  });
 });
 
 describe("MCP tool-call logging", () => {
