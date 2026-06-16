@@ -54,4 +54,11 @@ describe("self-index regression gate", () => {
     const hit = session.searchSymbol("EdgeKind").some((n) => n.kind === "TypeAlias");
     expect(hit, "expected the EdgeKind type alias to be a graph node").toBe(true);
   });
+
+  it("tracks construction (new-expressions) as Calls edges", () => {
+    // AmaSession.indexRepository does `new QueryService(...)`, so it must show
+    // up as a caller of QueryService now that new-expressions are call sites.
+    const callers = session.findCallers("QueryService").map((n) => n.name);
+    expect(callers).toContain("indexRepository");
+  });
 });

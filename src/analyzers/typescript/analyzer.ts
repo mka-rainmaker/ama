@@ -128,7 +128,9 @@ export class TypeScriptAnalyzer implements Analyzer {
     root: string,
   ): void {
     node.forEachChild((child) => {
-      if (ts.isCallExpression(child) && enclosingId) {
+      // A `new Foo()` is a construction call site, resolved the same way as a
+      // plain call (to Foo's class node), so `find_callers` sees constructions.
+      if ((ts.isCallExpression(child) || ts.isNewExpression(child)) && enclosingId) {
         const callee = resolveCallee(child, checker, declToId, root);
         if (callee) edges.push({ from: enclosingId, to: callee, kind: "Calls" });
       }
@@ -281,9 +283,13 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
   return undefined;
 }
 
-/** Resolve a call's callee to a graph node id, following import aliases. */
+/**
+ * Resolve a call's callee to a graph node id, following import aliases. Accepts
+ * a `new` expression too: its `.expression` is the constructed class, which
+ * resolves the same way (so construction counts as a call site).
+ */
 function resolveCallee(
-  call: ts.CallExpression,
+  call: ts.CallExpression | ts.NewExpression,
   checker: ts.TypeChecker,
   declToId: Map<ts.Node, string>,
   root: string,
