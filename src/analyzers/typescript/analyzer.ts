@@ -94,6 +94,14 @@ export class TypeScriptAnalyzer implements Analyzer {
     edges: GraphEdge[],
     declToId: Map<ts.Node, string>,
   ): void {
+    // A `const f = () => …` / `= function …` is a VariableStatement wrapping the
+    // declaration we actually emit a node for; recurse into its declarations.
+    if (ts.isVariableStatement(node)) {
+      for (const declaration of node.declarationList.declarations) {
+        this.visit(declaration, sf, rel, containerId, prefix, nodes, edges, declToId);
+      }
+      return;
+    }
     const decl = describe(node);
     if (!decl) return;
 
@@ -279,6 +287,14 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
     ts.isIdentifier(node.name)
   ) {
     return { kind: "Property", name: node.name.text };
+  }
+  if (
+    ts.isVariableDeclaration(node) &&
+    node.initializer !== undefined &&
+    (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)) &&
+    ts.isIdentifier(node.name)
+  ) {
+    return { kind: "Function", name: node.name.text };
   }
   return undefined;
 }

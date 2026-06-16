@@ -61,4 +61,9 @@ describe("self-index regression gate", () => {
     const callers = session.findCallers("QueryService").map((n) => n.name);
     expect(callers).toContain("indexRepository");
   });
+
+  it("indexes function-valued const declarations (e.g. fsWatchSource)", () => {
+    const hit = session.searchSymbol("fsWatchSource").some((n) => n.kind === "Function");
+    expect(hit, "expected the fsWatchSource arrow const to be a Function node").toBe(true);
+  });
 });
