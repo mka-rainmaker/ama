@@ -143,10 +143,11 @@ export class TypeScriptAnalyzer implements Analyzer {
     if (ts.isClassDeclaration(node)) {
       const from = declToId.get(node);
       for (const clause of node.heritageClauses ?? []) {
-        if (clause.token !== ts.SyntaxKind.ImplementsKeyword) continue;
+        // On a class, `extends` is inheritance; `implements` is interface conformance.
+        const kind = clause.token === ts.SyntaxKind.ExtendsKeyword ? "Inherits" : "Implements";
         for (const type of clause.types) {
           const to = from && resolveHeritage(type.expression, checker, declToId);
-          if (from && to) edges.push({ from, to, kind: "Implements" });
+          if (from && to) edges.push({ from, to, kind });
         }
       }
     }
