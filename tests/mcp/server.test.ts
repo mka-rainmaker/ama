@@ -155,6 +155,18 @@ describe("MCP query tools", () => {
     const callers = view.callers.map((n: { qualifiedName: string }) => n.qualifiedName).sort();
     expect(callers).toEqual(["Service.compute", "main"]);
   });
+
+  it("impact_analysis returns the transitive blast radius of a symbol", async () => {
+    const client = await indexedClient();
+    const affected = JSON.parse(
+      firstText(
+        await client.callTool({ name: "impact_analysis", arguments: { symbol: "helper" } }),
+      ),
+    );
+    const names = affected.map((n: { qualifiedName: string }) => n.qualifiedName).sort();
+    // Service.run is reached only transitively (run -> compute -> helper).
+    expect(names).toEqual(["Service.compute", "Service.run", "main"]);
+  });
 });
 
 describe("MCP tool-call logging", () => {

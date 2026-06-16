@@ -175,6 +175,35 @@ export class QueryService {
     };
   }
 
+  /**
+   * The transitive blast radius of a symbol: everything affected by changing it,
+   * found by walking the reverse "Calls" edges breadth-first (callers, then
+   * callers of callers, …). `maxDepth` bounds the traversal (default unbounded);
+   * a visited set makes cycles and recursion safe. The seed symbol(s) the ref
+   * resolves to are excluded from the result.
+   */
+  impactAnalysis(ref: string, maxDepth = Number.POSITIVE_INFINITY): GraphNode[] {
+    const seen = new Set(this.resolve(ref).map((n) => n.id));
+    const affected = new Map<string, GraphNode>();
+    let frontier = [...seen];
+    for (let depth = 0; depth < maxDepth && frontier.length > 0; depth++) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        for (const edge of this.store.edgesTo(id, "Calls")) {
+          if (seen.has(edge.from)) continue;
+          seen.add(edge.from);
+          const caller = this.store.getNode(edge.from);
+          if (caller) {
+            affected.set(caller.id, caller);
+            next.push(caller.id);
+          }
+        }
+      }
+      frontier = next;
+    }
+    return [...affected.values()];
+  }
+
   /** Verbatim source for a symbol, or undefined if it has no known location. */
   getCodeSnippet(ref: string): Snippet | undefined {
     const node = this.resolve(ref).find((n) => n.range);

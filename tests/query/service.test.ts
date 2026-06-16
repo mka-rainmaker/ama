@@ -66,6 +66,30 @@ describe("QueryService", () => {
   it("returns undefined from node() for an unknown ref", () => {
     expect(q.node("doesNotExist")).toBeUndefined();
   });
+
+  it("computes the transitive blast radius of a symbol", () => {
+    // helper <- {main, Service.compute}; Service.compute <- Service.run, so
+    // Service.run is reached only transitively (it never calls helper directly).
+    const names = q
+      .impactAnalysis("helper")
+      .map((n) => n.qualifiedName)
+      .sort();
+    expect(names).toEqual(["Service.compute", "Service.run", "main"]);
+  });
+
+  it("bounds the blast radius by depth", () => {
+    const names = q
+      .impactAnalysis("helper", 1)
+      .map((n) => n.qualifiedName)
+      .sort();
+    // Depth 1 = direct callers only; Service.run (depth 2) is excluded.
+    expect(names).toEqual(["Service.compute", "main"]);
+  });
+
+  it("returns empty impact for an entry point and for unknown refs", () => {
+    expect(q.impactAnalysis("main")).toEqual([]);
+    expect(q.impactAnalysis("doesNotExist")).toEqual([]);
+  });
 });
 
 const implRoot = path.resolve(here, "../fixtures/ts-implements");

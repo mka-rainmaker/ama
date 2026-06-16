@@ -298,6 +298,30 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
+  server.registerTool(
+    "impact_analysis",
+    {
+      description:
+        "The transitive blast radius of a symbol: everything that could break if you change it " +
+        "(callers, callers of callers, …), optionally bounded by depth.",
+      inputSchema: {
+        symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
+        maxDepth: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Max levels of callers to traverse (default: unbounded)."),
+      },
+    },
+    tap(
+      "impact_analysis",
+      queryTool(session, ({ symbol, maxDepth }: { symbol: string; maxDepth?: number }) =>
+        session.impactAnalysis(symbol, maxDepth),
+      ),
+    ),
+  );
+
   return server;
 }
 

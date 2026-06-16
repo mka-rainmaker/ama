@@ -243,6 +243,10 @@ export class AmaSession {
     return this.requireQuery().node(ref);
   }
 
+  impactAnalysis(ref: string, maxDepth?: number): GraphNode[] {
+    return this.requireQuery().impactAnalysis(ref, maxDepth);
+  }
+
   private requireQuery(): QueryService {
     if (!this.query) {
       throw new Error("Nothing indexed yet — call index_repository first.");
