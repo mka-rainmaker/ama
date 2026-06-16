@@ -172,6 +172,21 @@ export class InMemoryStore implements Store {
   getMeta(key: string): string | undefined {
     return this.meta.get(key);
   }
+
+  clear(): void {
+    this.nodes.clear();
+    this.edges.length = 0;
+    this.byName.clear();
+    this.outgoing.clear();
+    this.incoming.clear();
+    this.edgeKeys.clear();
+    this.files.clear();
+    this.meta.clear();
+  }
+
+  close(): void {
+    // Nothing to release for the in-memory store.
+  }
 }
 
 function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {

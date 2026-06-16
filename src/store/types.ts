@@ -67,4 +67,12 @@ export interface Store {
   /** Persist (or replace) an arbitrary string value, e.g. coverage metadata. */
   setMeta(key: string, value: string): void;
   getMeta(key: string): string | undefined;
+
+  /** Drop everything — nodes, edges, files, and metadata — for a clean rebuild
+   * of a store that may already hold a previous index (a persistent backend). */
+  clear(): void;
+
+  /** Release any underlying resources (a SQLite connection). A no-op for the
+   * in-memory store; call before discarding a store you replaced. */
+  close(): void;
 }

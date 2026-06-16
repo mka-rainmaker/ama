@@ -43,11 +43,40 @@ export class AmaSession {
   async indexRepository(root: string): Promise<IndexStats> {
     const abs = path.resolve(root);
     const { store, stats } = await this.indexer.index(abs);
+    const previous = this.store;
     this.store = store;
     this.query = new QueryService(store, abs);
     this.stats = stats;
     this.needsCatchUp = false; // a fresh index is already current
+    previous?.close();
     return stats;
+  }
+
+  /**
+   * Open a persisted index for `root` without re-analyzing, falling back to a
+   * full {@link indexRepository} when there is nothing usable to reopen (e.g. the
+   * in-memory store, or a stale/incompatible DB). On reopen, drift is reconciled
+   * lazily on the first query (the connect-time catch-up). Used at server
+   * startup so a process restart reuses the persisted graph.
+   */
+  async open(root: string): Promise<IndexStats> {
+    const abs = path.resolve(root);
+    const opened = await this.indexer.open(abs);
+    if (!opened) return this.indexRepository(abs);
+    const previous = this.store;
+    this.store = opened.store;
+    this.query = new QueryService(opened.store, abs);
+    this.stats = opened.stats;
+    this.needsCatchUp = true; // reconcile anything that changed while we were down
+    previous?.close();
+    return opened.stats;
+  }
+
+  /** Release resources: stop watching and close the store. */
+  close(): void {
+    this.unwatch();
+    this.store?.close();
+    this.store = undefined;
   }
 
   /**

@@ -215,6 +215,26 @@ export function runStoreContract(label: string, makeStore: () => Store): void {
       expect(store.edgesFrom("new#f", "Calls").map((e) => e.to)).toEqual(["dep"]);
     });
 
+    it("clear removes all nodes, edges, files, and metadata", () => {
+      const store = makeStore();
+      store.addNode(node({ id: "a#1", name: "one" }));
+      store.addEdge({ from: "a#1", to: "x", kind: "Calls" });
+      store.recordFile({ path: "a.ts", size: 1, mtimeMs: 1, hash: "h" });
+      store.setMeta("k", "v");
+
+      store.clear();
+
+      expect(store.nodeCount).toBe(0);
+      expect(store.edgeCount).toBe(0);
+      expect([...store.allNodes()]).toEqual([]);
+      expect(store.allFiles()).toEqual([]);
+      expect(store.getNode("a#1")).toBeUndefined();
+      expect(store.getMeta("k")).toBeUndefined();
+      // Still usable after clearing.
+      store.addNode(node({ id: "b#1", name: "two", file: "b.ts" }));
+      expect(store.nodeCount).toBe(1);
+    });
+
     it("persists arbitrary key/value metadata", () => {
       const store = makeStore();
       expect(store.getMeta("coverage")).toBeUndefined();

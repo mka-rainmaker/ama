@@ -251,6 +251,14 @@ export class SqliteStore implements Store {
     return row ? (row as { value: string }).value : undefined;
   }
 
+  clear(): void {
+    // Wipe data but keep the schema, so a re-index into a persistent file starts
+    // clean without dropping/recreating tables.
+    this.db.exec(
+      "DELETE FROM edges; DELETE FROM nodes_fts; DELETE FROM nodes; DELETE FROM files; DELETE FROM meta;",
+    );
+  }
+
   /** Close the underlying database. Required for file-backed stores. */
   close(): void {
     this.db.close();

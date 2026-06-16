@@ -26,6 +26,13 @@ export interface IndexStats {
   languages: LanguageCoverage[];
 }
 
+/**
+ * Bumped whenever the persisted store's schema or the shape of what we write
+ * into it changes. A persisted index stamped with a different version is treated
+ * as unusable and rebuilt rather than reopened.
+ */
+const SCHEMA_VERSION = 1;
+
 /** What a catch-up {@link Indexer.sync} reconciled. */
 export interface SyncResult {
   /** Repo-relative paths re-indexed because they were new or modified. */
@@ -49,6 +56,7 @@ export class Indexer {
 
   async index(root: string): Promise<{ store: Store; stats: IndexStats }> {
     const store = this.createStore();
+    store.clear(); // a persistent store may hold a previous index; rebuild clean
 
     const byAnalyzer = new Map<Analyzer, string[]>();
     for (const rel of discoverFiles(root)) {
@@ -74,9 +82,12 @@ export class Indexer {
       });
     }
 
-    // Persist coverage so a reopened (SQLite-backed) index can report
-    // index_status without re-analyzing.
+    // Persist enough to reopen this index next process without re-analyzing:
+    // coverage (for index_status), the root it was built for, and the schema
+    // version that wrote it.
     store.setMeta("ama:coverage", JSON.stringify({ fileCount, languages }));
+    store.setMeta("ama:root", root);
+    store.setMeta("ama:schema", String(SCHEMA_VERSION));
 
     return {
       store,
@@ -87,6 +98,36 @@ export class Indexer {
         fileCount,
         languages,
       },
+    };
+  }
+
+  /**
+   * Reopen a previously-persisted index without re-analyzing: open the store and,
+   * if it holds a usable index for `root` (matching schema version and root, with
+   * nodes present), reconstruct its {@link IndexStats} from the persisted
+   * coverage metadata. Returns undefined — and closes the freshly-opened store —
+   * when there is nothing usable (an empty in-memory store, a different root, or
+   * an incompatible schema), so the caller falls back to a full {@link index}.
+   */
+  async open(root: string): Promise<{ store: Store; stats: IndexStats } | undefined> {
+    const store = this.createStore();
+    const coverageRaw = store.getMeta("ama:coverage");
+    const usable =
+      store.getMeta("ama:schema") === String(SCHEMA_VERSION) &&
+      store.getMeta("ama:root") === root &&
+      store.nodeCount > 0 &&
+      coverageRaw !== undefined;
+    if (!usable) {
+      store.close();
+      return undefined;
+    }
+    const { fileCount, languages } = JSON.parse(coverageRaw) as {
+      fileCount: number;
+      languages: LanguageCoverage[];
+    };
+    return {
+      store,
+      stats: { root, nodeCount: store.nodeCount, edgeCount: store.edgeCount, fileCount, languages },
     };
   }
 

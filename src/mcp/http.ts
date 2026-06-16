@@ -3,6 +3,8 @@ import * as http from "node:http";
 import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { createDefaultIndexer } from "../indexer/indexer.js";
+import { SqliteStore } from "../store/sqlite.js";
 import { createServer as createMcpServer } from "./server.js";
 import { AmaSession } from "./session.js";
 
@@ -97,7 +99,21 @@ async function readJson(req: http.IncomingMessage): Promise<unknown> {
  * here, unlike stdio, but stderr keeps logging uniform across transports). */
 export async function main(): Promise<void> {
   const port = Number(process.env.AMA_HTTP_PORT ?? 7077);
-  const server = createHttpServer();
+  // With AMA_DB set, persist to (and reopen from) a file-backed store; with
+  // AMA_ROOT too, reopen that project's index at startup so a restart skips the
+  // full re-index and connect-time catch-up reconciles any drift.
+  const dbPath = process.env.AMA_DB;
+  const session = dbPath
+    ? new AmaSession(createDefaultIndexer(() => new SqliteStore(dbPath)))
+    : new AmaSession();
+  const root = process.env.AMA_ROOT;
+  if (dbPath && root) {
+    const stats = await session.open(root);
+    console.error(
+      `ama: index ready — ${stats.nodeCount} nodes / ${stats.fileCount} files (${root})`,
+    );
+  }
+  const server = createHttpServer(session);
   await new Promise<void>((resolve) => server.listen(port, resolve));
   console.error(`ama MCP server (HTTP) on http://localhost:${port}${MCP_PATH}`);
 }
