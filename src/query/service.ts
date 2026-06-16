@@ -18,6 +18,20 @@ export interface Snippet {
   text: string;
 }
 
+/** Everything about one node in a single answer — the higher-order `node` query. */
+export interface NodeView {
+  /** The resolved node itself (most-specific match for the ref). */
+  node: GraphNode;
+  /** Verbatim source, when the node has a known location. */
+  snippet?: Snippet;
+  /** Symbols that call it. */
+  callers: GraphNode[];
+  /** Symbols it calls. */
+  callees: GraphNode[];
+  /** Files that import (or re-export) it. */
+  dependents: GraphNode[];
+}
+
 /**
  * Read-side of the graph: the four MVP questions an agent asks, answered from
  * the store. A "symbol reference" is either an exact node id (e.g.
@@ -141,6 +155,24 @@ export class QueryService {
       }
     }
     return [...types.values()];
+  }
+
+  /**
+   * Everything about one node in a single call: its definition plus full
+   * source, callers, callees, and dependents — a higher-order composition of
+   * the individual query methods so an agent gets the whole picture at once.
+   * Undefined when the ref resolves to nothing.
+   */
+  node(ref: string): NodeView | undefined {
+    const primary = this.resolve(ref)[0];
+    if (!primary) return undefined;
+    return {
+      node: primary,
+      snippet: this.getCodeSnippet(ref),
+      callers: this.findCallers(ref),
+      callees: this.findCallees(ref),
+      dependents: this.findImporters(ref),
+    };
   }
 
   /** Verbatim source for a symbol, or undefined if it has no known location. */

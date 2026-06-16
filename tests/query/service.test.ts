@@ -52,6 +52,20 @@ describe("QueryService", () => {
     expect(q.findCallers("doesNotExist")).toEqual([]);
     expect(q.getCodeSnippet("doesNotExist")).toBeUndefined();
   });
+
+  it("assembles a node view: definition, source, callers, callees, and dependents", () => {
+    const view = q.node("helper");
+    expect(view?.node.name).toBe("helper");
+    expect(view?.snippet?.text).toContain("return 42;");
+    expect(view?.callers.map((n) => n.qualifiedName).sort()).toEqual(["Service.compute", "main"]);
+    // helper just returns a literal and isn't imported anywhere in this fixture.
+    expect(view?.callees).toEqual([]);
+    expect(view?.dependents).toEqual([]);
+  });
+
+  it("returns undefined from node() for an unknown ref", () => {
+    expect(q.node("doesNotExist")).toBeUndefined();
+  });
 });
 
 const implRoot = path.resolve(here, "../fixtures/ts-implements");

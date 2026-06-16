@@ -144,6 +144,17 @@ describe("MCP query tools", () => {
     );
     expect(snip.text).toContain("return 42;");
   });
+
+  it("node assembles a symbol's definition, source, callers, and callees", async () => {
+    const client = await indexedClient();
+    const view = JSON.parse(
+      firstText(await client.callTool({ name: "node", arguments: { ref: "helper" } })),
+    );
+    expect(view.node.name).toBe("helper");
+    expect(view.snippet.text).toContain("return 42;");
+    const callers = view.callers.map((n: { qualifiedName: string }) => n.qualifiedName).sort();
+    expect(callers).toEqual(["Service.compute", "main"]);
+  });
 });
 
 describe("MCP tool-call logging", () => {

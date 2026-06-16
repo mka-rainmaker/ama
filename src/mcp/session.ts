@@ -5,7 +5,7 @@ import { createDefaultIndexer } from "../indexer/indexer.js";
 import type { IndexStats, Indexer, LanguageCoverage, SyncResult } from "../indexer/indexer.js";
 import { FileWatcher } from "../indexer/watcher.js";
 import { QueryService } from "../query/service.js";
-import type { SearchOptions, Snippet } from "../query/service.js";
+import type { NodeView, SearchOptions, Snippet } from "../query/service.js";
 import type { Store } from "../store/types.js";
 import { type ServerStamp, serverStamp } from "./build-info.js";
 
@@ -237,6 +237,10 @@ export class AmaSession {
 
   getCodeSnippet(ref: string): Snippet | undefined {
     return this.requireQuery().getCodeSnippet(ref);
+  }
+
+  node(ref: string): NodeView | undefined {
+    return this.requireQuery().node(ref);
   }
 
   private requireQuery(): QueryService {

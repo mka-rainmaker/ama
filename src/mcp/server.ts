@@ -282,6 +282,22 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
+  server.registerTool(
+    "node",
+    {
+      description:
+        "Everything about one symbol or file at once: definition, source, callers, callees, " +
+        "and dependents.",
+      inputSchema: {
+        ref: z.string().describe("Symbol or file id, simple name, or dotted/path reference."),
+      },
+    },
+    tap(
+      "node",
+      queryTool(session, ({ ref }: { ref: string }) => session.node(ref)),
+    ),
+  );
+
   return server;
 }
 
