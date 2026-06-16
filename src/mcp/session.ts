@@ -1,10 +1,15 @@
 import * as path from "node:path";
 import type { GraphNode } from "../graph/index.js";
+import { Debouncer } from "../indexer/debouncer.js";
 import { createDefaultIndexer } from "../indexer/indexer.js";
 import type { IndexStats, Indexer, LanguageCoverage } from "../indexer/indexer.js";
+import { FileWatcher } from "../indexer/watcher.js";
 import { QueryService } from "../query/service.js";
 import type { SearchOptions, Snippet } from "../query/service.js";
 import type { Store } from "../store/types.js";
+
+/** Default quiet window before a burst of edits triggers a re-index. */
+const DEFAULT_DEBOUNCE_MS = 200;
 
 export type IndexStatus =
   | { indexed: false }
@@ -27,6 +32,8 @@ export class AmaSession {
   private store?: Store;
   private query?: QueryService;
   private stats?: IndexStats;
+  private watcher?: FileWatcher;
+  private debouncer?: Debouncer;
 
   constructor(private readonly indexer: Indexer = createDefaultIndexer()) {}
 
@@ -56,6 +63,32 @@ export class AmaSession {
       fileCount: this.store.allFiles().length,
     };
     return this.stats;
+  }
+
+  /**
+   * Start watching the indexed root and auto-re-index files as they change,
+   * collapsing bursts of edits with a debounce window. Idempotent; requires a
+   * prior index. Pair with {@link unwatch} to stop.
+   */
+  watch(options: { windowMs?: number } = {}): void {
+    if (!this.store || !this.stats) {
+      throw new Error("Nothing indexed yet — call index_repository first.");
+    }
+    if (this.watcher) return; // already watching
+    this.debouncer = new Debouncer(
+      (rel) => this.reindexFile(rel).then(() => undefined),
+      options.windowMs ?? DEFAULT_DEBOUNCE_MS,
+    );
+    this.watcher = new FileWatcher(this.stats.root, (rel) => this.debouncer?.notify(rel));
+    this.watcher.start();
+  }
+
+  /** Stop watching. Pending (un-synced) edits are dropped. */
+  unwatch(): void {
+    this.watcher?.close();
+    this.watcher = undefined;
+    this.debouncer?.stop();
+    this.debouncer = undefined;
   }
 
   indexStatus(): IndexStatus {
