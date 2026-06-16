@@ -180,6 +180,28 @@ describe("QueryService imports queries", () => {
     expect(q.findImports("doesNotExist")).toEqual([]);
     expect(q.findImporters("doesNotExist")).toEqual([]);
   });
+
+  it("traces the files affected by changing a file (reverse-import closure)", () => {
+    const names = q
+      .affected(["lib.ts"])
+      .map((n) => n.name)
+      .sort();
+    // barrel re-exports lib; main imports lib's symbols (directly and via barrel).
+    expect(names).toEqual(["barrel.ts", "main.ts"]);
+  });
+
+  it("excludes the input files and handles multiple inputs and unknowns", () => {
+    // main.ts is itself an input, so it drops out; barrel still depends on lib.
+    expect(
+      q
+        .affected(["lib.ts", "main.ts"])
+        .map((n) => n.name)
+        .sort(),
+    ).toEqual(["barrel.ts"]);
+    // nothing imports main.ts; unknown refs contribute nothing.
+    expect(q.affected(["main.ts"])).toEqual([]);
+    expect(q.affected(["doesNotExist.ts"])).toEqual([]);
+  });
 });
 
 const usesTypeRoot = path.resolve(here, "../fixtures/ts-usestype");

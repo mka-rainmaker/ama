@@ -335,6 +335,22 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
+  server.registerTool(
+    "affected",
+    {
+      description:
+        "Files affected by changing the given files: the transitive set that imports from them " +
+        "(directly or via a defined symbol) — which files/tests to recheck.",
+      inputSchema: {
+        files: z.array(z.string()).describe("File node ids (repo-relative paths) or basenames."),
+      },
+    },
+    tap(
+      "affected",
+      queryTool(session, ({ files }: { files: string[] }) => session.affected(files)),
+    ),
+  );
+
   return server;
 }
 

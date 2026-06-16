@@ -277,6 +277,17 @@ describe("MCP imports tools", () => {
     return client;
   }
 
+  it("affected lists the files impacted by changing a file", async () => {
+    const client = await indexedClient();
+    const files = JSON.parse(
+      firstText(await client.callTool({ name: "affected", arguments: { files: ["lib.ts"] } })),
+    );
+    const names = files.map((n: { name: string }) => n.name).sort();
+    // Everything that imports from lib (incl. the star/namespace barrels).
+    expect(names).toContain("main.ts");
+    expect(names).toContain("barrel.ts");
+  });
+
   it("find_imports lists the symbols a file imports", async () => {
     const client = await indexedClient();
     const imports = JSON.parse(

@@ -253,6 +253,10 @@ export class AmaSession {
     return this.requireQuery().getGraphSchema();
   }
 
+  affected(files: string[]): GraphNode[] {
+    return this.requireQuery().affected(files);
+  }
+
   private requireQuery(): QueryService {
     if (!this.query) {
       throw new Error("Nothing indexed yet — call index_repository first.");

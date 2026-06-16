@@ -228,6 +228,58 @@ export class QueryService {
     return { nodes, edges };
   }
 
+  /**
+   * The files affected by changing the given files: the transitive set of files
+   * that import from them — directly (a module import) or by importing a symbol
+   * they define — walked breadth-first. The input files are excluded. Answers
+   * "which files (and tests) should I recheck?". Non-file refs and unknowns
+   * contribute nothing.
+   */
+  affected(refs: string[]): GraphNode[] {
+    const seeds = new Set<string>();
+    for (const ref of refs) {
+      for (const node of this.resolve(ref)) {
+        if (node.kind === "File") seeds.add(node.id);
+      }
+    }
+    const seen = new Set(seeds);
+    const result = new Map<string, GraphNode>();
+    let frontier = [...seeds];
+    while (frontier.length > 0) {
+      const next: string[] = [];
+      for (const fileId of frontier) {
+        for (const importer of this.fileImporters(fileId)) {
+          if (seen.has(importer.id)) continue;
+          seen.add(importer.id);
+          result.set(importer.id, importer);
+          next.push(importer.id);
+        }
+      }
+      frontier = next;
+    }
+    return [...result.values()];
+  }
+
+  /**
+   * Files that import from `fileId`: importers of the module itself (a star
+   * re-export or namespace import targets the File node) plus importers of each
+   * symbol the file defines.
+   */
+  private fileImporters(fileId: string): GraphNode[] {
+    const importers = new Map<string, GraphNode>();
+    const collect = (targetId: string) => {
+      for (const edge of this.store.edgesTo(targetId, "Imports")) {
+        const file = this.store.getNode(edge.from);
+        if (file) importers.set(file.id, file);
+      }
+    };
+    collect(fileId);
+    for (const edge of this.store.edgesFrom(fileId, "Defines")) {
+      collect(edge.to);
+    }
+    return [...importers.values()];
+  }
+
   /** Verbatim source for a symbol, or undefined if it has no known location. */
   getCodeSnippet(ref: string): Snippet | undefined {
     const node = this.resolve(ref).find((n) => n.range);
