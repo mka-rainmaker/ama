@@ -154,18 +154,26 @@ setup just removes the build + restart step when iterating on Ama's own code.
 ## Known gaps to expect
 
 Ama's TypeScript analysis is intentionally partial in the MVP. The deep analyzer
-(`src/analyzers/typescript/analyzer.ts`) emits nodes only for File / Function / Class / Interface /
-Enum / Method declarations, and `Calls` edges only for direct call expressions. So today:
+(`src/analyzers/typescript/analyzer.ts`) emits nodes for File / Function / Class / Interface / Enum /
+Method declarations, and `Defines`, `Calls`, `Inherits`, `Implements`, `Imports`, and `UsesType`
+edges (`Calls` only for *direct* call expressions). So today:
 
 - **Arrow functions and function expressions get no node** — `export const f = () => …` produces no
   Function node, and calls inside it are attributed to the nearest enclosing named function/method
   (or dropped at module top level).
 - **Class fields / properties and get/set accessors get no node** — only methods do, so calls inside
-  initializers and accessors are dropped or mis-attributed.
+  initializers and accessors are dropped or mis-attributed, and a property's type is attributed to its
+  enclosing class rather than a property node.
+- **Type aliases get no node** — `type X = …` isn't indexed, so `search_symbol` can't find a `type`
+  declaration (e.g. `EdgeKind`, `IndexStatus`) and a reference to one yields no `UsesType` edge.
 - **`new Foo()` produces no `Calls` edge** — construction is a `NewExpression`, not a call expression.
-- **Imports/re-exports, inheritance, interface dispatch, generics, decorators, and type usages are
-  not yet edges** — see the **Deeper TypeScript semantics** epic in `bd` (these are the best-motivated
-  loop targets because Ama's own source exercises every one of them).
+- **Generics, decorators, and interface-method dispatch are not yet modeled** — see the **Deeper
+  TypeScript semantics** epic in `bd` (these are the best-motivated loop targets because Ama's own
+  source exercises every one of them).
 
-`find_callers` / `find_callees` will undercount wherever the above applies — which is exactly the kind
-of firsthand gap the loop is designed to surface and close.
+What already landed (and is *no longer* a gap): `Imports`/re-exports, `Inherits`, `Implements`, and
+`UsesType` edges all ship — and the **Higher-order query tools** epic builds on them
+(`node`, `impact_analysis`, `affected`, `get_graph_schema`, `search_code`, `explore`).
+
+`find_callers` / `find_callees` will still undercount wherever the above gaps apply — which is exactly
+the kind of firsthand gap the loop is designed to surface and close.

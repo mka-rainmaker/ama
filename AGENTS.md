@@ -63,9 +63,11 @@ test-first, and the server gets better. One backlog item per iteration:
 1. **Index.** `index_repository(".")`; record before counts via `index_status()`.
 2. **Pick one** ready item (`bd ready`) and claim it (`bd update <id> --claim`). Favor small,
    high-signal gaps that Ama's own source exercises (analyzer `KNOWN GAPS` comments are great picks).
-3. **Understand** by using Ama's tools (`search_symbol`, `find_callers`/`find_callees`,
-   `get_code_snippet`). If a tool can't answer what you need, that's a gap — file it
-   (`bd create … --deps discovered-from:<id>`).
+3. **Understand** by using Ama's tools — `search_symbol`/`search_code`, `find_callers`/`find_callees`,
+   the relationship tools (`find_implementations`/`find_interfaces`/`find_importers`/`find_imports`/
+   `find_type_users`/`find_types_used`), the higher-order ones (`node`, `impact_analysis`, `affected`,
+   `get_graph_schema`, `explore`), and `get_code_snippet`; `sync_index` reconciles on-disk edits. If a
+   tool can't answer what you need, that's a gap — file it (`bd create … --deps discovered-from:<id>`).
 4. **Change it test-first** (RED → GREEN → REFACTOR). Keep `KNOWN GAPS` comments truthful.
 5. **Verify:** full suite green **and** Ama still re-indexes itself cleanly; record after counts.
 6. **Log the insight** in `docs/insights/README.md`.
@@ -79,7 +81,7 @@ Full runbook: [`docs/SELF_IMPROVEMENT_LOOP.md`](docs/SELF_IMPROVEMENT_LOOP.md).
 
 - **Node.js 24+**, **TypeScript** (`strict`), **ESM**. Use `.js` extensions on relative imports
   (NodeNext resolution) and `import type` for type-only imports.
-- **MCP:** `@modelcontextprotocol/sdk` over stdio. **Tests:** `vitest`. **Format/lint:** Biome.
+- **MCP:** `@modelcontextprotocol/sdk` over stdio and Streamable HTTP. **Tests:** `vitest`. **Format/lint:** Biome.
 - Keep the layering clean: `graph/` (model) → `analyzers/` (per-language, tiered) → `store/` →
   `query/` → `mcp/` (and later `cli/`). Avoid leaking analyzer- or store-specific types across layers.
 - Match the surrounding code's naming, comments, and idioms. Prefer small, well-commented passes over
