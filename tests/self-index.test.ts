@@ -73,4 +73,11 @@ describe("self-index regression gate", () => {
     const callees = session.findCallees("QueryService.findCallers").map((n) => n.name);
     expect(callees).toContain("edgesTo");
   });
+
+  it("fans interface-mediated calls out to implementations (virtual dispatch)", () => {
+    // QueryService calls this.store.edgesTo (store: Store), which dispatch should
+    // fan out to the concrete InMemoryStore.edgesTo.
+    const callers = session.findCallers("InMemoryStore.edgesTo").map((n) => n.name);
+    expect(callers).toContain("findCallers");
+  });
 });

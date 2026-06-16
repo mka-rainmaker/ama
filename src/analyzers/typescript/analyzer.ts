@@ -58,7 +58,51 @@ export class TypeScriptAnalyzer implements Analyzer {
       }
     }
 
+    this.resolveDispatch(nodes, edges);
     return { nodes, edges };
+  }
+
+  /**
+   * Virtual dispatch: a call resolved to an interface method should also reach
+   * each implementing class's method of the same name. Runs after all edges
+   * exist (so `Calls`/`Defines`/`Implements` are available) and appends extra
+   * `Calls` edges from the original caller to every implementation. The new
+   * edges target concrete class methods, so they never fan out again; duplicate
+   * edges are collapsed by the store.
+   */
+  private resolveDispatch(nodes: GraphNode[], edges: GraphEdge[]): void {
+    const byId = new Map(nodes.map((n) => [n.id, n] as [string, GraphNode]));
+    const definerOf = new Map<string, string>(); // member id -> container id
+    const implementers = new Map<string, string[]>(); // interface id -> implementing class ids
+    const methodsByContainer = new Map<string, Map<string, string>>(); // container -> name -> method id
+    for (const edge of edges) {
+      if (edge.kind === "Defines") {
+        definerOf.set(edge.to, edge.from);
+        const member = byId.get(edge.to);
+        if (member?.kind === "Method") {
+          const byName = methodsByContainer.get(edge.from) ?? new Map<string, string>();
+          byName.set(member.name, edge.to);
+          methodsByContainer.set(edge.from, byName);
+        }
+      } else if (edge.kind === "Implements") {
+        const list = implementers.get(edge.to) ?? [];
+        list.push(edge.from);
+        implementers.set(edge.to, list);
+      }
+    }
+    const fanned: GraphEdge[] = [];
+    for (const edge of edges) {
+      if (edge.kind !== "Calls") continue;
+      const target = byId.get(edge.to);
+      if (target?.kind !== "Method") continue;
+      const container = definerOf.get(edge.to);
+      if (!container || byId.get(container)?.kind !== "Interface") continue;
+      for (const classId of implementers.get(container) ?? []) {
+        const impl = methodsByContainer.get(classId)?.get(target.name);
+        if (impl) fanned.push({ from: edge.from, to: impl, kind: "Calls" });
+      }
+    }
+    edges.push(...fanned);
   }
 
   private walkFile(

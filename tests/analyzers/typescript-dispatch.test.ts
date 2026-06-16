@@ -25,4 +25,11 @@ describe("TypeScriptAnalyzer interface-method dispatch", () => {
     );
     expect(hit).toBe(true);
   });
+
+  it("fans an interface-method call out to the implementing class's method", () => {
+    const hit = result.edges.some(
+      (e) => e.kind === "Calls" && e.from === id("useService") && e.to === id("FastService.run"),
+    );
+    expect(hit).toBe(true);
+  });
 });
