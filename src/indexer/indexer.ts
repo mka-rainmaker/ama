@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { AnalyzerRegistry } from "../analyzers/registry.js";
@@ -5,6 +6,7 @@ import type { Analyzer } from "../analyzers/types.js";
 import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
+import type { FileMeta, Store } from "../store/types.js";
 
 export interface LanguageCoverage {
   language: string;
@@ -33,10 +35,14 @@ const IGNORED_DIRS = new Set(["node_modules", "dist", "build", "coverage"]);
  * resolve cross-file references (e.g. an import's call target).
  */
 export class Indexer {
-  constructor(private readonly registry: AnalyzerRegistry) {}
+  constructor(
+    private readonly registry: AnalyzerRegistry,
+    /** How to create the backing store — swap this to persist to SQLite. */
+    private readonly createStore: () => Store = () => new InMemoryStore(),
+  ) {}
 
-  async index(root: string): Promise<{ store: InMemoryStore; stats: IndexStats }> {
-    const store = new InMemoryStore();
+  async index(root: string): Promise<{ store: Store; stats: IndexStats }> {
+    const store = this.createStore();
 
     const byAnalyzer = new Map<Analyzer, string[]>();
     for (const rel of discoverFiles(root)) {
@@ -53,6 +59,7 @@ export class Indexer {
       const { nodes, edges } = await analyzer.analyze(root, files);
       for (const n of nodes) store.addNode(n);
       for (const e of edges) store.addEdge(e);
+      for (const rel of files) store.recordFile(fingerprint(root, rel));
       fileCount += files.length;
       languages.push({
         language: analyzer.language,
@@ -60,6 +67,10 @@ export class Indexer {
         files: files.length,
       });
     }
+
+    // Persist coverage so a reopened (SQLite-backed) index can report
+    // index_status without re-analyzing.
+    store.setMeta("ama:coverage", JSON.stringify({ fileCount, languages }));
 
     return {
       store,
@@ -74,11 +85,22 @@ export class Indexer {
   }
 }
 
-/** An indexer wired with the analyzers Ama ships today. */
-export function createDefaultIndexer(): Indexer {
+/**
+ * An indexer wired with the analyzers Ama ships today. Pass a `createStore`
+ * factory to persist into SQLite instead of the default in-memory store.
+ */
+export function createDefaultIndexer(createStore?: () => Store): Indexer {
   const registry = new AnalyzerRegistry();
   registry.register(new TypeScriptAnalyzer());
-  return new Indexer(registry);
+  return new Indexer(registry, createStore);
+}
+
+/** Fingerprint a file for staleness tracking: size, mtime, and content hash. */
+function fingerprint(root: string, rel: string): FileMeta {
+  const abs = path.resolve(root, rel);
+  const stat = fs.statSync(abs);
+  const hash = crypto.createHash("sha1").update(fs.readFileSync(abs)).digest("hex");
+  return { path: rel, size: stat.size, mtimeMs: stat.mtimeMs, hash };
 }
 
 /** Repo-relative paths of every file under `root`, skipping ignored trees. */

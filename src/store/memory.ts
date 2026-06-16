@@ -1,4 +1,5 @@
 import type { EdgeKind, GraphEdge, GraphNode } from "../graph/index.js";
+import type { FileMeta, Store } from "./types.js";
 
 /**
  * In-memory graph store for the MVP. Keeps the canonical node map plus three
@@ -8,12 +9,14 @@ import type { EdgeKind, GraphEdge, GraphNode } from "../graph/index.js";
  * Adjacency is kept as plain arrays keyed by node id; kind filtering is a linear
  * scan of a single node's edges, which is cheap because real fan-out is small.
  */
-export class InMemoryStore {
+export class InMemoryStore implements Store {
   private readonly nodes = new Map<string, GraphNode>();
   private readonly edges: GraphEdge[] = [];
   private readonly byName = new Map<string, GraphNode[]>();
   private readonly outgoing = new Map<string, GraphEdge[]>();
   private readonly incoming = new Map<string, GraphEdge[]>();
+  private readonly files = new Map<string, FileMeta>();
+  private readonly meta = new Map<string, string>();
 
   addNode(node: GraphNode): void {
     this.nodes.set(node.id, node);
@@ -35,6 +38,22 @@ export class InMemoryStore {
   /** Nodes whose simple (unqualified) name matches exactly. */
   nodesByName(name: string): GraphNode[] {
     return this.byName.get(name) ?? [];
+  }
+
+  searchByName(query: string, limit = 50): GraphNode[] {
+    const needle = query.toLowerCase();
+    if (!needle) return [];
+    const hits: GraphNode[] = [];
+    for (const node of this.nodes.values()) {
+      if (node.name.toLowerCase().includes(needle)) hits.push(node);
+    }
+    // Exact matches first, then alphabetical by qualified name.
+    hits.sort((a, b) => {
+      const ax = a.name.toLowerCase() === needle ? 0 : 1;
+      const bx = b.name.toLowerCase() === needle ? 0 : 1;
+      return ax - bx || a.qualifiedName.localeCompare(b.qualifiedName);
+    });
+    return hits.slice(0, limit);
   }
 
   /** Edges leaving `id`, optionally filtered by kind. */
@@ -60,6 +79,26 @@ export class InMemoryStore {
 
   get edgeCount(): number {
     return this.edges.length;
+  }
+
+  recordFile(meta: FileMeta): void {
+    this.files.set(meta.path, meta);
+  }
+
+  getFile(path: string): FileMeta | undefined {
+    return this.files.get(path);
+  }
+
+  allFiles(): FileMeta[] {
+    return [...this.files.values()];
+  }
+
+  setMeta(key: string, value: string): void {
+    this.meta.set(key, value);
+  }
+
+  getMeta(key: string): string | undefined {
+    return this.meta.get(key);
   }
 }
 

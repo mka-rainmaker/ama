@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { GraphNode, NodeKind } from "../graph/index.js";
-import type { InMemoryStore } from "../store/memory.js";
+import type { Store } from "../store/types.js";
 
 export interface SearchOptions {
   /** Maximum number of hits to return (default 50). */
@@ -25,27 +25,18 @@ export interface Snippet {
  */
 export class QueryService {
   constructor(
-    private readonly store: InMemoryStore,
+    private readonly store: Store,
     /** Absolute repo root, used to read source for snippets. */
     private readonly root: string,
   ) {}
 
-  /** Symbols whose simple name contains `query` (case-insensitive). */
+  /**
+   * Symbols whose name matches `query`, answered by the store's name index
+   * (substring in-memory, FTS5 prefix in SQLite). Kind is filtered on top.
+   */
   searchSymbol(query: string, opts: SearchOptions = {}): GraphNode[] {
-    const needle = query.toLowerCase();
-    const limit = opts.limit ?? 50;
-    const hits: GraphNode[] = [];
-    for (const node of this.store.allNodes()) {
-      if (opts.kind && node.kind !== opts.kind) continue;
-      if (node.name.toLowerCase().includes(needle)) hits.push(node);
-    }
-    // Exact name matches first, then alphabetical — stable, useful ordering.
-    hits.sort((a, b) => {
-      const ax = a.name.toLowerCase() === needle ? 0 : 1;
-      const bx = b.name.toLowerCase() === needle ? 0 : 1;
-      return ax - bx || a.qualifiedName.localeCompare(b.qualifiedName);
-    });
-    return hits.slice(0, limit);
+    const hits = this.store.searchByName(query, opts.limit ?? 50);
+    return opts.kind ? hits.filter((n) => n.kind === opts.kind) : hits;
   }
 
   /** Symbols that call the referenced symbol. */
