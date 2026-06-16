@@ -266,6 +266,9 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
   if (ts.isEnumDeclaration(node)) {
     return { kind: "Enum", name: node.name.text };
   }
+  if (ts.isTypeAliasDeclaration(node)) {
+    return { kind: "TypeAlias", name: node.name.text };
+  }
   if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
     return { kind: "Method", name: node.name.text };
   }

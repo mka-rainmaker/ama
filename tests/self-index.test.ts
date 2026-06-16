@@ -49,4 +49,9 @@ describe("self-index regression gate", () => {
     const snip = session.getCodeSnippet("symbolId");
     expect(snip?.text).toContain("qualifiedName");
   });
+
+  it("indexes its own type aliases as nodes (e.g. EdgeKind)", () => {
+    const hit = session.searchSymbol("EdgeKind").some((n) => n.kind === "TypeAlias");
+    expect(hit, "expected the EdgeKind type alias to be a graph node").toBe(true);
+  });
 });

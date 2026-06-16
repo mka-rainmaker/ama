@@ -4,7 +4,15 @@
  * analyzers learn to resolve them.
  */
 
-export type NodeKind = "File" | "Module" | "Class" | "Interface" | "Enum" | "Function" | "Method";
+export type NodeKind =
+  | "File"
+  | "Module"
+  | "Class"
+  | "Interface"
+  | "Enum"
+  | "TypeAlias"
+  | "Function"
+  | "Method";
 
 export type EdgeKind = "Defines" | "Calls" | "Inherits" | "Implements" | "UsesType" | "Imports";
 
