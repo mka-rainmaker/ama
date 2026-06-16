@@ -7,6 +7,7 @@ import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
 import type { FileMeta, Store } from "../store/types.js";
+import { isIgnoredSegment } from "./ignore.js";
 
 export interface LanguageCoverage {
   language: string;
@@ -24,9 +25,6 @@ export interface IndexStats {
   /** Per-language coverage, each carrying the analyzer's tier. */
   languages: LanguageCoverage[];
 }
-
-/** Directories never worth walking. Dot-directories are skipped separately. */
-const IGNORED_DIRS = new Set(["node_modules", "dist", "build", "coverage"]);
 
 /**
  * Turns a directory into a graph: discover source files, hand each to the
@@ -127,13 +125,10 @@ function discoverFiles(root: string): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name.startsWith(".")) continue; // .git, .beads, dotfiles
+      if (isIgnoredSegment(entry.name)) continue; // dotfiles + ignored dirs
       const abs = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!IGNORED_DIRS.has(entry.name)) walk(abs);
-      } else if (entry.isFile()) {
-        out.push(path.relative(root, abs));
-      }
+      if (entry.isDirectory()) walk(abs);
+      else if (entry.isFile()) out.push(path.relative(root, abs));
     }
   };
   walk(root);
