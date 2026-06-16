@@ -3,7 +3,7 @@ import type { GraphNode } from "../graph/index.js";
 import { Debouncer } from "../indexer/debouncer.js";
 import { createDefaultIndexer } from "../indexer/indexer.js";
 import type { IndexStats, Indexer, LanguageCoverage, SyncResult } from "../indexer/indexer.js";
-import { FileWatcher } from "../indexer/watcher.js";
+import { FileWatcher, type WatchSource } from "../indexer/watcher.js";
 import { QueryService } from "../query/service.js";
 import type { GraphSchema, NodeView, SearchOptions, Snippet } from "../query/service.js";
 import type { Store } from "../store/types.js";
@@ -126,7 +126,7 @@ export class AmaSession {
    * collapsing bursts of edits with a debounce window. Idempotent; requires a
    * prior index. Pair with {@link unwatch} to stop.
    */
-  watch(options: { windowMs?: number } = {}): void {
+  watch(options: { windowMs?: number; source?: WatchSource } = {}): void {
     if (!this.store || !this.stats) {
       throw new Error("Nothing indexed yet — call index_repository first.");
     }
@@ -135,7 +135,9 @@ export class AmaSession {
       (rel) => this.reindexFile(rel).then(() => undefined),
       options.windowMs ?? DEFAULT_DEBOUNCE_MS,
     );
-    this.watcher = new FileWatcher(this.stats.root, (rel) => this.debouncer?.notify(rel));
+    this.watcher = new FileWatcher(this.stats.root, (rel) => this.debouncer?.notify(rel), {
+      source: options.source,
+    });
     this.watcher.start();
   }
 

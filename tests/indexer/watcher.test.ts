@@ -55,22 +55,46 @@ describe("FileWatcher", () => {
     await until(() => count("foo.ts") > modified);
   });
 
-  it("ignores node_modules, dotfiles, and files over the size cap", async () => {
+  it("drives change events from an injected source, no real fs.watch", () => {
+    let emit: ((rel: string) => void) | undefined;
+    const events: string[] = [];
+    const w = new FileWatcher(dir, (rel) => events.push(rel), {
+      source: (_root, onEvent) => {
+        emit = onEvent;
+        return { close() {} };
+      },
+    });
+    w.start();
+    // The file must exist for the stat check, but the *event* is synthetic —
+    // no OS latency, so the assertion is synchronous and flake-free.
+    fs.writeFileSync(path.join(dir, "synthetic.ts"), "export const a = 1;\n");
+    emit?.("synthetic.ts");
+    w.close();
+    expect(events).toEqual(["synthetic.ts"]);
+  });
+
+  it("ignores node_modules, dotfiles, and files over the size cap", () => {
     watcher?.close();
     seen = [];
-    watcher = new FileWatcher(dir, (rel) => seen.push(rel), { maxFileSizeBytes: 64 });
+    let emit: ((rel: string) => void) | undefined;
+    watcher = new FileWatcher(dir, (rel) => seen.push(rel), {
+      maxFileSizeBytes: 64,
+      source: (_root, onEvent) => {
+        emit = onEvent;
+        return { close() {} };
+      },
+    });
     watcher.start();
-    await delay(100);
 
-    fs.mkdirSync(path.join(dir, "node_modules"));
-    fs.writeFileSync(path.join(dir, "node_modules", "dep.ts"), "export const x = 1;\n");
-    fs.writeFileSync(path.join(dir, ".hidden.ts"), "export const y = 1;\n");
+    // Ignored paths are filtered by name before any stat; the size cap needs a
+    // real file to stat. Events are fired synchronously — no OS latency.
     fs.writeFileSync(path.join(dir, "big.ts"), "x".repeat(128)); // over the 64-byte cap
-    fs.writeFileSync(path.join(dir, "real.ts"), "export const z = 1;\n"); // sentinel
+    fs.writeFileSync(path.join(dir, "real.ts"), "export const z = 1;\n");
+    emit?.("node_modules/dep.ts");
+    emit?.(".hidden.ts");
+    emit?.("big.ts");
+    emit?.("real.ts");
 
-    await until(() => seen.includes("real.ts"));
-    expect(seen.some((r) => r.includes("node_modules"))).toBe(false);
-    expect(seen.some((r) => r.includes(".hidden"))).toBe(false);
-    expect(seen).not.toContain("big.ts");
+    expect(seen).toEqual(["real.ts"]);
   });
 });

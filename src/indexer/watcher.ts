@@ -4,9 +4,27 @@ import { isIgnoredPath } from "./ignore.js";
 
 const ONE_MB = 1024 * 1024;
 
+/**
+ * How a {@link FileWatcher} receives raw change events: given the root and a
+ * callback, wire up event delivery and return a handle to stop it. Injectable
+ * so tests can drive events synchronously instead of waiting on OS file-event
+ * latency (the source of flaky timing tests); the default is {@link fsWatchSource}.
+ */
+export type WatchSource = (root: string, onEvent: (rel: string) => void) => { close(): void };
+
+/** The production source: Node's native recursive `fs.watch`. */
+const fsWatchSource: WatchSource = (root, onEvent) => {
+  const watcher = fs.watch(root, { recursive: true }, (_event, filename) => {
+    if (filename !== null) onEvent(filename.toString());
+  });
+  return { close: () => watcher.close() };
+};
+
 export interface FileWatcherOptions {
   /** Files larger than this are not reported (default 1 MB). */
   maxFileSizeBytes?: number;
+  /** Event source (default: fs.watch). Tests inject a synchronous source. */
+  source?: WatchSource;
 }
 
 /**
@@ -22,8 +40,9 @@ export interface FileWatcherOptions {
  * available, in which case this watches only the top level.
  */
 export class FileWatcher {
-  private watcher?: fs.FSWatcher;
+  private subscription?: { close(): void };
   private readonly maxFileSizeBytes: number;
+  private readonly source: WatchSource;
 
   constructor(
     private readonly root: string,
@@ -31,19 +50,17 @@ export class FileWatcher {
     options: FileWatcherOptions = {},
   ) {
     this.maxFileSizeBytes = options.maxFileSizeBytes ?? ONE_MB;
+    this.source = options.source ?? fsWatchSource;
   }
 
   start(): void {
-    if (this.watcher) return;
-    this.watcher = fs.watch(this.root, { recursive: true }, (_event, filename) => {
-      if (filename === null) return;
-      this.handle(filename.toString());
-    });
+    if (this.subscription) return;
+    this.subscription = this.source(this.root, (rel) => this.handle(rel));
   }
 
   close(): void {
-    this.watcher?.close();
-    this.watcher = undefined;
+    this.subscription?.close();
+    this.subscription = undefined;
   }
 
   private handle(rel: string): void {

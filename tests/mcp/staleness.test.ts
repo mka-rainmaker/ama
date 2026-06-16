@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { WatchSource } from "../../src/indexer/watcher.js";
 import { createServer } from "../../src/mcp/server.js";
 import { AmaSession } from "../../src/mcp/session.js";
 
@@ -11,6 +12,22 @@ import { AmaSession } from "../../src/mcp/session.js";
 // debounce window, query results don't yet reflect them, so responses must
 // prepend a warning naming the pending files and suggesting a direct read.
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** A WatchSource whose change events the test fires by hand — no OS latency. */
+function manualSource(): { source: WatchSource; fire: (rel: string) => void } {
+  let emit: ((rel: string) => void) | undefined;
+  return {
+    source: (_root, onEvent) => {
+      emit = onEvent;
+      return {
+        close() {
+          emit = undefined;
+        },
+      };
+    },
+    fire: (rel) => emit?.(rel),
+  };
+}
 
 describe("staleness banner", () => {
   let dir: string;
@@ -42,8 +59,10 @@ describe("staleness banner", () => {
   });
 
   it("names the pending files and suggests a direct read during the window", async () => {
-    session.watch({ windowMs: 10000 }); // long window: edits stay pending
+    const { source, fire } = manualSource();
+    session.watch({ windowMs: 10000, source }); // long window: edits stay pending
     write("a.ts", "export function findme(): void {}\nexport function later(): void {}\n");
+    fire("a.ts");
     await until(() => session.indexStatus().pendingSync > 0);
 
     const banner = session.stalenessBanner();
@@ -53,8 +72,10 @@ describe("staleness banner", () => {
   });
 
   it("prepends the banner before the JSON on a query tool response", async () => {
-    session.watch({ windowMs: 10000 });
+    const { source, fire } = manualSource();
+    session.watch({ windowMs: 10000, source });
     write("a.ts", "export function findme(): void {}\nexport function later(): void {}\n");
+    fire("a.ts");
     await until(() => session.indexStatus().pendingSync > 0);
 
     const server = createServer(session);
