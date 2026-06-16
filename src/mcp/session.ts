@@ -112,6 +112,24 @@ export class AmaSession {
     return result;
   }
 
+  /**
+   * A warning to prepend to query results while edits sit in the auto-syncer's
+   * debounce window: those files' results are stale until the next re-index, so
+   * name them and steer the caller to read them directly. Undefined when there
+   * is nothing pending (the common case — no banner).
+   */
+  stalenessBanner(): string | undefined {
+    const pending = this.debouncer?.pendingPaths() ?? [];
+    if (pending.length === 0) return undefined;
+    const shown = pending.slice(0, 10);
+    const more = pending.length - shown.length;
+    const list = more > 0 ? `${shown.join(", ")}, and ${more} more` : shown.join(", ");
+    return (
+      `⚠️ Ama: ${pending.length} file(s) changed and are pending re-index — results below ` +
+      `may be stale for: ${list}. For their current contents, read these files directly.`
+    );
+  }
+
   indexStatus(): IndexStatus {
     if (!this.stats) return { indexed: false };
     const { root, nodeCount, edgeCount, fileCount, languages } = this.stats;

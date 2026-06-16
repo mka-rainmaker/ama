@@ -33,6 +33,11 @@ export class Debouncer {
     return this.pending.size;
   }
 
+  /** The actual queued paths — for naming stale files in a banner (ama-gd5.5). */
+  pendingPaths(): string[] {
+    return [...this.pending];
+  }
+
   /** Cancel the pending window. Does not flush — stopping accepts staleness. */
   stop(): void {
     if (this.timer !== undefined) {
