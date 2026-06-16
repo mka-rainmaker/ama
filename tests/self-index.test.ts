@@ -66,4 +66,11 @@ describe("self-index regression gate", () => {
     const hit = session.searchSymbol("fsWatchSource").some((n) => n.kind === "Function");
     expect(hit, "expected the fsWatchSource arrow const to be a Function node").toBe(true);
   });
+
+  it("resolves calls made through an interface to the interface method", () => {
+    // QueryService.findCallers calls this.store.edgesTo, where store is the
+    // Store *interface* — that call only resolves once interface methods are nodes.
+    const callees = session.findCallees("QueryService.findCallers").map((n) => n.name);
+    expect(callees).toContain("edgesTo");
+  });
 });

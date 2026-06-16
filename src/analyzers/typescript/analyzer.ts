@@ -8,9 +8,9 @@ import type { AnalysisResult, Analyzer } from "../types.js";
  * Deep TypeScript analyzer built on the TypeScript Compiler API.
  *
  * Two passes over each source file:
- *  1. Structural — emit nodes (File, Function, Class, Interface, Enum, Method)
- *     and `Defines` edges, recording each declaration's AST node so later
- *     references can be linked back to graph ids.
+ *  1. Structural — emit nodes (File, Function, Class, Interface, Enum, TypeAlias,
+ *     Method, Property — see `describe` for the full set) and `Defines` edges,
+ *     recording each declaration's AST node so later references link back to ids.
  *  2. Resolution — through the type checker, emit `Calls` edges (enclosing
  *     function/method → callee), `Inherits`/`Implements` edges (class → base
  *     class / interface), `UsesType` edges (enclosing symbol → each named type
@@ -279,7 +279,7 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
   if (ts.isTypeAliasDeclaration(node)) {
     return { kind: "TypeAlias", name: node.name.text };
   }
-  if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+  if ((ts.isMethodDeclaration(node) || ts.isMethodSignature(node)) && ts.isIdentifier(node.name)) {
     return { kind: "Method", name: node.name.text };
   }
   if (
