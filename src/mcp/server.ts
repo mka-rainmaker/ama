@@ -21,12 +21,29 @@ function reply(session: AmaSession, value: unknown) {
 }
 
 /**
+ * Wrap a read handler so it first runs a connect-time catch-up (reconciling any
+ * edits made while disconnected) and then replies with a staleness banner if
+ * the auto-syncer is mid-window. Keeps that policy in one place across the
+ * query tools.
+ */
+function queryTool<A>(session: AmaSession, run: (args: A) => unknown) {
+  return async (args: A) => {
+    await session.catchUpIfNeeded();
+    return reply(session, run(args));
+  };
+}
+
+/**
  * Build the MCP server exposing Ama's tools over one {@link AmaSession}. Pure
  * construction — no transport — so it can be driven by an in-memory client in
  * tests or by stdio in production.
  */
 export function createServer(session: AmaSession = new AmaSession()): McpServer {
   const server = new McpServer({ name: "ama", version: "0.0.1" });
+
+  // Fires on each connection's initialize handshake — i.e. on reconnect. Arm a
+  // catch-up so the first query reconciles edits made while disconnected.
+  server.server.oninitialized = () => session.markForCatchUp();
 
   server.registerTool(
     "index_repository",
@@ -47,7 +64,10 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         "and how many edits are pending auto-sync.",
       inputSchema: {},
     },
-    async () => json(session.indexStatus()),
+    async () => {
+      await session.catchUpIfNeeded();
+      return json(session.indexStatus());
+    },
   );
 
   server.registerTool(
@@ -70,7 +90,9 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         limit: z.number().int().positive().optional().describe("Max results."),
       },
     },
-    async ({ query, limit }) => reply(session, session.searchSymbol(query, { limit })),
+    queryTool(session, ({ query, limit }: { query: string; limit?: number }) =>
+      session.searchSymbol(query, { limit }),
+    ),
   );
 
   server.registerTool(
@@ -81,7 +103,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
       },
     },
-    async ({ symbol }) => reply(session, session.findCallers(symbol)),
+    queryTool(session, ({ symbol }: { symbol: string }) => session.findCallers(symbol)),
   );
 
   server.registerTool(
@@ -92,7 +114,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
       },
     },
-    async ({ symbol }) => reply(session, session.findCallees(symbol)),
+    queryTool(session, ({ symbol }: { symbol: string }) => session.findCallees(symbol)),
   );
 
   server.registerTool(
@@ -103,7 +125,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Interface id, simple name, or dotted qualified name."),
       },
     },
-    async ({ symbol }) => reply(session, session.findImplementations(symbol)),
+    queryTool(session, ({ symbol }: { symbol: string }) => session.findImplementations(symbol)),
   );
 
   server.registerTool(
@@ -114,7 +136,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Class id, simple name, or dotted qualified name."),
       },
     },
-    async ({ symbol }) => reply(session, session.findInterfaces(symbol)),
+    queryTool(session, ({ symbol }: { symbol: string }) => session.findInterfaces(symbol)),
   );
 
   server.registerTool(
@@ -125,7 +147,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
       },
     },
-    async ({ symbol }) => reply(session, session.findImporters(symbol)),
+    queryTool(session, ({ symbol }: { symbol: string }) => session.findImporters(symbol)),
   );
 
   server.registerTool(
@@ -136,7 +158,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         file: z.string().describe("File node id (repo-relative path) or basename."),
       },
     },
-    async ({ file }) => reply(session, session.findImports(file)),
+    queryTool(session, ({ file }: { file: string }) => session.findImports(file)),
   );
 
   server.registerTool(
@@ -147,7 +169,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
       },
     },
-    async ({ symbol }) => reply(session, session.getCodeSnippet(symbol)),
+    queryTool(session, ({ symbol }: { symbol: string }) => session.getCodeSnippet(symbol)),
   );
 
   return server;

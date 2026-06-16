@@ -36,6 +36,7 @@ export class AmaSession {
   private stats?: IndexStats;
   private watcher?: FileWatcher;
   private debouncer?: Debouncer;
+  private needsCatchUp = false;
 
   constructor(private readonly indexer: Indexer = createDefaultIndexer()) {}
 
@@ -45,7 +46,28 @@ export class AmaSession {
     this.store = store;
     this.query = new QueryService(store, abs);
     this.stats = stats;
+    this.needsCatchUp = false; // a fresh index is already current
     return stats;
+  }
+
+  /**
+   * Arm a one-shot catch-up — typically on MCP reconnect, since files may have
+   * changed while disconnected. A no-op until something is indexed.
+   */
+  markForCatchUp(): void {
+    if (this.stats) this.needsCatchUp = true;
+  }
+
+  /**
+   * If armed, reconcile on-disk changes before serving (a size/mtime + hash
+   * diff via {@link sync}), then disarm. Returns what it reconciled, or
+   * undefined when nothing was armed. Called before each query so the first one
+   * after a reconnect sees a current graph.
+   */
+  async catchUpIfNeeded(): Promise<SyncResult | undefined> {
+    if (!this.needsCatchUp) return undefined;
+    this.needsCatchUp = false;
+    return this.sync();
   }
 
   /**
