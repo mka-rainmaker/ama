@@ -13,10 +13,11 @@ import type { AnalysisResult, Analyzer } from "../types.js";
  *     references can be linked back to graph ids.
  *  2. Resolution — through the type checker, emit `Calls` edges (enclosing
  *     function/method → callee), `Inherits`/`Implements` edges (class → base
- *     class / interface), and `Imports` edges (file → each symbol it imports or
- *     re-exports). References to symbols outside the analyzed set (library code)
- *     resolve to no node and are skipped, so the graph only asserts edges it can
- *     actually back.
+ *     class / interface), `UsesType` edges (enclosing symbol → each named type
+ *     used in a parameter, return, or property annotation), and `Imports` edges
+ *     (file → each symbol it imports or re-exports). References to symbols
+ *     outside the analyzed set (library code) resolve to no node and are
+ *     skipped, so the graph only asserts edges it can actually back.
  */
 export class TypeScriptAnalyzer implements Analyzer {
   readonly language = "typescript";
@@ -52,6 +53,7 @@ export class TypeScriptAnalyzer implements Analyzer {
       if (sf) {
         this.collectCalls(sf, undefined, declToId, checker, edges);
         this.collectHeritage(sf, declToId, checker, edges);
+        this.collectTypeUsages(sf, undefined, declToId, checker, edges);
         this.collectImports(sf, fileId(rel), declToId, checker, edges);
       }
     }
@@ -203,6 +205,47 @@ export class TypeScriptAnalyzer implements Analyzer {
       }
     }
   }
+
+  /**
+   * Emit a `UsesType` edge for each named type referenced in a parameter type,
+   * a function/method return type, or a property type, attributed to the nearest
+   * enclosing emitted symbol — the function or method for its params and return,
+   * and (until properties become nodes) the class or interface for its members'
+   * types. Composite annotations are walked, so `Widget[]` or `Map<K, Widget>`
+   * still link to `Widget`. Types outside the analyzed set (`number`, library
+   * types) resolve to no node and are skipped.
+   */
+  private collectTypeUsages(
+    node: ts.Node,
+    enclosingId: string | undefined,
+    declToId: Map<ts.Node, string>,
+    checker: ts.TypeChecker,
+    edges: GraphEdge[],
+  ): void {
+    const annotations: ts.TypeNode[] = [];
+    if (ts.isParameter(node) || ts.isPropertyDeclaration(node) || ts.isPropertySignature(node)) {
+      if (node.type) annotations.push(node.type);
+    } else if (
+      ts.isFunctionDeclaration(node) ||
+      ts.isMethodDeclaration(node) ||
+      ts.isMethodSignature(node)
+    ) {
+      if (node.type) annotations.push(node.type); // return type
+    }
+    if (enclosingId) {
+      for (const annotation of annotations) {
+        for (const ref of typeReferencesIn(annotation)) {
+          const to = resolveTypeRef(ref.typeName, checker, declToId);
+          // A type used inside its own declaration's signature is noise, not a usage.
+          if (to && to !== enclosingId) edges.push({ from: enclosingId, to, kind: "UsesType" });
+        }
+      }
+    }
+    node.forEachChild((child) => {
+      const childId = declToId.get(child);
+      this.collectTypeUsages(child, childId ?? enclosingId, declToId, checker, edges);
+    });
+  }
 }
 
 /** Map a declaration node to a (kind, name) pair, or undefined if it isn't one. */
@@ -273,6 +316,34 @@ function resolveImport(
   }
   const decl = symbol.valueDeclaration ?? symbol.declarations?.[0];
   return decl ? declToId.get(decl) : undefined;
+}
+
+/** Resolve a type reference's name (e.g. the `Foo` in `x: Foo`) to a node id. */
+function resolveTypeRef(
+  name: ts.EntityName,
+  checker: ts.TypeChecker,
+  declToId: Map<ts.Node, string>,
+): string | undefined {
+  let symbol = checker.getSymbolAtLocation(name);
+  if (!symbol) return undefined;
+  if (symbol.flags & ts.SymbolFlags.Alias) {
+    symbol = checker.getAliasedSymbol(symbol);
+  }
+  // Types are usually type-only (no valueDeclaration), so prefer declarations.
+  const decl = symbol.declarations?.[0] ?? symbol.valueDeclaration;
+  return decl ? declToId.get(decl) : undefined;
+}
+
+/** Every type reference within a type annotation, including those nested in
+ * arrays, unions, and generic type arguments (so `Map<K, Foo>` yields `Foo`). */
+function typeReferencesIn(node: ts.TypeNode): ts.TypeReferenceNode[] {
+  const refs: ts.TypeReferenceNode[] = [];
+  const walk = (n: ts.Node): void => {
+    if (ts.isTypeReferenceNode(n)) refs.push(n);
+    n.forEachChild(walk);
+  };
+  walk(node);
+  return refs;
 }
 
 function rangeOf(node: ts.Node, sf: ts.SourceFile): SourceRange {
