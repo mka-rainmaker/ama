@@ -167,6 +167,16 @@ describe("MCP query tools", () => {
     // Service.run is reached only transitively (run -> compute -> helper).
     expect(names).toEqual(["Service.compute", "Service.run", "main"]);
   });
+
+  it("get_graph_schema reports node and edge kind counts", async () => {
+    const client = await indexedClient();
+    const schema = JSON.parse(
+      firstText(await client.callTool({ name: "get_graph_schema", arguments: {} })),
+    );
+    expect(schema.nodes.Function).toBe(2);
+    expect(schema.nodes.Class).toBe(1);
+    expect(schema.edges.Calls).toBe(3);
+  });
 });
 
 describe("MCP tool-call logging", () => {

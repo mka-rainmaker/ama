@@ -90,6 +90,16 @@ describe("QueryService", () => {
     expect(q.impactAnalysis("main")).toEqual([]);
     expect(q.impactAnalysis("doesNotExist")).toEqual([]);
   });
+
+  it("summarizes the graph schema: node and edge kinds with counts", () => {
+    const schema = q.getGraphSchema();
+    expect(schema.nodes.Function).toBe(2); // helper, main
+    expect(schema.nodes.Method).toBe(2); // Service.run, Service.compute
+    expect(schema.nodes.Class).toBe(1); // Service
+    // main->helper, Service.run->Service.compute, Service.compute->helper
+    expect(schema.edges.Calls).toBe(3);
+    expect(schema.edges.Defines).toBeGreaterThan(0);
+  });
 });
 
 const implRoot = path.resolve(here, "../fixtures/ts-implements");

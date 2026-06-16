@@ -32,6 +32,14 @@ export interface NodeView {
   dependents: GraphNode[];
 }
 
+/** A census of the graph's node and edge kinds — what the index actually contains. */
+export interface GraphSchema {
+  /** Count of nodes per kind (e.g. Class, Function, Method, Interface, File). */
+  nodes: Record<string, number>;
+  /** Count of edges per kind (e.g. Defines, Calls, Imports, Implements, UsesType). */
+  edges: Record<string, number>;
+}
+
 /**
  * Read-side of the graph: the four MVP questions an agent asks, answered from
  * the store. A "symbol reference" is either an exact node id (e.g.
@@ -202,6 +210,22 @@ export class QueryService {
       frontier = next;
     }
     return [...affected.values()];
+  }
+
+  /**
+   * A census of the graph: how many nodes of each kind and edges of each kind
+   * the index holds. Each edge is counted once, at its source node.
+   */
+  getGraphSchema(): GraphSchema {
+    const nodes: Record<string, number> = {};
+    const edges: Record<string, number> = {};
+    for (const node of this.store.allNodes()) {
+      nodes[node.kind] = (nodes[node.kind] ?? 0) + 1;
+      for (const edge of this.store.edgesFrom(node.id)) {
+        edges[edge.kind] = (edges[edge.kind] ?? 0) + 1;
+      }
+    }
+    return { nodes, edges };
   }
 
   /** Verbatim source for a symbol, or undefined if it has no known location. */

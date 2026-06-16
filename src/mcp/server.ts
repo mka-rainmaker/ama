@@ -322,6 +322,19 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
+  server.registerTool(
+    "get_graph_schema",
+    {
+      description:
+        "A census of the index: how many nodes of each kind and edges of each kind it holds.",
+      inputSchema: {},
+    },
+    tap(
+      "get_graph_schema",
+      queryTool(session, () => session.getGraphSchema()),
+    ),
+  );
+
   return server;
 }
 
