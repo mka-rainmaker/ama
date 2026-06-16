@@ -69,4 +69,23 @@ describe("MCP over HTTP", () => {
     expect(hits.map((n: { name: string }) => n.name)).toContain("helper");
     await c2.close();
   });
+
+  // A `tsx watch` restart wipes the in-process session map, so the client's old
+  // Mcp-Session-Id no longer exists. The MCP spec says a server MUST answer such
+  // a request with 404, which is the signal that tells the client to drop the
+  // dead session and re-initialize — the basis for Claude Code auto-reconnecting
+  // after the dev server bounces. (A 400 leaves the client re-sending the stale
+  // id, so reconnection never converges.)
+  it("answers an unknown session id with 404 so the client re-initializes", async () => {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        "mcp-session-id": "wiped-by-a-restart",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    });
+    expect(res.status).toBe(404);
+  });
 });

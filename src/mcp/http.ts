@@ -43,7 +43,16 @@ export function createHttpServer(session: AmaSession = new AmaSession()): http.S
         let transport = sessionId ? transports.get(sessionId) : undefined;
         if (!transport) {
           if (!isInitializeRequest(body)) {
-            res.writeHead(400).end(JSON.stringify({ error: "No active MCP session" }));
+            // The session id is unknown (e.g. wiped by a `tsx watch` restart).
+            // Per the Streamable HTTP spec a 404 tells the client to drop the
+            // dead session and re-initialize — the hook for auto-reconnect.
+            res.writeHead(404, { "content-type": "application/json" }).end(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                error: { code: -32001, message: "Session not found — reinitialize." },
+                id: null,
+              }),
+            );
             return;
           }
           transport = newSession(session, transports);
@@ -55,7 +64,8 @@ export function createHttpServer(session: AmaSession = new AmaSession()): http.S
       if (req.method === "GET" || req.method === "DELETE") {
         const transport = sessionId ? transports.get(sessionId) : undefined;
         if (!transport) {
-          res.writeHead(400).end();
+          // 404 (not 400) so a client whose session was wiped re-initializes.
+          res.writeHead(404).end();
           return;
         }
         await transport.handleRequest(req, res);
