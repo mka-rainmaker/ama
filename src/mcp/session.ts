@@ -7,12 +7,13 @@ import { FileWatcher } from "../indexer/watcher.js";
 import { QueryService } from "../query/service.js";
 import type { SearchOptions, Snippet } from "../query/service.js";
 import type { Store } from "../store/types.js";
+import { type ServerStamp, serverStamp } from "./build-info.js";
 
 /** Default quiet window before a burst of edits triggers a re-index. */
 const DEFAULT_DEBOUNCE_MS = 200;
 
 export type IndexStatus =
-  | { indexed: false }
+  | { indexed: false; server: ServerStamp }
   | {
       indexed: true;
       root: string;
@@ -22,6 +23,8 @@ export type IndexStatus =
       languages: LanguageCoverage[];
       /** Edits the auto-syncer has queued but not yet re-indexed (0 if not watching). */
       pendingSync: number;
+      /** Running-server build stamp, for detecting a stale server (see build-info). */
+      server: ServerStamp;
     };
 
 /**
@@ -182,7 +185,7 @@ export class AmaSession {
   }
 
   indexStatus(): IndexStatus {
-    if (!this.stats) return { indexed: false };
+    if (!this.stats) return { indexed: false, server: serverStamp };
     const { root, nodeCount, edgeCount, fileCount, languages } = this.stats;
     return {
       indexed: true,
@@ -192,6 +195,7 @@ export class AmaSession {
       fileCount,
       languages,
       pendingSync: this.debouncer?.pendingCount ?? 0,
+      server: serverStamp,
     };
   }
 

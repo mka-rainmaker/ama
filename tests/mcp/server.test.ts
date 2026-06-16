@@ -47,6 +47,9 @@ describe("MCP server", () => {
       language: "typescript",
       tier: "deep",
     });
+    // The build stamp travels over the protocol so a client can check freshness.
+    expect(typeof status.server.version).toBe("string");
+    expect(status.server).toHaveProperty("revision");
   });
 
   it("sync_index reconciles a file changed on disk after indexing", async () => {
