@@ -43,4 +43,11 @@ describe("TypeScriptAnalyzer UsesType resolution", () => {
   it("emits no UsesType edge for a purely primitive signature", () => {
     expect(usesType().some((e) => e.from === id("plain"))).toBe(false);
   });
+
+  it("a File node's range spans the whole file, including the leading comment", () => {
+    // usetype.ts opens with a comment block; the File node must start at line 1
+    // (not the first token) so get_code_snippet returns the full file.
+    const file = result.nodes.find((n) => n.kind === "File");
+    expect(file?.range?.startLine).toBe(1);
+  });
 });

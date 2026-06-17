@@ -128,7 +128,9 @@ export class TypeScriptAnalyzer implements Analyzer {
       file: rel,
       qualifiedName: "",
       tier: "deep",
-      range: rangeOf(sf, sf),
+      // The whole file, line 1 to EOF — `rangeOf` would skip leading comments
+      // (getStart trims trivia), truncating a File snippet's header.
+      range: { ...rangeOf(sf, sf), startLine: 1 },
     });
     // Register the file itself so module references (namespace imports,
     // star re-exports) — which alias to the SourceFile — resolve to this node.
