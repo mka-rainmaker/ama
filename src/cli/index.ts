@@ -13,8 +13,15 @@ import { syncCommand } from "./commands/sync.js";
 export interface CliContext {
   /** True when `--json` was passed; commands should emit machine-readable JSON. */
   readonly json: boolean;
-  /** Write a line to stdout. */
+  /** Write a result line to stdout. */
   write(line: string): void;
+  /**
+   * Write a diagnostic (usage, "no index", not-found) to stderr, keeping stdout
+   * reserved for results so a `--json` consumer's stream stays clean. Optional:
+   * `run()` always supplies it, but a direct `command.run(args, { write })` unit
+   * call may omit it — use {@link emitError} so diagnostics fall back to stdout.
+   */
+  error?(line: string): void;
 }
 
 /** A subcommand of the `ama` CLI. */
@@ -63,7 +70,7 @@ export async function run(
     err(usage(commands));
     return 1;
   }
-  return command.run(positional.slice(1), { json, write: out });
+  return command.run(positional.slice(1), { json, write: out, error: err });
 }
 
 /** Registered commands. More domain commands (search/sync/…) are added here

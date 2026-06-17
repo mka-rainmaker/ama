@@ -1,4 +1,5 @@
 import type { FileMeta } from "../../store/types.js";
+import { emitError } from "../emit.js";
 import type { CliCommand } from "../index.js";
 import { withQuery } from "../query-runner.js";
 
@@ -21,7 +22,7 @@ export const filesCommand: CliCommand = {
     const filter = args[0];
     const all = await withQuery(process.env.AMA_ROOT ?? ".", (query) => query.files());
     if (all === undefined) {
-      ctx.write("No index found. Run `ama index` first.");
+      emitError(ctx, "No index found. Run `ama index` first.");
       return 1;
     }
     const files = filter

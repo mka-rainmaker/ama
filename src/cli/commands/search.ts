@@ -4,6 +4,7 @@ import { type GraphNode, NODE_KINDS, type NodeKind } from "../../graph/types.js"
 import { createDefaultIndexer } from "../../indexer/indexer.js";
 import { QueryService } from "../../query/service.js";
 import { SqliteStore } from "../../store/sqlite.js";
+import { emitError } from "../emit.js";
 import type { CliCommand } from "../index.js";
 import { dbPathFor } from "../paths.js";
 
@@ -95,13 +96,13 @@ export const searchCommand: CliCommand = {
   async run(args, ctx) {
     const parsed = parseSearchArgs(args);
     if (parsed.error !== undefined || parsed.query === undefined) {
-      ctx.write(parsed.error ? `${parsed.error}\n${USAGE}` : USAGE);
+      emitError(ctx, parsed.error ? `${parsed.error}\n${USAGE}` : USAGE);
       return 1;
     }
     const root = process.env.AMA_ROOT ?? ".";
     const hits = await runSearch(root, parsed);
     if (hits === undefined) {
-      ctx.write("No index found. Run `ama index` first.");
+      emitError(ctx, "No index found. Run `ama index` first.");
       return 1;
     }
     ctx.write(renderSearch(parsed.query, hits, ctx.json));

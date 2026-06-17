@@ -128,6 +128,19 @@ describe("search command", () => {
     expect(code).toBe(1);
     expect(out.text().toLowerCase()).toContain("usage");
   });
+
+  it("routes the usage error to stderr when an error sink is provided", async () => {
+    const out = capture();
+    const err = capture();
+    const code = await searchCommand.run([], {
+      json: false,
+      write: out.write,
+      error: err.write,
+    });
+    expect(code).toBe(1);
+    expect(err.text().toLowerCase()).toContain("usage");
+    expect(out.text()).toBe("");
+  });
 });
 
 describe("CLI command registration", () => {

@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { type SyncResult, createDefaultIndexer } from "../../indexer/indexer.js";
 import { SqliteStore } from "../../store/sqlite.js";
+import { emitError } from "../emit.js";
 import type { CliCommand } from "../index.js";
 import { dbPathFor } from "../paths.js";
 
@@ -44,7 +45,7 @@ export const syncCommand: CliCommand = {
     const root = args[0] ?? process.env.AMA_ROOT ?? ".";
     const result = await runSync(root);
     if (result === undefined) {
-      ctx.write("No index found. Run `ama index` first.");
+      emitError(ctx, "No index found. Run `ama index` first.");
       return 1;
     }
     ctx.write(renderSync(result, ctx.json));

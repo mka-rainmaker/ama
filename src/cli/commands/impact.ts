@@ -1,4 +1,5 @@
 import type { GraphNode } from "../../graph/types.js";
+import { emitError } from "../emit.js";
 import type { CliCommand } from "../index.js";
 import { withQuery } from "../query-runner.js";
 import { nodeLine, renderNodeList } from "./query.js";
@@ -54,14 +55,14 @@ export const impactCommand: CliCommand = {
     const ref = parsed.ref;
     if (parsed.error !== undefined || ref === undefined) {
       const usage = "Usage: ama impact <symbol> [--depth <N>]";
-      ctx.write(parsed.error ? `${parsed.error}\n${usage}` : usage);
+      emitError(ctx, parsed.error ? `${parsed.error}\n${usage}` : usage);
       return 1;
     }
     const nodes = await withQuery(process.env.AMA_ROOT ?? ".", (query) =>
       query.impactAnalysis(ref, parsed.depth),
     );
     if (nodes === undefined) {
-      ctx.write(NO_INDEX);
+      emitError(ctx, NO_INDEX);
       return 1;
     }
     ctx.write(renderNodeList("impacted symbols", ref, nodes, ctx.json));
@@ -74,12 +75,12 @@ export const affectedCommand: CliCommand = {
   summary: "Show files impacted by changes to the given files",
   async run(args, ctx) {
     if (args.length === 0) {
-      ctx.write("Usage: ama affected <file> [file...]");
+      emitError(ctx, "Usage: ama affected <file> [file...]");
       return 1;
     }
     const nodes = await withQuery(process.env.AMA_ROOT ?? ".", (query) => query.affected(args));
     if (nodes === undefined) {
-      ctx.write(NO_INDEX);
+      emitError(ctx, NO_INDEX);
       return 1;
     }
     ctx.write(renderAffected(args, nodes, ctx.json));

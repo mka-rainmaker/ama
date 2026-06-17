@@ -63,4 +63,23 @@ describe("CLI framework", () => {
     expect(code).toBe(0);
     expect(seen).toEqual({ json: true, args: ["alice"] });
   });
+
+  it("routes ctx.error to the err stream, leaving stdout clean", async () => {
+    const out = capture();
+    const err = capture();
+    const cmds: CliCommand[] = [
+      {
+        name: "boom",
+        summary: "diagnose",
+        run: (_args, ctx) => {
+          ctx.error?.("a diagnostic");
+          return 1;
+        },
+      },
+    ];
+    const code = await run(["boom"], cmds, out.write, err.write);
+    expect(code).toBe(1);
+    expect(err.lines.join("\n")).toContain("a diagnostic");
+    expect(out.lines.join("\n")).not.toContain("a diagnostic");
+  });
 });

@@ -1,5 +1,6 @@
 import type { GraphNode } from "../../graph/types.js";
 import type { Exploration, NodeView, QueryService } from "../../query/service.js";
+import { emitError } from "../emit.js";
 import type { CliCommand } from "../index.js";
 import { withQuery } from "../query-runner.js";
 
@@ -63,12 +64,12 @@ function refQueryCommand(
     async run(args, ctx) {
       const ref = args[0];
       if (ref === undefined) {
-        ctx.write(`Usage: ama ${name} <symbol>`);
+        emitError(ctx, `Usage: ama ${name} <symbol>`);
         return 1;
       }
       const nodes = await withQuery(process.env.AMA_ROOT ?? ".", (query) => pick(query, ref));
       if (nodes === undefined) {
-        ctx.write(NO_INDEX);
+        emitError(ctx, NO_INDEX);
         return 1;
       }
       ctx.write(renderNodeList(name, ref, nodes, ctx.json));
@@ -91,7 +92,7 @@ export const nodeCommand: CliCommand = {
   async run(args, ctx) {
     const ref = args[0];
     if (ref === undefined) {
-      ctx.write("Usage: ama node <symbol>");
+      emitError(ctx, "Usage: ama node <symbol>");
       return 1;
     }
     // Wrap so the outer undefined ("no index") stays distinct from node()'s own
@@ -100,11 +101,11 @@ export const nodeCommand: CliCommand = {
       view: query.node(ref),
     }));
     if (result === undefined) {
-      ctx.write(NO_INDEX);
+      emitError(ctx, NO_INDEX);
       return 1;
     }
     if (result.view === undefined) {
-      ctx.write(`Symbol not found: ${ref}`);
+      emitError(ctx, `Symbol not found: ${ref}`);
       return 1;
     }
     ctx.write(renderNodeView(result.view, ctx.json));
@@ -118,14 +119,14 @@ export const exploreCommand: CliCommand = {
   async run(args, ctx) {
     const question = args.join(" ").trim();
     if (question === "") {
-      ctx.write("Usage: ama explore <question>");
+      emitError(ctx, "Usage: ama explore <question>");
       return 1;
     }
     const exploration = await withQuery(process.env.AMA_ROOT ?? ".", (query) =>
       query.explore(question),
     );
     if (exploration === undefined) {
-      ctx.write(NO_INDEX);
+      emitError(ctx, NO_INDEX);
       return 1;
     }
     ctx.write(renderExploration(exploration, ctx.json));
