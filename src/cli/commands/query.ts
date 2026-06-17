@@ -86,6 +86,40 @@ export const calleesCommand = refQueryCommand("callees", "List what a symbol cal
   q.findCallees(ref),
 );
 
+export const implementationsCommand = refQueryCommand(
+  "implementations",
+  "List classes that implement an interface",
+  (q, ref) => q.findImplementations(ref),
+);
+
+export const interfacesCommand = refQueryCommand(
+  "interfaces",
+  "List interfaces a class implements",
+  (q, ref) => q.findInterfaces(ref),
+);
+
+export const importersCommand = refQueryCommand(
+  "importers",
+  "List files that import a file or symbol",
+  (q, ref) => q.findImporters(ref),
+);
+
+export const importsCommand = refQueryCommand("imports", "List what a file imports", (q, ref) =>
+  q.findImports(ref),
+);
+
+export const typeUsersCommand = refQueryCommand(
+  "type-users",
+  "List symbols that use a type",
+  (q, ref) => q.findTypeUsers(ref),
+);
+
+export const typesUsedCommand = refQueryCommand(
+  "types-used",
+  "List the types a symbol uses",
+  (q, ref) => q.findTypesUsed(ref),
+);
+
 export const nodeCommand: CliCommand = {
   name: "node",
   summary: "Show a symbol with its callers, callees, and dependents",

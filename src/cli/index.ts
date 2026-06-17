@@ -4,7 +4,18 @@ import { serverStamp } from "../mcp/build-info.js";
 import { filesCommand } from "./commands/files.js";
 import { affectedCommand, impactCommand } from "./commands/impact.js";
 import { indexCommand, initCommand, uninitCommand } from "./commands/lifecycle.js";
-import { calleesCommand, callersCommand, exploreCommand, nodeCommand } from "./commands/query.js";
+import {
+  calleesCommand,
+  callersCommand,
+  exploreCommand,
+  implementationsCommand,
+  importersCommand,
+  importsCommand,
+  interfacesCommand,
+  nodeCommand,
+  typeUsersCommand,
+  typesUsedCommand,
+} from "./commands/query.js";
 import { searchCommand } from "./commands/search.js";
 import { statusCommand } from "./commands/status.js";
 import { syncCommand } from "./commands/sync.js";
@@ -82,12 +93,18 @@ export const COMMANDS: readonly CliCommand[] = [
   exploreCommand,
   filesCommand,
   impactCommand,
+  implementationsCommand,
+  importersCommand,
+  importsCommand,
   indexCommand,
   initCommand,
+  interfacesCommand,
   nodeCommand,
   searchCommand,
   statusCommand,
   syncCommand,
+  typeUsersCommand,
+  typesUsedCommand,
   uninitCommand,
 ];
 
