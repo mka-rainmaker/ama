@@ -1,6 +1,8 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { BaselineAnalyzer } from "../analyzers/baseline/analyzer.js";
+import { pythonSpec } from "../analyzers/baseline/python.js";
 import { AnalyzerRegistry } from "../analyzers/registry.js";
 import type { Analyzer } from "../analyzers/types.js";
 import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
@@ -195,6 +197,7 @@ export class Indexer {
 export function createDefaultIndexer(createStore?: () => Store): Indexer {
   const registry = new AnalyzerRegistry();
   registry.register(new TypeScriptAnalyzer());
+  registry.register(new BaselineAnalyzer(pythonSpec));
   return new Indexer(registry, createStore);
 }
 
