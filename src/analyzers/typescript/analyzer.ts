@@ -48,12 +48,22 @@ export class TypeScriptAnalyzer implements Analyzer {
     }
 
     const checker = program.getTypeChecker();
+
+    // Mount pre-pass (all files first): map each router declaration to the path
+    // prefix it's mounted at (app.use("/api", router)), so route detection can
+    // prepend it. Cross-file — the checker follows imported router symbols.
+    const mountPrefixes = new Map<ts.Node, string>();
+    for (const abs of relByAbs.keys()) {
+      const sf = program.getSourceFile(abs);
+      if (sf) this.collectMounts(sf, checker, mountPrefixes);
+    }
+
     for (const [abs, rel] of relByAbs) {
       const sf = program.getSourceFile(abs);
       if (sf) {
         // Routes first: it registers inline-handler arrows in declToId, so the
         // following collectCalls attributes each handler's body to its node.
-        this.collectRoutes(sf, rel, declToId, checker, nodes, edges, root);
+        this.collectRoutes(sf, rel, declToId, checker, nodes, edges, root, mountPrefixes);
         this.collectCalls(sf, undefined, declToId, checker, edges, root);
         this.collectHeritage(sf, declToId, checker, edges, root);
         this.collectTypeUsages(sf, undefined, declToId, checker, edges, root);
@@ -392,6 +402,7 @@ export class TypeScriptAnalyzer implements Analyzer {
     nodes: GraphNode[],
     edges: GraphEdge[],
     root: string,
+    mountPrefixes: Map<ts.Node, string>,
   ): void {
     const visit = (n: ts.Node): void => {
       if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression)) {
@@ -411,7 +422,10 @@ export class TypeScriptAnalyzer implements Analyzer {
           first.text.startsWith("/") &&
           handlers.length > 0
         ) {
-          const name = `${method.toUpperCase()} ${first.text}`;
+          // If this route's receiver is a router mounted under a prefix, prepend it.
+          const receiverDecl = valueDeclOf(n.expression.expression, checker);
+          const prefix = receiverDecl ? mountPrefixes.get(receiverDecl) : undefined;
+          const name = `${method.toUpperCase()} ${joinRoutePath(prefix, first.text)}`;
           const routeId = symbolId({ file: rel, qualifiedName: name });
           nodes.push({
             id: routeId,
@@ -485,6 +499,38 @@ export class TypeScriptAnalyzer implements Analyzer {
     };
     visit(sf);
   }
+
+  /**
+   * Find Express mounts — `app.use("/prefix", router, …)` — and map each mounted
+   * argument's declaration to the prefix. Runs over every file before route
+   * detection so a router defined in one file and mounted in another composes.
+   */
+  private collectMounts(
+    sf: ts.SourceFile,
+    checker: ts.TypeChecker,
+    mountPrefixes: Map<ts.Node, string>,
+  ): void {
+    const visit = (n: ts.Node): void => {
+      if (
+        ts.isCallExpression(n) &&
+        ts.isPropertyAccessExpression(n.expression) &&
+        n.expression.name.text === "use"
+      ) {
+        const [first, ...rest] = n.arguments;
+        if (first !== undefined && ts.isStringLiteralLike(first) && first.text.startsWith("/")) {
+          for (const arg of rest) {
+            if (ts.isIdentifier(arg) || ts.isPropertyAccessExpression(arg)) {
+              const decl = valueDeclOf(arg, checker);
+              // Harmless if `arg` is middleware, not a router: it just won't have routes.
+              if (decl) mountPrefixes.set(decl, first.text);
+            }
+          }
+        }
+      }
+      n.forEachChild(visit);
+    };
+    visit(sf);
+  }
 }
 
 /** HTTP-verb methods that mark an Express/Nest-style route registration call. */
@@ -505,6 +551,14 @@ function decoratorInfo(dec: ts.Decorator): { name: string; arg: string | undefin
     if (first && ts.isStringLiteralLike(first)) arg = first.text;
   }
   return { name, arg };
+}
+
+/** The value declaration an expression resolves to (alias-followed), or undefined. */
+function valueDeclOf(expr: ts.Expression, checker: ts.TypeChecker): ts.Node | undefined {
+  let symbol = checker.getSymbolAtLocation(expr);
+  if (!symbol) return undefined;
+  if (symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+  return symbol.valueDeclaration ?? symbol.declarations?.[0];
 }
 
 /** Join a controller prefix and a method sub-path into a leading-slash route path. */
