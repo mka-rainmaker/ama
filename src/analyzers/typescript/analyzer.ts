@@ -208,6 +208,11 @@ export class TypeScriptAnalyzer implements Analyzer {
     root: string,
   ): void {
     node.forEachChild((child) => {
+      // Decorators are usage edges, not calls (collectTypeUsages emits a UsesType
+      // edge for each). Skip the whole decorator so `@log()` doesn't masquerade as
+      // the decorated symbol calling `log`, and so calls inside decorator arguments
+      // (decorator config, not the symbol's behaviour) aren't attributed to it.
+      if (ts.isDecorator(child)) return;
       // A `new Foo()` is a construction call site, resolved the same way as a
       // plain call (to Foo's class node), so `find_callers` sees constructions.
       if ((ts.isCallExpression(child) || ts.isNewExpression(child)) && enclosingId) {
@@ -342,6 +347,19 @@ export class TypeScriptAnalyzer implements Analyzer {
           if (to && to !== enclosingId) edges.push({ from: enclosingId, to, kind: "UsesType" });
         }
       }
+      // A decorator is a metadata/annotation dependency of the decorated symbol —
+      // modelled as UsesType (decorated → decorator), uniformly for call-form
+      // (`@log()`) and bare (`@sealed`) decorators. So `find_type_users(Component)`
+      // answers "what is decorated by @Component?".
+      if (ts.canHaveDecorators(node)) {
+        for (const decorator of ts.getDecorators(node) ?? []) {
+          const ref = ts.isCallExpression(decorator.expression)
+            ? decorator.expression.expression
+            : decorator.expression;
+          const to = resolveValueRef(ref, checker, declToId, root);
+          if (to && to !== enclosingId) edges.push({ from: enclosingId, to, kind: "UsesType" });
+        }
+      }
     }
     node.forEachChild((child) => {
       const childId = declToId.get(child);
@@ -419,6 +437,22 @@ function resolveCallee(
     const decl = checker.getResolvedSignature(call)?.declaration;
     return decl ? (declToId.get(decl) ?? nodeIdForDecl(decl, root)) : undefined;
   }
+  if (symbol.flags & ts.SymbolFlags.Alias) {
+    symbol = checker.getAliasedSymbol(symbol);
+  }
+  const decl = symbol.valueDeclaration ?? symbol.declarations?.[0];
+  return decl ? (declToId.get(decl) ?? nodeIdForDecl(decl, root)) : undefined;
+}
+
+/** Resolve a value-position reference (e.g. a decorator's `@Foo`) to a node id. */
+function resolveValueRef(
+  expr: ts.Expression,
+  checker: ts.TypeChecker,
+  declToId: Map<ts.Node, string>,
+  root: string,
+): string | undefined {
+  let symbol = checker.getSymbolAtLocation(expr);
+  if (!symbol) return undefined;
   if (symbol.flags & ts.SymbolFlags.Alias) {
     symbol = checker.getAliasedSymbol(symbol);
   }
