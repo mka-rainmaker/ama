@@ -4,6 +4,7 @@ import { serverStamp } from "../mcp/build-info.js";
 import { indexCommand, initCommand, uninitCommand } from "./commands/lifecycle.js";
 import { searchCommand } from "./commands/search.js";
 import { statusCommand } from "./commands/status.js";
+import { syncCommand } from "./commands/sync.js";
 
 /** Global options parsed from argv and handed to each command. */
 export interface CliContext {
@@ -69,6 +70,7 @@ export const COMMANDS: readonly CliCommand[] = [
   indexCommand,
   searchCommand,
   statusCommand,
+  syncCommand,
   uninitCommand,
 ];
 
