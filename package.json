@@ -19,6 +19,7 @@
     "serve": "node dist/mcp/server.js",
     "serve:http": "node dist/mcp/http.js",
     "serve:dev": "AMA_LOG_TOOLS=1 AMA_DB=.ama/index.db AMA_ROOT=. tsx watch src/mcp/http.ts",
+    "cli": "tsx src/cli/index.ts",
     "format": "biome format --write .",
     "lint": "biome check ."
   },
