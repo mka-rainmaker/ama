@@ -2,6 +2,7 @@
 import { fileURLToPath } from "node:url";
 import { serverStamp } from "../mcp/build-info.js";
 import { indexCommand, initCommand, uninitCommand } from "./commands/lifecycle.js";
+import { calleesCommand, callersCommand, exploreCommand, nodeCommand } from "./commands/query.js";
 import { searchCommand } from "./commands/search.js";
 import { statusCommand } from "./commands/status.js";
 import { syncCommand } from "./commands/sync.js";
@@ -66,8 +67,12 @@ export async function run(
 /** Registered commands. More domain commands (search/sync/…) are added here
  * as the CLI epic progresses (ama-5gs.4+). */
 export const COMMANDS: readonly CliCommand[] = [
-  initCommand,
+  calleesCommand,
+  callersCommand,
+  exploreCommand,
   indexCommand,
+  initCommand,
+  nodeCommand,
   searchCommand,
   statusCommand,
   syncCommand,
