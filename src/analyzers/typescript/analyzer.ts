@@ -450,6 +450,37 @@ export class TypeScriptAnalyzer implements Analyzer {
           }
         }
       }
+      // NestJS: @Controller("prefix") class whose methods carry @Get/@Post/...
+      // decorators. The decorated method IS the handler (already a Method node);
+      // the route path is the controller prefix joined with the method's path.
+      if (ts.isClassDeclaration(n) && ts.canHaveDecorators(n)) {
+        const controller = (ts.getDecorators(n) ?? [])
+          .map(decoratorInfo)
+          .find((d) => d.name === "Controller");
+        if (controller) {
+          for (const member of n.members) {
+            if (!ts.isMethodDeclaration(member) || !ts.canHaveDecorators(member)) continue;
+            const handlerId = declToId.get(member);
+            if (handlerId === undefined) continue;
+            for (const dec of ts.getDecorators(member) ?? []) {
+              const info = decoratorInfo(dec);
+              if (!ROUTE_METHODS.has(info.name.toLowerCase())) continue;
+              const name = `${info.name.toUpperCase()} ${joinRoutePath(controller.arg, info.arg)}`;
+              const routeId = symbolId({ file: rel, qualifiedName: name });
+              nodes.push({
+                id: routeId,
+                kind: "Route",
+                name,
+                file: rel,
+                qualifiedName: name,
+                tier: "deep",
+                range: rangeOf(member, sf),
+              });
+              edges.push({ from: routeId, to: handlerId, kind: "References" });
+            }
+          }
+        }
+      }
       n.forEachChild(visit);
     };
     visit(sf);
@@ -458,6 +489,32 @@ export class TypeScriptAnalyzer implements Analyzer {
 
 /** HTTP-verb methods that mark an Express/Nest-style route registration call. */
 const ROUTE_METHODS = new Set(["get", "post", "put", "delete", "patch", "options", "head", "all"]);
+
+/** A decorator's callee name and its first string-literal argument, if any. */
+function decoratorInfo(dec: ts.Decorator): { name: string; arg: string | undefined } {
+  const expr = dec.expression;
+  const callee = ts.isCallExpression(expr) ? expr.expression : expr;
+  const name = ts.isIdentifier(callee)
+    ? callee.text
+    : ts.isPropertyAccessExpression(callee)
+      ? callee.name.text
+      : "";
+  let arg: string | undefined;
+  if (ts.isCallExpression(expr)) {
+    const first = expr.arguments[0];
+    if (first && ts.isStringLiteralLike(first)) arg = first.text;
+  }
+  return { name, arg };
+}
+
+/** Join a controller prefix and a method sub-path into a leading-slash route path. */
+function joinRoutePath(prefix: string | undefined, sub: string | undefined): string {
+  const parts = [prefix, sub]
+    .filter((p): p is string => p !== undefined && p.length > 0)
+    .map((p) => p.replace(/^\/+|\/+$/g, ""))
+    .filter((p) => p.length > 0);
+  return `/${parts.join("/")}`;
+}
 
 /** Map a declaration node to a (kind, name) pair, or undefined if it isn't one. */
 function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
