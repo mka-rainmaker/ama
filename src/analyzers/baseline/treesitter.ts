@@ -18,6 +18,7 @@ const GRAMMARS: Record<string, string> = {
   javascript: "tree-sitter-javascript.wasm",
   java: "tree-sitter-java.wasm",
   csharp: "tree-sitter-c_sharp.wasm",
+  go: "tree-sitter-go.wasm",
 };
 
 /** Runtime init is one-shot; each grammar is loaded once and cached. */

@@ -13,10 +13,17 @@ import { parse } from "./treesitter.js";
 
 /** How to turn one kind of CST node into a graph symbol. */
 export interface SymbolRule {
-  /** Graph node kind to emit. */
+  /** Graph node kind to emit (the fallback when {@link kindByChild} matches nothing). */
   readonly kind: NodeKind;
   /** CST field holding the symbol's identifier (default "name"). */
   readonly nameField?: string;
+  /**
+   * Refine the kind by a child node's type — for languages where one CST node
+   * covers several kinds (e.g. Go's `type_spec` is a `struct_type` → Class, an
+   * `interface_type` → Interface, else a TypeAlias). First matching named child
+   * wins; falls back to {@link kind}.
+   */
+  readonly kindByChild?: Readonly<Record<string, NodeKind>>;
 }
 
 /**
@@ -90,7 +97,7 @@ export class BaselineAnalyzer implements Analyzer {
         const id = symbolId({ file: rel, qualifiedName });
         nodes.push({
           id,
-          kind: rule.kind,
+          kind: kindFor(rule, child),
           name,
           file: rel,
           qualifiedName,
@@ -106,4 +113,15 @@ export class BaselineAnalyzer implements Analyzer {
       }
     }
   }
+}
+
+/** Resolve a symbol's kind, refining by a child node type when the rule asks. */
+function kindFor(rule: SymbolRule, node: Parser.SyntaxNode): NodeKind {
+  if (rule.kindByChild) {
+    for (const child of node.namedChildren) {
+      const refined = rule.kindByChild[child.type];
+      if (refined) return refined;
+    }
+  }
+  return rule.kind;
 }
