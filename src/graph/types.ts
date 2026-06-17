@@ -4,16 +4,22 @@
  * analyzers learn to resolve them.
  */
 
-export type NodeKind =
-  | "File"
-  | "Module"
-  | "Class"
-  | "Interface"
-  | "Enum"
-  | "TypeAlias"
-  | "Function"
-  | "Method"
-  | "Property";
+/** The node kinds, as a runtime array — the single source of truth (e.g. for
+ * validating a `kind` filter). `NodeKind` is derived from it, so the two stay
+ * in sync. */
+export const NODE_KINDS = [
+  "File",
+  "Module",
+  "Class",
+  "Interface",
+  "Enum",
+  "TypeAlias",
+  "Function",
+  "Method",
+  "Property",
+] as const;
+
+export type NodeKind = (typeof NODE_KINDS)[number];
 
 export type EdgeKind = "Defines" | "Calls" | "Inherits" | "Implements" | "UsesType" | "Imports";
 

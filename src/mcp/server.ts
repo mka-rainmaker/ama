@@ -2,6 +2,8 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { NODE_KINDS } from "../graph/index.js";
+import type { NodeKind } from "../graph/index.js";
 import { AmaSession } from "./session.js";
 
 /** JSON tool result helper. `value ?? null` so an `undefined` result (e.g. a
@@ -148,12 +150,15 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
       inputSchema: {
         query: z.string().describe("Name or partial name to search for."),
         limit: z.number().int().positive().optional().describe("Max results."),
+        kind: z.enum(NODE_KINDS).optional().describe("Restrict to a single node kind."),
       },
     },
     tap(
       "search_symbol",
-      queryTool(session, ({ query, limit }: { query: string; limit?: number }) =>
-        session.searchSymbol(query, { limit }),
+      queryTool(
+        session,
+        ({ query, limit, kind }: { query: string; limit?: number; kind?: NodeKind }) =>
+          session.searchSymbol(query, { limit, kind }),
       ),
     ),
   );

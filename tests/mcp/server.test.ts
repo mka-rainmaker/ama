@@ -105,6 +105,29 @@ describe("MCP query tools", () => {
     expect(hits.map((n: { name: string }) => n.name)).toContain("helper");
   });
 
+  it("search_symbol filters by node kind", async () => {
+    const client = await indexedClient();
+    const asClass = JSON.parse(
+      firstText(
+        await client.callTool({
+          name: "search_symbol",
+          arguments: { query: "Service", kind: "Class" },
+        }),
+      ),
+    );
+    expect(asClass.map((n: { name: string }) => n.name)).toEqual(["Service"]);
+    // Same query, wrong kind → nothing (Service is a Class, not a Method).
+    const asMethod = JSON.parse(
+      firstText(
+        await client.callTool({
+          name: "search_symbol",
+          arguments: { query: "Service", kind: "Method" },
+        }),
+      ),
+    );
+    expect(asMethod).toEqual([]);
+  });
+
   it("find_callers lists every caller of a symbol", async () => {
     const client = await indexedClient();
     const callers = JSON.parse(
