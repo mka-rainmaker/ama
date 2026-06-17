@@ -7,6 +7,7 @@ import { goSpec } from "../analyzers/baseline/go.js";
 import { javaSpec } from "../analyzers/baseline/java.js";
 import { javascriptSpec } from "../analyzers/baseline/javascript.js";
 import { pythonSpec } from "../analyzers/baseline/python.js";
+import { rustSpec } from "../analyzers/baseline/rust.js";
 import { AnalyzerRegistry } from "../analyzers/registry.js";
 import type { Analyzer } from "../analyzers/types.js";
 import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
@@ -206,6 +207,7 @@ export function createDefaultIndexer(createStore?: () => Store): Indexer {
   registry.register(new BaselineAnalyzer(javaSpec));
   registry.register(new BaselineAnalyzer(csharpSpec));
   registry.register(new BaselineAnalyzer(goSpec));
+  registry.register(new BaselineAnalyzer(rustSpec));
   return new Indexer(registry, createStore);
 }
 
