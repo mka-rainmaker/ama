@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { GraphNode, NodeKind } from "../graph/index.js";
-import type { Store } from "../store/types.js";
+import type { FileMeta, Store } from "../store/types.js";
 
 export interface SearchOptions {
   /** Maximum number of hits to return (default 50). */
@@ -71,6 +71,11 @@ export class QueryService {
   searchSymbol(query: string, opts: SearchOptions = {}): GraphNode[] {
     const hits = this.store.searchByName(query, opts.limit ?? 50);
     return opts.kind ? hits.filter((n) => n.kind === opts.kind) : hits;
+  }
+
+  /** Every indexed file's metadata, sorted by repo-relative path. */
+  files(): FileMeta[] {
+    return [...this.store.allFiles()].sort((a, b) => a.path.localeCompare(b.path));
   }
 
   /**
