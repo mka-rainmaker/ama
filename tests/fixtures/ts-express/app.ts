@@ -6,11 +6,16 @@ export function listUsers(req: any, res: any): void {
   res.send("users");
 }
 
-// Named handler — should link via a References edge.
+function audit(action: string): void {
+  void action;
+}
+
+// Named handler — links to listUsers via a References edge.
 app.get("/users", listUsers);
 
-// Inline handler — a Route node is still emitted (edge deferred to the
-// arg-position-handler follow-up).
+// Inline handler — becomes its own Function node; its body call to the local
+// `audit` attributes to that handler node.
 app.post("/users", (req: any, res: any) => {
+  audit("create");
   res.sendStatus(201);
 });

@@ -32,4 +32,26 @@ describe("TypeScriptAnalyzer Express route detection", () => {
     // sanity: only the two real routes are Route nodes
     expect(result.nodes.filter((n) => n.kind === "Route")).toHaveLength(2);
   });
+
+  it("synthesizes a node for an inline handler and references it", () => {
+    expect(result.nodes.find((n) => n.id === id("POST /users handler"))?.kind).toBe("Function");
+    expect(
+      result.edges.some(
+        (e) =>
+          e.kind === "References" &&
+          e.from === id("POST /users") &&
+          e.to === id("POST /users handler"),
+      ),
+    ).toBe(true);
+  });
+
+  it("attributes the inline handler's body calls to its node", () => {
+    // The inline POST handler calls the local `audit` — that Calls edge must
+    // attribute to the handler node, not leak to the file.
+    expect(
+      result.edges.some(
+        (e) => e.kind === "Calls" && e.from === id("POST /users handler") && e.to === id("audit"),
+      ),
+    ).toBe(true);
+  });
 });

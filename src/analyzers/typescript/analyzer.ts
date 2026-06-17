@@ -51,11 +51,13 @@ export class TypeScriptAnalyzer implements Analyzer {
     for (const [abs, rel] of relByAbs) {
       const sf = program.getSourceFile(abs);
       if (sf) {
+        // Routes first: it registers inline-handler arrows in declToId, so the
+        // following collectCalls attributes each handler's body to its node.
+        this.collectRoutes(sf, rel, declToId, checker, nodes, edges, root);
         this.collectCalls(sf, undefined, declToId, checker, edges, root);
         this.collectHeritage(sf, declToId, checker, edges, root);
         this.collectTypeUsages(sf, undefined, declToId, checker, edges, root);
         this.collectImports(sf, fileId(rel), declToId, checker, edges, root);
-        this.collectRoutes(sf, rel, declToId, checker, nodes, edges, root);
       }
     }
 
@@ -225,12 +227,17 @@ export class TypeScriptAnalyzer implements Analyzer {
       // it the enclosing symbol, so calls in its body attribute to the const.
       // A function-valued object-literal property (ama-zkr) is a node too, so its
       // body's calls attribute to the property rather than leaking to the file.
+      // An arrow/function-expression is only enclosing when something registered
+      // it in declToId (ama-gpe: inline route handlers) — so ordinary callbacks
+      // (.map, .then) stay transparent.
       const nextEnclosing =
         childId &&
         (ts.isFunctionDeclaration(child) ||
           ts.isMethodDeclaration(child) ||
           ts.isVariableDeclaration(child) ||
-          ts.isPropertyAssignment(child))
+          ts.isPropertyAssignment(child) ||
+          ts.isArrowFunction(child) ||
+          ts.isFunctionExpression(child))
           ? childId
           : enclosingId;
       this.collectCalls(child, nextEnclosing, declToId, checker, edges, root);
@@ -415,9 +422,29 @@ export class TypeScriptAnalyzer implements Analyzer {
             tier: "deep",
             range: rangeOf(n, sf),
           });
+          let inlineCount = 0;
           for (const handler of handlers) {
-            // Anonymous inline handlers: Route is emitted, the edge is deferred.
-            if (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) continue;
+            if (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) {
+              // Inline handler: synthesize a Function node (named by the route) so
+              // the route can reference it AND — because we register the arrow in
+              // declToId and run before collectCalls — its body's calls attribute
+              // to it. A suffix disambiguates multiple inline handlers on one route.
+              const handlerName = `${name} handler${inlineCount === 0 ? "" : ` ${inlineCount + 1}`}`;
+              inlineCount++;
+              const handlerId = symbolId({ file: rel, qualifiedName: handlerName });
+              nodes.push({
+                id: handlerId,
+                kind: "Function",
+                name: handlerName,
+                file: rel,
+                qualifiedName: handlerName,
+                tier: "deep",
+                range: rangeOf(handler, sf),
+              });
+              declToId.set(handler, handlerId);
+              edges.push({ from: routeId, to: handlerId, kind: "References" });
+              continue;
+            }
             const to = resolveValueRef(handler, checker, declToId, root);
             if (to && to !== routeId) edges.push({ from: routeId, to, kind: "References" });
           }
