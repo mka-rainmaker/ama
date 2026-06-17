@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
 import { serverStamp } from "../mcp/build-info.js";
+import { statusCommand } from "./commands/status.js";
 
 /** Global options parsed from argv and handed to each command. */
 export interface CliContext {
@@ -59,9 +60,9 @@ export async function run(
   return command.run(positional.slice(1), { json, write: out });
 }
 
-/** Registered commands. Domain commands (index/status/search/…) are added here
+/** Registered commands. More domain commands (index/search/…) are added here
  * as the CLI epic progresses (ama-5gs.2+). */
-const COMMANDS: readonly CliCommand[] = [];
+export const COMMANDS: readonly CliCommand[] = [statusCommand];
 
 export async function main(): Promise<void> {
   process.exit(await run(process.argv.slice(2), COMMANDS));
