@@ -157,7 +157,25 @@ export class TypeScriptAnalyzer implements Analyzer {
       return;
     }
     const decl = describe(node);
-    if (!decl) return;
+    if (!decl) {
+      // `const X = { m() {…}, p: () => {…} }`: X itself isn't a node (there's no
+      // object kind), but recurse into its members so function-valued ones become
+      // `X.m` Method nodes. Otherwise logic that lives in object literals — every
+      // CLI command's `run`, dispatch tables, config handlers — is invisible to
+      // the call graph (its calls attribute to nothing).
+      if (
+        ts.isVariableDeclaration(node) &&
+        node.initializer !== undefined &&
+        ts.isObjectLiteralExpression(node.initializer) &&
+        ts.isIdentifier(node.name)
+      ) {
+        const objPrefix = prefix ? `${prefix}.${node.name.text}` : node.name.text;
+        for (const member of node.initializer.properties) {
+          this.visit(member, sf, rel, containerId, objPrefix, nodes, edges, declToId);
+        }
+      }
+      return;
+    }
 
     const qualifiedName = prefix ? `${prefix}.${decl.name}` : decl.name;
     const id = symbolId({ file: rel, qualifiedName });
@@ -199,11 +217,14 @@ export class TypeScriptAnalyzer implements Analyzer {
       const childId = declToId.get(child);
       // A function-valued `const` is a node (ama-4s2); descending into it makes
       // it the enclosing symbol, so calls in its body attribute to the const.
+      // A function-valued object-literal property (ama-zkr) is a node too, so its
+      // body's calls attribute to the property rather than leaking to the file.
       const nextEnclosing =
         childId &&
         (ts.isFunctionDeclaration(child) ||
           ts.isMethodDeclaration(child) ||
-          ts.isVariableDeclaration(child))
+          ts.isVariableDeclaration(child) ||
+          ts.isPropertyAssignment(child))
           ? childId
           : enclosingId;
       this.collectCalls(child, nextEnclosing, declToId, checker, edges, root);
@@ -369,6 +390,15 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
     ts.isIdentifier(node.name)
   ) {
     return { kind: "Function", name: node.name.text };
+  }
+  // A function-valued object-literal property (`{ run: () => … }`) — a method in
+  // all but syntax. Method shorthand (`{ run() {} }`) is already a MethodDeclaration.
+  if (
+    ts.isPropertyAssignment(node) &&
+    (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)) &&
+    ts.isIdentifier(node.name)
+  ) {
+    return { kind: "Method", name: node.name.text };
   }
   return undefined;
 }
