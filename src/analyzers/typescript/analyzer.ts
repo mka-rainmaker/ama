@@ -63,17 +63,21 @@ export class TypeScriptAnalyzer implements Analyzer {
   }
 
   /**
-   * Virtual dispatch: a call resolved to an interface method should also reach
-   * each implementing class's method of the same name. Runs after all edges
-   * exist (so `Calls`/`Defines`/`Implements` are available) and appends extra
-   * `Calls` edges from the original caller to every implementation. The new
-   * edges target concrete class methods, so they never fan out again; duplicate
-   * edges are collapsed by the store.
+   * Virtual dispatch: a call resolved to a supertype's method should also reach
+   * each subtype's method of the same name — interface implementations (via
+   * `Implements`) and subclass overrides (via `Inherits`). Runs after all edges
+   * exist and appends extra `Calls` edges from the caller to each subtype
+   * method; duplicates are collapsed by the store. One level deep (direct
+   * subtypes), and only the original `Calls` edges are fanned (not the new
+   * ones), so a fan-out never cascades.
    */
   private resolveDispatch(nodes: GraphNode[], edges: GraphEdge[]): void {
     const byId = new Map(nodes.map((n) => [n.id, n] as [string, GraphNode]));
     const definerOf = new Map<string, string>(); // member id -> container id
-    const implementers = new Map<string, string[]>(); // interface id -> implementing class ids
+    // Subtypes of each supertype: classes that `implements` an interface and
+    // subclasses that `extends` a base class — both let a call to the super's
+    // method dispatch to the subtype's implementation or override.
+    const subtypes = new Map<string, string[]>();
     const methodsByContainer = new Map<string, Map<string, string>>(); // container -> name -> method id
     for (const edge of edges) {
       if (edge.kind === "Defines") {
@@ -84,10 +88,10 @@ export class TypeScriptAnalyzer implements Analyzer {
           byName.set(member.name, edge.to);
           methodsByContainer.set(edge.from, byName);
         }
-      } else if (edge.kind === "Implements") {
-        const list = implementers.get(edge.to) ?? [];
+      } else if (edge.kind === "Implements" || edge.kind === "Inherits") {
+        const list = subtypes.get(edge.to) ?? [];
         list.push(edge.from);
-        implementers.set(edge.to, list);
+        subtypes.set(edge.to, list);
       }
     }
     const fanned: GraphEdge[] = [];
@@ -96,10 +100,14 @@ export class TypeScriptAnalyzer implements Analyzer {
       const target = byId.get(edge.to);
       if (target?.kind !== "Method") continue;
       const container = definerOf.get(edge.to);
-      if (!container || byId.get(container)?.kind !== "Interface") continue;
-      for (const classId of implementers.get(container) ?? []) {
-        const impl = methodsByContainer.get(classId)?.get(target.name);
-        if (impl) fanned.push({ from: edge.from, to: impl, kind: "Calls" });
+      if (!container) continue;
+      const containerKind = byId.get(container)?.kind;
+      if (containerKind !== "Interface" && containerKind !== "Class") continue;
+      for (const subId of subtypes.get(container) ?? []) {
+        const override = methodsByContainer.get(subId)?.get(target.name);
+        if (override && override !== edge.to) {
+          fanned.push({ from: edge.from, to: override, kind: "Calls" });
+        }
       }
     }
     edges.push(...fanned);
