@@ -55,10 +55,13 @@ export class Indexer {
   ) {}
 
   async index(root: string): Promise<{ store: Store; stats: IndexStats }> {
-    // Discover files BEFORE touching the store: an invalid root (e.g. a file, not
-    // a directory) makes discoverFiles throw, and a persistent store reused
-    // across indexes must not be cleared only to then fail — that corrupts the
-    // live index. Walking first keeps a failed re-index a no-op.
+    // A clear error beats a raw ENOTDIR/ENOENT when the root isn't a directory.
+    if (!fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) {
+      throw new Error(`Not a directory: ${root}`);
+    }
+    // Discover files BEFORE touching the store: a failing walk must not clear a
+    // persistent store reused across indexes — that corrupts the live index.
+    // Walking first keeps a failed re-index a no-op.
     const files = discoverFiles(root);
     const store = this.createStore();
     store.clear(); // a persistent store may hold a previous index; rebuild clean

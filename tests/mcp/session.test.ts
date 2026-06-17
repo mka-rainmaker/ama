@@ -40,6 +40,12 @@ describe("AmaSession", () => {
     expect(() => session.searchSymbol("add")).toThrow(/index_repository/);
   });
 
+  it("rejects a non-directory path with a clear error, not a raw ENOTDIR", async () => {
+    const session = new AmaSession();
+    const file = path.resolve(here, "../fixtures/ts-calls/calls.ts");
+    await expect(session.indexRepository(file)).rejects.toThrow(/^Not a directory/);
+  });
+
   it("leaves the existing index intact when a re-index fails", async () => {
     // A shared store mimics a persistent (file-backed) store reused across
     // indexes — the case where clearing before a failing walk corrupts the index.
