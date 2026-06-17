@@ -124,6 +124,18 @@ export const typesUsedCommand = refQueryCommand(
   (q, ref) => q.findTypesUsed(ref),
 );
 
+export const handlersCommand = refQueryCommand(
+  "handlers",
+  "List the handler(s) a route maps to",
+  (q, ref) => q.findHandlers(ref),
+);
+
+export const routesCommand = refQueryCommand(
+  "routes",
+  "List the routes that map to a symbol",
+  (q, ref) => q.findRoutes(ref),
+);
+
 export const nodeCommand: CliCommand = {
   name: "node",
   summary: "Show a symbol with its callers, callees, and dependents",

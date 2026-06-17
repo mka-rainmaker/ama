@@ -237,6 +237,36 @@ describe("MCP query tools", () => {
   });
 });
 
+const expressRoot = path.resolve(here, "../fixtures/ts-express");
+
+describe("MCP route tools", () => {
+  async function indexedClient(): Promise<Client> {
+    const client = await connectClient();
+    await client.callTool({ name: "index_repository", arguments: { path: expressRoot } });
+    return client;
+  }
+
+  it("find_handlers returns the handler a route references", async () => {
+    const client = await indexedClient();
+    const handlers = JSON.parse(
+      firstText(
+        await client.callTool({ name: "find_handlers", arguments: { route: "GET /users" } }),
+      ),
+    );
+    expect(handlers.map((n: { name: string }) => n.name)).toContain("listUsers");
+  });
+
+  it("find_routes returns the routes that reference a handler", async () => {
+    const client = await indexedClient();
+    const routes = JSON.parse(
+      firstText(
+        await client.callTool({ name: "find_routes", arguments: { symbol: "listUsers" } }),
+      ),
+    );
+    expect(routes.map((n: { name: string }) => n.name)).toContain("GET /users");
+  });
+});
+
 describe("MCP tool-call logging", () => {
   const realEnv = process.env.AMA_LOG_TOOLS;
   afterEach(() => {

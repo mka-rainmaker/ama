@@ -192,6 +192,34 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
   );
 
   server.registerTool(
+    "find_handlers",
+    {
+      description: "The handler symbols a framework route maps to.",
+      inputSchema: {
+        route: z.string().describe('Route id or name, e.g. "GET /users".'),
+      },
+    },
+    tap(
+      "find_handlers",
+      queryTool(session, ({ route }: { route: string }) => session.findHandlers(route)),
+    ),
+  );
+
+  server.registerTool(
+    "find_routes",
+    {
+      description: "Every framework route that maps to a symbol (handler).",
+      inputSchema: {
+        symbol: z.string().describe("Handler symbol id, simple name, or dotted qualified name."),
+      },
+    },
+    tap(
+      "find_routes",
+      queryTool(session, ({ symbol }: { symbol: string }) => session.findRoutes(symbol)),
+    ),
+  );
+
+  server.registerTool(
     "find_implementations",
     {
       description: "Every class that implements an interface.",
