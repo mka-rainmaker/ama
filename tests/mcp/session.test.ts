@@ -2,7 +2,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { createDefaultIndexer } from "../../src/indexer/indexer.js";
 import { AmaSession } from "../../src/mcp/session.js";
+import { InMemoryStore } from "../../src/store/memory.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../fixtures/mini-repo");
@@ -36,6 +38,20 @@ describe("AmaSession", () => {
   it("throws a helpful error if you query before indexing", () => {
     const session = new AmaSession();
     expect(() => session.searchSymbol("add")).toThrow(/index_repository/);
+  });
+
+  it("leaves the existing index intact when a re-index fails", async () => {
+    // A shared store mimics a persistent (file-backed) store reused across
+    // indexes — the case where clearing before a failing walk corrupts the index.
+    const shared = new InMemoryStore();
+    const session = new AmaSession(createDefaultIndexer(() => shared));
+    const callsDir = path.resolve(here, "../fixtures/ts-calls");
+    await session.indexRepository(callsDir);
+    expect(session.searchSymbol("helper").map((n) => n.name)).toContain("helper");
+
+    // Indexing a non-directory (a file) must fail WITHOUT wiping the prior index.
+    await expect(session.indexRepository(path.join(callsDir, "calls.ts"))).rejects.toThrow();
+    expect(session.searchSymbol("helper").map((n) => n.name)).toContain("helper");
   });
 
   it("stamps the running server's version and git revision on index_status", async () => {

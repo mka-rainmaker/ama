@@ -55,11 +55,16 @@ export class Indexer {
   ) {}
 
   async index(root: string): Promise<{ store: Store; stats: IndexStats }> {
+    // Discover files BEFORE touching the store: an invalid root (e.g. a file, not
+    // a directory) makes discoverFiles throw, and a persistent store reused
+    // across indexes must not be cleared only to then fail — that corrupts the
+    // live index. Walking first keeps a failed re-index a no-op.
+    const files = discoverFiles(root);
     const store = this.createStore();
     store.clear(); // a persistent store may hold a previous index; rebuild clean
 
     const byAnalyzer = new Map<Analyzer, string[]>();
-    for (const rel of discoverFiles(root)) {
+    for (const rel of files) {
       const analyzer = this.registry.forFile(rel);
       if (!analyzer) continue;
       const list = byAnalyzer.get(analyzer);
