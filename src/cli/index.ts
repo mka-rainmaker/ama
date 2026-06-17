@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
 import { serverStamp } from "../mcp/build-info.js";
+import { indexCommand, initCommand, uninitCommand } from "./commands/lifecycle.js";
 import { statusCommand } from "./commands/status.js";
 
 /** Global options parsed from argv and handed to each command. */
@@ -60,9 +61,14 @@ export async function run(
   return command.run(positional.slice(1), { json, write: out });
 }
 
-/** Registered commands. More domain commands (index/search/…) are added here
- * as the CLI epic progresses (ama-5gs.2+). */
-export const COMMANDS: readonly CliCommand[] = [statusCommand];
+/** Registered commands. More domain commands (search/sync/…) are added here
+ * as the CLI epic progresses (ama-5gs.4+). */
+export const COMMANDS: readonly CliCommand[] = [
+  initCommand,
+  indexCommand,
+  statusCommand,
+  uninitCommand,
+];
 
 export async function main(): Promise<void> {
   process.exit(await run(process.argv.slice(2), COMMANDS));

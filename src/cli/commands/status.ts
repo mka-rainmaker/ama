@@ -5,11 +5,7 @@ import { serverStamp } from "../../mcp/build-info.js";
 import type { IndexStatus } from "../../mcp/session.js";
 import { SqliteStore } from "../../store/sqlite.js";
 import type { CliCommand } from "../index.js";
-
-/** Where a project's persisted index lives by default, mirroring `serve:dev`. */
-function dbPathFor(root: string): string {
-  return process.env.AMA_DB ?? path.join(path.resolve(root), ".ama", "index.db");
-}
+import { dbPathFor } from "../paths.js";
 
 /**
  * Read a persisted index's stats without re-analyzing. Uses {@link Indexer.open}
