@@ -16,6 +16,7 @@ const require = createRequire(import.meta.url);
 const GRAMMARS: Record<string, string> = {
   python: "tree-sitter-python.wasm",
   javascript: "tree-sitter-javascript.wasm",
+  java: "tree-sitter-java.wasm",
 };
 
 /** Runtime init is one-shot; each grammar is loaded once and cached. */
