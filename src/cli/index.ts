@@ -2,6 +2,7 @@
 import { fileURLToPath } from "node:url";
 import { serverStamp } from "../mcp/build-info.js";
 import { indexCommand, initCommand, uninitCommand } from "./commands/lifecycle.js";
+import { searchCommand } from "./commands/search.js";
 import { statusCommand } from "./commands/status.js";
 
 /** Global options parsed from argv and handed to each command. */
@@ -66,6 +67,7 @@ export async function run(
 export const COMMANDS: readonly CliCommand[] = [
   initCommand,
   indexCommand,
+  searchCommand,
   statusCommand,
   uninitCommand,
 ];
