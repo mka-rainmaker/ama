@@ -6,7 +6,7 @@ import { withQuery } from "../query-runner.js";
 const NO_INDEX = "No index found. Run `ama index` first.";
 
 /** One compact line per node: kind, qualified name, location, tier. */
-function nodeLine(node: GraphNode): string {
+export function nodeLine(node: GraphNode): string {
   const where = node.range ? `${node.file}:${node.range.startLine}` : node.file;
   return `  ${node.kind.padEnd(10)} ${node.qualifiedName || node.name}  ${where}  [${node.tier}]`;
 }
