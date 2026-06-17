@@ -26,4 +26,11 @@ describe("TypeScriptAnalyzer function-valued const declarations", () => {
   it("does not emit a node for a non-function const", () => {
     expect(result.nodes.some((n) => n.id === id("NOT_A_FN"))).toBe(false);
   });
+
+  it("attributes a call inside an arrow-const body to the const", () => {
+    const hit = result.edges.some(
+      (e) => e.kind === "Calls" && e.from === id("run") && e.to === id("helper"),
+    );
+    expect(hit).toBe(true);
+  });
 });

@@ -195,8 +195,13 @@ export class TypeScriptAnalyzer implements Analyzer {
         if (callee) edges.push({ from: enclosingId, to: callee, kind: "Calls" });
       }
       const childId = declToId.get(child);
+      // A function-valued `const` is a node (ama-4s2); descending into it makes
+      // it the enclosing symbol, so calls in its body attribute to the const.
       const nextEnclosing =
-        childId && (ts.isFunctionDeclaration(child) || ts.isMethodDeclaration(child))
+        childId &&
+        (ts.isFunctionDeclaration(child) ||
+          ts.isMethodDeclaration(child) ||
+          ts.isVariableDeclaration(child))
           ? childId
           : enclosingId;
       this.collectCalls(child, nextEnclosing, declToId, checker, edges, root);

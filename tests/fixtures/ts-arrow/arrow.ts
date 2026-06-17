@@ -8,3 +8,11 @@ export const compute = function (): number {
 };
 
 export const NOT_A_FN = 42;
+
+export function helper(): number {
+  return 1;
+}
+
+// A call inside an arrow const's body should attribute to the const (`run`),
+// not be dropped at module level.
+export const run = (): number => helper();
