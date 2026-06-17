@@ -286,7 +286,8 @@ export class TypeScriptAnalyzer implements Analyzer {
     } else if (
       ts.isFunctionDeclaration(node) ||
       ts.isMethodDeclaration(node) ||
-      ts.isMethodSignature(node)
+      ts.isMethodSignature(node) ||
+      ts.isGetAccessorDeclaration(node)
     ) {
       if (node.type) annotations.push(node.type); // return type
     } else if (
@@ -337,6 +338,13 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
     (ts.isPropertyDeclaration(node) || ts.isPropertySignature(node)) &&
     ts.isIdentifier(node.name)
   ) {
+    return { kind: "Property", name: node.name.text };
+  }
+  if (
+    (ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) &&
+    ts.isIdentifier(node.name)
+  ) {
+    // A get/set pair shares one member name -> one Property node (ids dedup).
     return { kind: "Property", name: node.name.text };
   }
   if (
