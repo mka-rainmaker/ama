@@ -55,6 +55,7 @@ export class TypeScriptAnalyzer implements Analyzer {
         this.collectHeritage(sf, declToId, checker, edges, root);
         this.collectTypeUsages(sf, undefined, declToId, checker, edges, root);
         this.collectImports(sf, fileId(rel), declToId, checker, edges, root);
+        this.collectRoutes(sf, rel, declToId, checker, nodes, edges, root);
       }
     }
 
@@ -366,7 +367,70 @@ export class TypeScriptAnalyzer implements Analyzer {
       this.collectTypeUsages(child, childId ?? enclosingId, declToId, checker, edges, root);
     });
   }
+
+  /**
+   * Detect framework routes (Express/NestJS-style call APIs: `app.get("/x", h)`,
+   * `router.post(...)`) and emit a Route node per route, plus a References edge to
+   * each named handler. Deliberately scoped to avoid false positives: an HTTP-verb
+   * method call whose first arg is a "/"-prefixed string literal and which has at
+   * least one handler arg (so `map.get("k")` / `headers.get("x")` don't match).
+   * Inline arrow/function handlers get a Route node but no edge yet — naming an
+   * anonymous handler is the arg-position-handler follow-up (ama-y9q).
+   */
+  private collectRoutes(
+    sf: ts.SourceFile,
+    rel: string,
+    declToId: Map<ts.Node, string>,
+    checker: ts.TypeChecker,
+    nodes: GraphNode[],
+    edges: GraphEdge[],
+    root: string,
+  ): void {
+    const visit = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression)) {
+        const method = n.expression.name.text.toLowerCase();
+        const [first, ...rest] = n.arguments;
+        const handlers = rest.filter(
+          (a) =>
+            ts.isArrowFunction(a) ||
+            ts.isFunctionExpression(a) ||
+            ts.isIdentifier(a) ||
+            ts.isPropertyAccessExpression(a),
+        );
+        if (
+          ROUTE_METHODS.has(method) &&
+          first !== undefined &&
+          ts.isStringLiteralLike(first) &&
+          first.text.startsWith("/") &&
+          handlers.length > 0
+        ) {
+          const name = `${method.toUpperCase()} ${first.text}`;
+          const routeId = symbolId({ file: rel, qualifiedName: name });
+          nodes.push({
+            id: routeId,
+            kind: "Route",
+            name,
+            file: rel,
+            qualifiedName: name,
+            tier: "deep",
+            range: rangeOf(n, sf),
+          });
+          for (const handler of handlers) {
+            // Anonymous inline handlers: Route is emitted, the edge is deferred.
+            if (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) continue;
+            const to = resolveValueRef(handler, checker, declToId, root);
+            if (to && to !== routeId) edges.push({ from: routeId, to, kind: "References" });
+          }
+        }
+      }
+      n.forEachChild(visit);
+    };
+    visit(sf);
+  }
 }
+
+/** HTTP-verb methods that mark an Express/Nest-style route registration call. */
+const ROUTE_METHODS = new Set(["get", "post", "put", "delete", "patch", "options", "head", "all"]);
 
 /** Map a declaration node to a (kind, name) pair, or undefined if it isn't one. */
 function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
