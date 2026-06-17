@@ -7,6 +7,7 @@ import { SqliteStore } from "../../store/sqlite.js";
 import { emitError } from "../emit.js";
 import type { CliCommand } from "../index.js";
 import { dbPathFor } from "../paths.js";
+import { withQuery } from "../query-runner.js";
 
 const USAGE = "Usage: ama search <query> [--kind <Kind>] [--limit <N>]";
 
@@ -106,6 +107,48 @@ export const searchCommand: CliCommand = {
       return 1;
     }
     ctx.write(renderSearch(parsed.query, hits, ctx.json));
+    return 0;
+  },
+};
+
+export const searchCodeCommand: CliCommand = {
+  name: "search-code",
+  summary: "Find symbols whose body text contains a string",
+  async run(args, ctx) {
+    let limit: number | undefined;
+    const terms: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      if (arg === undefined) continue;
+      if (arg === "--limit") {
+        const value = args[i + 1];
+        i++;
+        const n = Number(value);
+        if (!Number.isInteger(n) || n <= 0) {
+          emitError(ctx, "--limit requires a positive integer");
+          return 1;
+        }
+        limit = n;
+      } else if (arg.startsWith("--")) {
+        emitError(ctx, `unknown flag: ${arg}`);
+        return 1;
+      } else {
+        terms.push(arg);
+      }
+    }
+    const query = terms.join(" ");
+    if (query === "") {
+      emitError(ctx, "Usage: ama search-code <text> [--limit <N>]");
+      return 1;
+    }
+    const hits = await withQuery(process.env.AMA_ROOT ?? ".", (q) =>
+      q.searchCode(query, { limit }),
+    );
+    if (hits === undefined) {
+      emitError(ctx, "No index found. Run `ama index` first.");
+      return 1;
+    }
+    ctx.write(renderSearch(query, hits, ctx.json));
     return 0;
   },
 };

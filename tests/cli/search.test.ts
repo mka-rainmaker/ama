@@ -4,7 +4,12 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { indexCommand } from "../../src/cli/commands/lifecycle.js";
-import { parseSearchArgs, renderSearch, searchCommand } from "../../src/cli/commands/search.js";
+import {
+  parseSearchArgs,
+  renderSearch,
+  searchCodeCommand,
+  searchCommand,
+} from "../../src/cli/commands/search.js";
 import { COMMANDS } from "../../src/cli/index.js";
 import type { GraphNode } from "../../src/graph/types.js";
 
@@ -143,8 +148,52 @@ describe("search command", () => {
   });
 });
 
+describe("search-code command", () => {
+  const tmpDirs: string[] = [];
+  const saved = { AMA_DB: process.env.AMA_DB, AMA_ROOT: process.env.AMA_ROOT };
+
+  afterEach(() => {
+    for (const key of ["AMA_DB", "AMA_ROOT"] as const) {
+      const value = saved[key];
+      if (value === undefined) Reflect.deleteProperty(process.env, key);
+      else process.env[key] = value;
+    }
+    for (const dir of tmpDirs) fs.rmSync(dir, { recursive: true, force: true });
+    tmpDirs.length = 0;
+  });
+
+  it("finds symbols whose body text contains the query", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ama-cli-searchcode-"));
+    tmpDirs.push(dir);
+    fs.writeFileSync(
+      path.join(dir, "m.ts"),
+      'export function magic(): string {\n  return "ABRACADABRA";\n}\n' +
+        "export function other(): number {\n  return 1;\n}\n",
+    );
+    process.env.AMA_DB = path.join(dir, ".ama", "index.db");
+    process.env.AMA_ROOT = dir;
+    await indexCommand.run([dir], { json: true, write: () => {} });
+
+    const out = capture();
+    const code = await searchCodeCommand.run(["ABRACADABRA"], { json: true, write: out.write });
+    expect(code).toBe(0);
+    const names = (JSON.parse(out.text()) as GraphNode[]).map((n) => n.name);
+    expect(names).toContain("magic");
+    expect(names).not.toContain("other");
+  });
+
+  it("fails with exit 1 on an empty query", async () => {
+    const out = capture();
+    const code = await searchCodeCommand.run([], { json: false, write: out.write });
+    expect(code).toBe(1);
+    expect(out.text().toLowerCase()).toContain("usage");
+  });
+});
+
 describe("CLI command registration", () => {
-  it("registers search", () => {
-    expect(COMMANDS.map((command) => command.name)).toContain("search");
+  it("registers search and search-code", () => {
+    const names = COMMANDS.map((command) => command.name);
+    expect(names).toContain("search");
+    expect(names).toContain("search-code");
   });
 });

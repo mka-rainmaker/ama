@@ -16,7 +16,7 @@ import {
   typeUsersCommand,
   typesUsedCommand,
 } from "./commands/query.js";
-import { searchCommand } from "./commands/search.js";
+import { searchCodeCommand, searchCommand } from "./commands/search.js";
 import { statusCommand } from "./commands/status.js";
 import { syncCommand } from "./commands/sync.js";
 
@@ -100,6 +100,7 @@ export const COMMANDS: readonly CliCommand[] = [
   initCommand,
   interfacesCommand,
   nodeCommand,
+  searchCodeCommand,
   searchCommand,
   statusCommand,
   syncCommand,
