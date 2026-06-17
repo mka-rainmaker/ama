@@ -130,18 +130,32 @@ export class SqliteStore implements Store {
     // prefix match. Names are single tokens, so this matches by leading prefix.
     const term = query.replace(/[^A-Za-z0-9_]/g, " ").trim();
     if (!term) return [];
-    const rows = this.db
-      .prepare("SELECT id FROM nodes_fts WHERE nodes_fts MATCH ? ORDER BY rank LIMIT ?")
-      .all(`${term}*`, limit) as Array<{ id: string }>;
     const seen = new Set<string>();
     const out: GraphNode[] = [];
-    for (const row of rows) {
-      if (seen.has(row.id)) continue;
-      seen.add(row.id);
-      const node = this.getNode(row.id);
-      if (node) out.push(node);
+    const collect = (rows: Array<{ id: string }>): void => {
+      for (const row of rows) {
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        const node = this.getNode(row.id);
+        if (node) out.push(node);
+      }
+    };
+    // FTS5 prefix match on the (single-token) name — fast and ranked.
+    collect(
+      this.db
+        .prepare("SELECT id FROM nodes_fts WHERE nodes_fts MATCH ? ORDER BY rank LIMIT ?")
+        .all(`${term}*`, limit) as Array<{ id: string }>,
+    );
+    // Substring match on the qualified name, so a dotted ref ("Cls.method") and
+    // a container name resolve too — the FTS index only holds the simple name.
+    if (out.length < limit) {
+      collect(
+        this.db
+          .prepare("SELECT id FROM nodes WHERE lower(qualified_name) LIKE ? LIMIT ?")
+          .all(`%${query.toLowerCase()}%`, limit) as Array<{ id: string }>,
+      );
     }
-    return out;
+    return out.slice(0, limit);
   }
 
   edgesFrom(id: string, kind?: EdgeKind): GraphEdge[] {

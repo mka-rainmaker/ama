@@ -116,7 +116,8 @@ describe("MCP query tools", () => {
       ),
     );
     expect(asClass.map((n: { name: string }) => n.name)).toEqual(["Service"]);
-    // Same query, wrong kind → nothing (Service is a Class, not a Method).
+    // Same query, kind:Method → the members qualified under "Service"
+    // (qualified-name matching surfaces a container's methods), not the class.
     const asMethod = JSON.parse(
       firstText(
         await client.callTool({
@@ -125,7 +126,7 @@ describe("MCP query tools", () => {
         }),
       ),
     );
-    expect(asMethod).toEqual([]);
+    expect(asMethod.map((n: { name: string }) => n.name).sort()).toEqual(["compute", "run"]);
   });
 
   it("find_callers lists every caller of a symbol", async () => {

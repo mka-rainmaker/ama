@@ -102,6 +102,16 @@ export function runStoreContract(label: string, makeStore: () => Store): void {
       expect(store.searchByName("zzz")).toEqual([]);
     });
 
+    it("matches by qualified name, not just the simple name", () => {
+      const store = makeStore();
+      store.addNode(node({ id: "cmd.ts#Cmd.run", name: "run", qualifiedName: "Cmd.run" }));
+      store.addNode(node({ id: "other.ts#run", name: "run", qualifiedName: "run", file: "other.ts" }));
+      // A dotted ref resolves the specific member, not just anything named "run".
+      expect(store.searchByName("Cmd.run").map((n) => n.id)).toContain("cmd.ts#Cmd.run");
+      // The container name surfaces its members.
+      expect(store.searchByName("Cmd").map((n) => n.id)).toContain("cmd.ts#Cmd.run");
+    });
+
     it("records and retrieves per-file metadata", () => {
       const store = makeStore();
       const meta = { path: "src/a.ts", size: 100, mtimeMs: 123.5, hash: "abc" };

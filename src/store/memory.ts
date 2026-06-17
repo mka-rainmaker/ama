@@ -56,12 +56,21 @@ export class InMemoryStore implements Store {
     if (!needle) return [];
     const hits: GraphNode[] = [];
     for (const node of this.nodes.values()) {
-      if (node.name.toLowerCase().includes(needle)) hits.push(node);
+      // Match the simple name or the qualified name, so a dotted ref
+      // ("Cls.method") and a container name both resolve.
+      if (
+        node.name.toLowerCase().includes(needle) ||
+        node.qualifiedName.toLowerCase().includes(needle)
+      ) {
+        hits.push(node);
+      }
     }
-    // Exact matches first, then alphabetical by qualified name.
+    // Exact matches (on either name) first, then alphabetical by qualified name.
     hits.sort((a, b) => {
-      const ax = a.name.toLowerCase() === needle ? 0 : 1;
-      const bx = b.name.toLowerCase() === needle ? 0 : 1;
+      const ax =
+        a.name.toLowerCase() === needle || a.qualifiedName.toLowerCase() === needle ? 0 : 1;
+      const bx =
+        b.name.toLowerCase() === needle || b.qualifiedName.toLowerCase() === needle ? 0 : 1;
       return ax - bx || a.qualifiedName.localeCompare(b.qualifiedName);
     });
     return hits.slice(0, limit);
