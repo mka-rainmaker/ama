@@ -34,12 +34,15 @@ export function renderNodeList(
 /** Render a {@link NodeView} (the `node` command) for the terminal, or `--json`. */
 export function renderNodeView(view: NodeView, json: boolean): string {
   if (json) return JSON.stringify(view, null, 2);
-  return [
-    nodeLine(view.node).trimStart(),
+  const lines = [nodeLine(view.node).trimStart()];
+  // The symbol's own source — the point of a single-symbol detail view.
+  if (view.snippet) lines.push("", view.snippet.text, "");
+  lines.push(
     `  callers (${view.callers.length}): ${names(view.callers)}`,
     `  callees (${view.callees.length}): ${names(view.callees)}`,
     `  dependents (${view.dependents.length}): ${names(view.dependents)}`,
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
 
 /** Render an {@link Exploration} (the `explore` command) for the terminal, or `--json`. */

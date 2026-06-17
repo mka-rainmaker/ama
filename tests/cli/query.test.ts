@@ -78,6 +78,20 @@ describe("renderNodeView", () => {
     expect(text.toLowerCase()).toContain("dependents");
   });
 
+  it("includes the source snippet in human form when present", () => {
+    const withSnippet: NodeView = {
+      ...VIEW,
+      snippet: {
+        id: MAIN.id,
+        file: MAIN.file,
+        startLine: 5,
+        endLine: 7,
+        text: "function main() {\n  return helper();\n}",
+      },
+    };
+    expect(renderNodeView(withSnippet, false)).toContain("return helper();");
+  });
+
   it("emits the raw NodeView as JSON", () => {
     expect(JSON.parse(renderNodeView(VIEW, true))).toEqual(VIEW);
   });
