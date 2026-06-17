@@ -17,11 +17,21 @@ export const NODE_KINDS = [
   "Function",
   "Method",
   "Property",
+  /** A framework route, e.g. "GET /users" — its handler is found via a References edge. */
+  "Route",
 ] as const;
 
 export type NodeKind = (typeof NODE_KINDS)[number];
 
-export type EdgeKind = "Defines" | "Calls" | "Inherits" | "Implements" | "UsesType" | "Imports";
+export type EdgeKind =
+  | "Defines"
+  | "Calls"
+  | "Inherits"
+  | "Implements"
+  | "UsesType"
+  | "Imports"
+  /** A route (or other dispatch) refers to the symbol that handles it. */
+  | "References";
 
 /** Which analysis tier produced a piece of data. */
 export type Tier = "deep" | "baseline";

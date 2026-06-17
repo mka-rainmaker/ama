@@ -141,6 +141,32 @@ export class QueryService {
     return [...callees.values()];
   }
 
+  /** The handler symbols a route refers to (route → References → handler). */
+  findHandlers(ref: string): GraphNode[] {
+    const routes = this.resolve(ref);
+    const handlers = new Map<string, GraphNode>();
+    for (const route of routes) {
+      for (const edge of this.store.edgesFrom(route.id, "References")) {
+        const handler = this.store.getNode(edge.to);
+        if (handler) handlers.set(handler.id, handler);
+      }
+    }
+    return [...handlers.values()];
+  }
+
+  /** The routes (or other referrers) that point at a symbol (referrer → References → symbol). */
+  findRoutes(ref: string): GraphNode[] {
+    const targets = this.resolve(ref);
+    const routes = new Map<string, GraphNode>();
+    for (const target of targets) {
+      for (const edge of this.store.edgesTo(target.id, "References")) {
+        const route = this.store.getNode(edge.from);
+        if (route) routes.set(route.id, route);
+      }
+    }
+    return [...routes.values()];
+  }
+
   /** Classes that implement the referenced interface. */
   findImplementations(ref: string): GraphNode[] {
     const targets = this.resolve(ref);
