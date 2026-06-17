@@ -4,9 +4,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { AmaSession } from "./session.js";
 
-/** JSON tool result helper. */
+/** JSON tool result helper. `value ?? null` so an `undefined` result (e.g. a
+ * snippet/node for an unresolved symbol) serializes to `"null"` rather than the
+ * JS value `undefined`, which would make the MCP content invalid. */
 function json(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
+  return { content: [{ type: "text" as const, text: JSON.stringify(value ?? null, null, 2) }] };
 }
 
 /**
@@ -16,7 +18,7 @@ function json(value: unknown) {
  */
 function reply(session: AmaSession, value: unknown) {
   const banner = session.stalenessBanner();
-  const data = { type: "text" as const, text: JSON.stringify(value, null, 2) };
+  const data = { type: "text" as const, text: JSON.stringify(value ?? null, null, 2) };
   return { content: banner ? [{ type: "text" as const, text: banner }, data] : [data] };
 }
 

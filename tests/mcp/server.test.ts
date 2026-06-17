@@ -145,6 +145,19 @@ describe("MCP query tools", () => {
     expect(snip.text).toContain("return 42;");
   });
 
+  it("returns a clean null result (not a protocol error) for an unresolved symbol", async () => {
+    const client = await indexedClient();
+    // get_code_snippet and node return undefined for an unknown ref; the tool
+    // result must still be valid MCP content, not a JSON.stringify(undefined) crash.
+    const snip = await client.callTool({
+      name: "get_code_snippet",
+      arguments: { symbol: "doesNotExist" },
+    });
+    expect(JSON.parse(firstText(snip))).toBeNull();
+    const node = await client.callTool({ name: "node", arguments: { ref: "doesNotExist" } });
+    expect(JSON.parse(firstText(node))).toBeNull();
+  });
+
   it("node assembles a symbol's definition, source, callers, and callees", async () => {
     const client = await indexedClient();
     const view = JSON.parse(
