@@ -39,6 +39,8 @@ export interface CliContext {
 export interface CliCommand {
   readonly name: string;
   readonly summary: string;
+  /** One-line usage shown by `ama <command> --help`; falls back to the summary. */
+  readonly usage?: string;
   run(args: string[], ctx: CliContext): number | Promise<number>;
 }
 
@@ -81,7 +83,15 @@ export async function run(
     err(usage(commands));
     return 1;
   }
-  return command.run(positional.slice(1), { json, write: out, error: err });
+  const rest = positional.slice(1);
+  // `ama <command> --help` shows the command's own help (and never reaches its
+  // run(), so it can't be misread as an argument), before dispatching.
+  if (rest.includes("--help") || rest.includes("-h")) {
+    out(`ama ${command.name} — ${command.summary}`);
+    if (command.usage) out(command.usage);
+    return 0;
+  }
+  return command.run(rest, { json, write: out, error: err });
 }
 
 /** Registered commands. More domain commands (search/sync/…) are added here

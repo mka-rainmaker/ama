@@ -82,4 +82,45 @@ describe("CLI framework", () => {
     expect(err.lines.join("\n")).toContain("a diagnostic");
     expect(out.lines.join("\n")).not.toContain("a diagnostic");
   });
+
+  it("shows per-command help for `<command> --help` without running the command", async () => {
+    let ran = false;
+    const cmds: CliCommand[] = [
+      {
+        name: "greet",
+        summary: "say hi",
+        usage: "Usage: ama greet <name>",
+        run: () => {
+          ran = true;
+          return 0;
+        },
+      },
+    ];
+    const out = capture();
+    const code = await run(["greet", "--help"], cmds, out.write, out.write);
+    expect(code).toBe(0);
+    expect(ran).toBe(false);
+    const text = out.lines.join("\n");
+    expect(text).toContain("say hi");
+    expect(text).toContain("Usage: ama greet <name>");
+  });
+
+  it("accepts -h and falls back to the summary when a command has no usage", async () => {
+    let ran = false;
+    const cmds: CliCommand[] = [
+      {
+        name: "plain",
+        summary: "a plain command",
+        run: () => {
+          ran = true;
+          return 0;
+        },
+      },
+    ];
+    const out = capture();
+    const code = await run(["plain", "-h"], cmds, out.write, out.write);
+    expect(code).toBe(0);
+    expect(ran).toBe(false);
+    expect(out.lines.join("\n")).toContain("a plain command");
+  });
 });

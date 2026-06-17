@@ -61,6 +61,7 @@ function refQueryCommand(
   return {
     name,
     summary,
+    usage: `Usage: ama ${name} <symbol>`,
     async run(args, ctx) {
       const ref = args[0];
       if (ref === undefined) {
@@ -123,6 +124,7 @@ export const typesUsedCommand = refQueryCommand(
 export const nodeCommand: CliCommand = {
   name: "node",
   summary: "Show a symbol with its callers, callees, and dependents",
+  usage: "Usage: ama node <symbol>",
   async run(args, ctx) {
     const ref = args[0];
     if (ref === undefined) {
@@ -150,6 +152,7 @@ export const nodeCommand: CliCommand = {
 export const exploreCommand: CliCommand = {
   name: "explore",
   summary: "Explore symbols matching a question and their blast radius",
+  usage: "Usage: ama explore <question>",
   async run(args, ctx) {
     const question = args.join(" ").trim();
     if (question === "") {

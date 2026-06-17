@@ -50,6 +50,7 @@ export function renderAffected(refs: string[], nodes: GraphNode[], json: boolean
 export const impactCommand: CliCommand = {
   name: "impact",
   summary: "Show the blast radius (transitive callers) of a symbol",
+  usage: "Usage: ama impact <symbol> [--depth <N>]",
   async run(args, ctx) {
     const parsed = parseImpactArgs(args);
     const ref = parsed.ref;
@@ -73,6 +74,7 @@ export const impactCommand: CliCommand = {
 export const affectedCommand: CliCommand = {
   name: "affected",
   summary: "Show files impacted by changes to the given files",
+  usage: "Usage: ama affected <file> [file...]",
   async run(args, ctx) {
     if (args.length === 0) {
       emitError(ctx, "Usage: ama affected <file> [file...]");

@@ -94,6 +94,7 @@ async function runSearch(root: string, opts: SearchArgs): Promise<GraphNode[] | 
 export const searchCommand: CliCommand = {
   name: "search",
   summary: "Find symbols by name, with --kind/--limit filters",
+  usage: USAGE,
   async run(args, ctx) {
     const parsed = parseSearchArgs(args);
     if (parsed.error !== undefined || parsed.query === undefined) {
@@ -114,6 +115,7 @@ export const searchCommand: CliCommand = {
 export const searchCodeCommand: CliCommand = {
   name: "search-code",
   summary: "Find symbols whose body text contains a string",
+  usage: "Usage: ama search-code <text> [--limit <N>]",
   async run(args, ctx) {
     let limit: number | undefined;
     const terms: string[] = [];
