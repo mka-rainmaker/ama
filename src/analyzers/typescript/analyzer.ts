@@ -238,7 +238,9 @@ export class TypeScriptAnalyzer implements Analyzer {
       // plain call (to Foo's class node), so `find_callers` sees constructions.
       if ((ts.isCallExpression(child) || ts.isNewExpression(child)) && enclosingId) {
         const callee = resolveCallee(child, checker, declToId, root);
-        if (callee) edges.push({ from: enclosingId, to: callee, kind: "Calls" });
+        if (callee) {
+          edges.push({ from: enclosingId, to: callee, kind: "Calls", at: locationOf(child) });
+        }
       }
       const childId = declToId.get(child);
       // A function-valued `const` is a node (ama-4s2); descending into it makes
@@ -987,4 +989,12 @@ function rangeOf(node: ts.Node, sf: ts.SourceFile): SourceRange {
   const start = sf.getLineAndCharacterOfPosition(node.getStart(sf));
   const end = sf.getLineAndCharacterOfPosition(node.getEnd());
   return { startLine: start.line + 1, endLine: end.line + 1 };
+}
+
+/** A node's 1-based (line, column) start — for tagging an edge with its source
+ *  site (a call/new expression's position). (ama-hft.9) */
+function locationOf(node: ts.Node): { line: number; column: number } {
+  const sf = node.getSourceFile();
+  const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+  return { line: line + 1, column: character + 1 };
 }

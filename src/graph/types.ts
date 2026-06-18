@@ -80,4 +80,8 @@ export interface GraphEdge {
   kind: EdgeKind;
   /** How the edge was derived; absent ⇒ `resolved`. */
   provenance?: EdgeProvenance;
+  /** Where the edge originates — a call/new site's 1-based line and column. With
+   *  dedup on (from,to,kind), this is the first such site. Absent for edges with
+   *  no single source point (Defines, Imports). (ama-hft.9) */
+  at?: { line: number; column: number };
 }

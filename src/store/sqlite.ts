@@ -32,6 +32,8 @@ interface EdgeRow {
   to_id: string;
   kind: string;
   provenance: string | null;
+  at_line: number | null;
+  at_column: number | null;
 }
 
 /**
@@ -71,7 +73,9 @@ export class SqliteStore implements Store {
         from_id    TEXT NOT NULL,
         to_id      TEXT NOT NULL,
         kind       TEXT NOT NULL,
-        provenance TEXT
+        provenance TEXT,
+        at_line    INTEGER,
+        at_column  INTEGER
       );
       CREATE INDEX IF NOT EXISTS edges_from ON edges(from_id);
       CREATE INDEX IF NOT EXISTS edges_to ON edges(to_id);
@@ -90,12 +94,18 @@ export class SqliteStore implements Store {
         value TEXT NOT NULL
       );
     `);
-    // Additive migration for a DB created before the column existed (ama-m8k.1).
-    // `ADD COLUMN` is idempotent only via this guard — it throws if it's there.
-    try {
-      this.db.exec("ALTER TABLE edges ADD COLUMN provenance TEXT");
-    } catch {
-      // Column already present (fresh DB or already migrated) — nothing to do.
+    // Additive migrations for DBs created before a column existed — each `ADD
+    // COLUMN` throws if present, so guard each independently (ama-m8k.1, ama-hft.9).
+    for (const ddl of [
+      "ALTER TABLE edges ADD COLUMN provenance TEXT",
+      "ALTER TABLE edges ADD COLUMN at_line INTEGER",
+      "ALTER TABLE edges ADD COLUMN at_column INTEGER",
+    ]) {
+      try {
+        this.db.exec(ddl);
+      } catch {
+        // Column already present — nothing to do.
+      }
     }
   }
 
@@ -125,8 +135,18 @@ export class SqliteStore implements Store {
   addEdge(edge: GraphEdge): void {
     // OR IGNORE drops a duplicate (from, to, kind) via the edges_unique index.
     this.db
-      .prepare("INSERT OR IGNORE INTO edges (from_id, to_id, kind, provenance) VALUES (?, ?, ?, ?)")
-      .run(edge.from, edge.to, edge.kind, edge.provenance ?? null);
+      .prepare(
+        `INSERT OR IGNORE INTO edges (from_id, to_id, kind, provenance, at_line, at_column)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        edge.from,
+        edge.to,
+        edge.kind,
+        edge.provenance ?? null,
+        edge.at?.line ?? null,
+        edge.at?.column ?? null,
+      );
   }
 
   getNode(id: string): GraphNode | undefined {
@@ -313,6 +333,9 @@ function rowToNode(r: NodeRow): GraphNode {
 function rowToEdge(r: EdgeRow): GraphEdge {
   const edge: GraphEdge = { from: r.from_id, to: r.to_id, kind: r.kind as EdgeKind };
   if (r.provenance) edge.provenance = r.provenance as EdgeProvenance;
+  if (r.at_line !== null && r.at_column !== null) {
+    edge.at = { line: r.at_line, column: r.at_column };
+  }
   return edge;
 }
 
