@@ -32,6 +32,17 @@ export interface NodeView {
   dependents: GraphNode[];
 }
 
+/** A file's structure in one answer: the symbols it defines and what depends on
+ *  it — a structured, cheaper stand-in for reading the whole file. */
+export interface FileSkeleton {
+  /** The resolved File node. */
+  file: GraphNode;
+  /** Symbols the file defines, in source order (its outline). */
+  symbols: GraphNode[];
+  /** Files that import (or re-export) this file. */
+  dependents: GraphNode[];
+}
+
 /** A census of the graph's node and edge kinds — what the index actually contains. */
 export interface GraphSchema {
   /** Count of nodes per kind (e.g. Class, Function, Method, Interface, File). */
@@ -261,6 +272,31 @@ export class QueryService {
       callees: this.findCallees(ref),
       dependents: this.findImporters(ref),
     };
+  }
+
+  /**
+   * A file's skeleton: the symbols it defines (its outline, in source order) plus
+   * the files that depend on it — so an agent grasps a file's shape and reverse
+   * dependencies from one call instead of reading the whole file. `ref` is a File
+   * id (repo-relative path) or basename; non-file matches are ignored.
+   */
+  fileSkeleton(ref: string): FileSkeleton | undefined {
+    const file = this.resolve(ref).find((n) => n.kind === "File");
+    if (!file) return undefined;
+    const symbols = [...this.store.allNodes()]
+      .filter((n) => n.file === file.file && n.id !== file.id)
+      .sort((a, b) => (a.range?.startLine ?? 0) - (b.range?.startLine ?? 0));
+    // Dependents = files importing *any* symbol the file defines, plus the file
+    // itself (import * / export *). Imports edges target the imported declaration,
+    // not the file node, so importers of named symbols would otherwise be missed.
+    const dependents = new Map<string, GraphNode>();
+    for (const target of [file, ...symbols]) {
+      for (const edge of this.store.edgesTo(target.id, "Imports")) {
+        const importer = this.store.getNode(edge.from);
+        if (importer && importer.id !== file.id) dependents.set(importer.id, importer);
+      }
+    }
+    return { file, symbols, dependents: [...dependents.values()] };
   }
 
   /**

@@ -7,6 +7,7 @@ import { FileWatcher, type WatchSource } from "../indexer/watcher.js";
 import { QueryService } from "../query/service.js";
 import type {
   Exploration,
+  FileSkeleton,
   GraphSchema,
   NodeView,
   SearchOptions,
@@ -261,6 +262,10 @@ export class AmaSession {
 
   node(ref: string): NodeView | undefined {
     return this.requireQuery().node(ref);
+  }
+
+  fileSkeleton(ref: string): FileSkeleton | undefined {
+    return this.requireQuery().fileSkeleton(ref);
   }
 
   impactAnalysis(ref: string, maxDepth?: number): GraphNode[] {

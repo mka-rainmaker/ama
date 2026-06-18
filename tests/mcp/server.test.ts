@@ -193,6 +193,23 @@ describe("MCP query tools", () => {
     expect(callers).toEqual(["Service.compute", "main"]);
   });
 
+  it("file_skeleton returns a file's symbol outline and dependents", async () => {
+    const client = await indexedClient();
+    const skel = JSON.parse(
+      firstText(await client.callTool({ name: "file_skeleton", arguments: { file: "calls.ts" } })),
+    );
+    expect(skel.file.kind).toBe("File");
+    const names = skel.symbols.map((n: { name: string }) => n.name);
+    expect(names).toContain("helper");
+    expect(names).toContain("Service");
+    // Outline is in source order: helper (line 1) precedes Service (line 9).
+    expect(names.indexOf("helper")).toBeLessThan(names.indexOf("Service"));
+    // The File node itself is not listed among its own symbols.
+    expect(names).not.toContain("calls.ts");
+    // Nothing imports this single-file fixture.
+    expect(skel.dependents).toEqual([]);
+  });
+
   it("impact_analysis returns the transitive blast radius of a symbol", async () => {
     const client = await indexedClient();
     const affected = JSON.parse(
@@ -259,9 +276,7 @@ describe("MCP route tools", () => {
   it("find_routes returns the routes that reference a handler", async () => {
     const client = await indexedClient();
     const routes = JSON.parse(
-      firstText(
-        await client.callTool({ name: "find_routes", arguments: { symbol: "listUsers" } }),
-      ),
+      firstText(await client.callTool({ name: "find_routes", arguments: { symbol: "listUsers" } })),
     );
     expect(routes.map((n: { name: string }) => n.name)).toContain("GET /users");
   });

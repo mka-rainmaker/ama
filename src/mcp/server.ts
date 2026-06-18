@@ -334,6 +334,23 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
   );
 
   server.registerTool(
+    "file_skeleton",
+    {
+      description:
+        "A file's outline in one call: the symbols it defines (kind, name, line range) " +
+        "plus the files that depend on it — a structured, cheaper alternative to reading " +
+        "the whole file.",
+      inputSchema: {
+        file: z.string().describe("File node id (repo-relative path) or basename."),
+      },
+    },
+    tap(
+      "file_skeleton",
+      queryTool(session, ({ file }: { file: string }) => session.fileSkeleton(file)),
+    ),
+  );
+
+  server.registerTool(
     "impact_analysis",
     {
       description:
