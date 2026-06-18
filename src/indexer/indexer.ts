@@ -85,7 +85,7 @@ export class Indexer {
     }
 
     const languages: LanguageCoverage[] = [];
-    const resolution: ResolutionStats = { callsTotal: 0, callsResolved: 0 };
+    const resolution: ResolutionStats = { callsTotal: 0, callsResolved: 0, unresolved: {} };
     let fileCount = 0;
     for (const [analyzer, files] of byAnalyzer) {
       // Isolate each analyzer: a crash on one language's batch (a pathological
@@ -110,6 +110,9 @@ export class Indexer {
       if (result.resolution) {
         resolution.callsTotal += result.resolution.callsTotal;
         resolution.callsResolved += result.resolution.callsResolved;
+        for (const [name, n] of Object.entries(result.resolution.unresolved)) {
+          resolution.unresolved[name] = (resolution.unresolved[name] ?? 0) + n;
+        }
       }
       languages.push({
         language: analyzer.language,
@@ -166,7 +169,14 @@ export class Indexer {
     // Resolution coverage is additive — an index written before ama-m8k.12 simply
     // lacks it, so it stays undefined rather than gating reopen.
     const resolutionRaw = store.getMeta("ama:resolution");
-    const resolution = resolutionRaw ? (JSON.parse(resolutionRaw) as ResolutionStats) : undefined;
+    const parsedResolution = resolutionRaw
+      ? (JSON.parse(resolutionRaw) as ResolutionStats)
+      : undefined;
+    // An index written before ama-qbn has no `unresolved` map; default it so the
+    // field is always present once `resolution` is.
+    const resolution = parsedResolution
+      ? { ...parsedResolution, unresolved: parsedResolution.unresolved ?? {} }
+      : undefined;
     return {
       store,
       stats: {

@@ -51,6 +51,9 @@ describe("MCP server", () => {
     // call graph resolved" signal, internally consistent (resolved <= total).
     expect(status.resolution.callsTotal).toBeGreaterThan(0);
     expect(status.resolution.callsResolved).toBeLessThanOrEqual(status.resolution.callsTotal);
+    // The unresolved breakdown travels too (ama-qbn) — what the code calls that
+    // Ama can't resolve, keyed by callee root.
+    expect(typeof status.resolution.unresolved).toBe("object");
     // The build stamp travels over the protocol so a client can check freshness.
     expect(typeof status.server.version).toBe("string");
     expect(status.server).toHaveProperty("revision");

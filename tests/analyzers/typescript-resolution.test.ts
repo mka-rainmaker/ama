@@ -22,4 +22,9 @@ describe("TypeScriptAnalyzer resolution-coverage counts (ama-m8k.12)", () => {
     // helper() resolves to a node; console.log() does not (no node for it).
     expect(result.resolution?.callsResolved).toBe(1);
   });
+
+  it("reports which unresolved calls there were, grouped by callee root (ama-qbn)", () => {
+    // console.log() is the only unresolved call; its root is `console`.
+    expect(result.resolution?.unresolved).toEqual({ console: 1 });
+  });
 });

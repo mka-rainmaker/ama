@@ -39,7 +39,7 @@ export class TypeScriptAnalyzer implements Analyzer {
 
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
-    const resolution: ResolutionStats = { callsTotal: 0, callsResolved: 0 };
+    const resolution: ResolutionStats = { callsTotal: 0, callsResolved: 0, unresolved: {} };
     /** AST declaration node -> graph node id, so resolved calls find their target. */
     const declToId = new Map<ts.Node, string>();
 
@@ -266,6 +266,10 @@ export class TypeScriptAnalyzer implements Analyzer {
           // `new X()` is a construction — a distinct Instantiates edge, not Calls.
           const kind = ts.isNewExpression(child) ? "Instantiates" : "Calls";
           edges.push({ from: enclosingId, to: callee, kind, at: locationOf(child) });
+        } else {
+          // Unresolved — record what it called (by root) so coverage is explainable. (ama-qbn)
+          const targetRoot = calleeRoot(child);
+          if (targetRoot) counts.unresolved[targetRoot] = (counts.unresolved[targetRoot] ?? 0) + 1;
         }
       }
       const childId = declToId.get(child);
@@ -875,6 +879,17 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
  * a `new` expression too: its `.expression` is the constructed class, which
  * resolves the same way (so construction counts as a call site).
  */
+/** The leftmost identifier of a call's callee — `ts` for `ts.isCallExpression(x)`,
+ *  `helper` for `helper()` — used to group unresolved calls by what they target
+ *  (a module/object name). Undefined for call results, super(), etc. (ama-qbn) */
+function calleeRoot(call: ts.CallExpression | ts.NewExpression): string | undefined {
+  let e: ts.Node = call.expression;
+  while (ts.isPropertyAccessExpression(e) || ts.isElementAccessExpression(e)) e = e.expression;
+  if (ts.isIdentifier(e)) return e.text;
+  if (e.kind === ts.SyntaxKind.ThisKeyword) return "this";
+  return undefined;
+}
+
 function resolveCallee(
   call: ts.CallExpression | ts.NewExpression,
   checker: ts.TypeChecker,

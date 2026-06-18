@@ -8,6 +8,9 @@ export interface ResolutionStats {
   /** Of those, how many resolved to a known target node (the rest are external
    *  or dynamic — library calls, computed dispatch). */
   callsResolved: number;
+  /** The unresolved calls, counted by callee root name (e.g. `ts`, `console`,
+   *  `path`) — what the code calls that Ama can't see. (ama-qbn) */
+  unresolved: Record<string, number>;
 }
 
 /** Nodes and edges produced by analyzing a set of files. */
