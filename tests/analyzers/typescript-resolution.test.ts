@@ -27,4 +27,11 @@ describe("TypeScriptAnalyzer resolution-coverage counts (ama-m8k.12)", () => {
     // console.log() is the only unresolved call; its root is `console`.
     expect(result.resolution?.unresolved).toEqual({ console: 1 });
   });
+
+  it("groups an unresolved this.prop.method() call by the property, not `this` (ama-k9t)", async () => {
+    const r = await new TypeScriptAnalyzer().analyze(root, ["this-calls.ts"]);
+    // this.items.push() is an unresolved builtin call; group it under `items`, not
+    // the opaque `this`, so the breakdown locates where unresolved calls cluster.
+    expect(r.resolution?.unresolved).toEqual({ items: 1 });
+  });
 });

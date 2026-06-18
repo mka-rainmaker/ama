@@ -881,10 +881,18 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
  */
 /** The leftmost identifier of a call's callee — `ts` for `ts.isCallExpression(x)`,
  *  `helper` for `helper()` — used to group unresolved calls by what they target
- *  (a module/object name). Undefined for call results, super(), etc. (ama-qbn) */
+ *  (a module/object name). `this.X...` groups by `X` (the property/method on
+ *  `this`), since the bare `this` root is opaque about where the call is — most of
+ *  these are builtin calls on instance fields like `this.items.push()`. Undefined
+ *  for call results, super(), etc. (ama-qbn, ama-k9t) */
 function calleeRoot(call: ts.CallExpression | ts.NewExpression): string | undefined {
   let e: ts.Node = call.expression;
-  while (ts.isPropertyAccessExpression(e) || ts.isElementAccessExpression(e)) e = e.expression;
+  while (ts.isPropertyAccessExpression(e) || ts.isElementAccessExpression(e)) {
+    if (e.expression.kind === ts.SyntaxKind.ThisKeyword) {
+      return ts.isPropertyAccessExpression(e) ? e.name.text : undefined;
+    }
+    e = e.expression;
+  }
   if (ts.isIdentifier(e)) return e.text;
   if (e.kind === ts.SyntaxKind.ThisKeyword) return "this";
   return undefined;
