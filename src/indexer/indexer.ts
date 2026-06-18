@@ -14,7 +14,7 @@ import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
 import type { FileMeta, Store } from "../store/types.js";
-import { isIgnoredSegment } from "./ignore.js";
+import { MAX_FILE_SIZE_BYTES, isIgnoredSegment } from "./ignore.js";
 
 export interface LanguageCoverage {
   language: string;
@@ -241,7 +241,19 @@ function discoverFiles(root: string): string[] {
       if (isIgnoredSegment(entry.name)) continue; // dotfiles + ignored dirs
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(abs);
-      else if (entry.isFile()) out.push(path.relative(root, abs));
+      else if (entry.isFile()) {
+        // Skip oversized files (minified bundles, data blobs) — the same cap the
+        // watcher enforces, so the initial index and re-index agree. A vanished
+        // file is just skipped.
+        let size: number;
+        try {
+          size = fs.statSync(abs).size;
+        } catch {
+          continue;
+        }
+        if (size > MAX_FILE_SIZE_BYTES) continue;
+        out.push(path.relative(root, abs));
+      }
     }
   };
   walk(root);

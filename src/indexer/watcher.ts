@@ -1,8 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { isIgnoredPath } from "./ignore.js";
-
-const ONE_MB = 1024 * 1024;
+import { MAX_FILE_SIZE_BYTES, isIgnoredPath } from "./ignore.js";
 
 /**
  * How a {@link FileWatcher} receives raw change events: given the root and a
@@ -49,7 +47,7 @@ export class FileWatcher {
     private readonly onChange: (rel: string) => void,
     options: FileWatcherOptions = {},
   ) {
-    this.maxFileSizeBytes = options.maxFileSizeBytes ?? ONE_MB;
+    this.maxFileSizeBytes = options.maxFileSizeBytes ?? MAX_FILE_SIZE_BYTES;
     this.source = options.source ?? fsWatchSource;
   }
 
