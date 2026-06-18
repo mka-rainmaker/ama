@@ -406,6 +406,21 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
   );
 
   server.registerTool(
+    "circular_imports",
+    {
+      description:
+        "File-level import cycles: groups of two or more files that (transitively) import " +
+        "each other. Each group is a strongly-connected component — high-signal for refactoring " +
+        "and untangling module graphs. Empty when the import graph is acyclic.",
+      inputSchema: {},
+    },
+    tap(
+      "circular_imports",
+      queryTool(session, () => session.circularImports()),
+    ),
+  );
+
+  server.registerTool(
     "affected",
     {
       description:

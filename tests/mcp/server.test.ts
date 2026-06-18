@@ -292,6 +292,20 @@ describe("MCP route tools", () => {
   });
 });
 
+const cycleRoot = path.resolve(here, "../fixtures/ts-cycle");
+
+describe("MCP analysis tools", () => {
+  it("circular_imports reports a file-level import cycle", async () => {
+    const client = await connectClient();
+    await client.callTool({ name: "index_repository", arguments: { path: cycleRoot } });
+    const cycles = JSON.parse(
+      firstText(await client.callTool({ name: "circular_imports", arguments: {} })),
+    );
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0].map((n: { file: string }) => n.file).sort()).toEqual(["a.ts", "b.ts"]);
+  });
+});
+
 describe("MCP tool-call logging", () => {
   const realEnv = process.env.AMA_LOG_TOOLS;
   afterEach(() => {

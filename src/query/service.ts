@@ -411,6 +411,77 @@ export class QueryService {
     return [...importers.values()];
   }
 
+  /** The files this file imports: each Imports edge's target resolved to the file
+   *  it lives in (a File node's id is its path, so that file is the target). */
+  private fileImports(fileId: string): string[] {
+    const deps = new Set<string>();
+    for (const edge of this.store.edgesFrom(fileId, "Imports")) {
+      const target = this.store.getNode(edge.to);
+      if (target && target.file !== fileId) deps.add(target.file);
+    }
+    return [...deps];
+  }
+
+  /**
+   * File-level import cycles, each a strongly-connected component of two or more
+   * files that (transitively) import each other — the high-signal answer for
+   * untangling a module graph. Tarjan's SCC over the file import graph; a
+   * single-node component (no self-import) is not a cycle and is omitted. (ama-m8k.7)
+   */
+  circularImports(): GraphNode[][] {
+    const files = [...this.store.allNodes()].filter((n) => n.kind === "File");
+    const adjacency = new Map(files.map((f) => [f.id, this.fileImports(f.id)]));
+
+    let counter = 0;
+    const index = new Map<string, number>();
+    const low = new Map<string, number>();
+    const onStack = new Set<string>();
+    const stack: string[] = [];
+    const components: string[][] = [];
+
+    const connect = (v: string): void => {
+      const vIndex = counter++;
+      index.set(v, vIndex);
+      low.set(v, vIndex);
+      stack.push(v);
+      onStack.add(v);
+      for (const w of adjacency.get(v) ?? []) {
+        const wIndex = index.get(w);
+        if (wIndex === undefined) {
+          connect(w);
+          low.set(v, Math.min(low.get(v) ?? vIndex, low.get(w) ?? vIndex));
+        } else if (onStack.has(w)) {
+          low.set(v, Math.min(low.get(v) ?? vIndex, wIndex));
+        }
+      }
+      if (low.get(v) === index.get(v)) {
+        const component: string[] = [];
+        let w: string | undefined;
+        do {
+          w = stack.pop();
+          if (w === undefined) break;
+          onStack.delete(w);
+          component.push(w);
+        } while (w !== v);
+        if (component.length > 1) components.push(component);
+      }
+    };
+
+    for (const f of files) if (!index.has(f.id)) connect(f.id);
+
+    const byId = new Map(files.map((f) => [f.id, f]));
+    return components
+      .map((component) =>
+        component
+          .flatMap((id) => {
+            const node = byId.get(id);
+            return node ? [node] : [];
+          })
+          .sort((a, b) => a.id.localeCompare(b.id)),
+      )
+      .sort((x, y) => (x[0]?.id ?? "").localeCompare(y[0]?.id ?? ""));
+  }
+
   /**
    * A one-call overview answering "what's going on around X?": symbols whose
    * name matches `question`, grouped by file, each with its callers and callees,

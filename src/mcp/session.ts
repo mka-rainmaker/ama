@@ -236,6 +236,10 @@ export class AmaSession {
     return this.requireQuery().findReferrers(ref);
   }
 
+  circularImports(): GraphNode[][] {
+    return this.requireQuery().circularImports();
+  }
+
   findImplementations(ref: string): GraphNode[] {
     return this.requireQuery().findImplementations(ref);
   }

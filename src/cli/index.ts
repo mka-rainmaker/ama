@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
 import { serverStamp } from "../mcp/build-info.js";
+import { cyclesCommand } from "./commands/cycles.js";
 import { filesCommand } from "./commands/files.js";
 import { affectedCommand, impactCommand } from "./commands/impact.js";
 import { indexCommand, initCommand, uninitCommand } from "./commands/lifecycle.js";
@@ -104,6 +105,7 @@ export const COMMANDS: readonly CliCommand[] = [
   affectedCommand,
   calleesCommand,
   callersCommand,
+  cyclesCommand,
   exploreCommand,
   filesCommand,
   handlersCommand,
