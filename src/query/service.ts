@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { GraphNode, NodeKind } from "../graph/index.js";
+import type { GraphEdge, GraphNode, NodeKind } from "../graph/index.js";
 import type { FileMeta, Store } from "../store/types.js";
 
 export interface SearchOptions {
@@ -218,12 +218,22 @@ export class QueryService {
     return [...interfaces.values()];
   }
 
+  /** Edges representing an import of/by `id` — value (`Imports`) and type-only
+   *  (`ImportsType`) alike — so importer/dependent/affected queries still count an
+   *  `import type` (it's a compile-time dependency). (ama-bhf) */
+  private importEdgesTo(id: string): GraphEdge[] {
+    return [...this.store.edgesTo(id, "Imports"), ...this.store.edgesTo(id, "ImportsType")];
+  }
+  private importEdgesFrom(id: string): GraphEdge[] {
+    return [...this.store.edgesFrom(id, "Imports"), ...this.store.edgesFrom(id, "ImportsType")];
+  }
+
   /** Files that import (or re-export) the referenced symbol. */
   findImporters(ref: string): GraphNode[] {
     const targets = this.resolve(ref);
     const importers = new Map<string, GraphNode>();
     for (const target of targets) {
-      for (const edge of this.store.edgesTo(target.id, "Imports")) {
+      for (const edge of this.importEdgesTo(target.id)) {
         const file = this.store.getNode(edge.from);
         if (file) importers.set(file.id, file);
       }
@@ -236,7 +246,7 @@ export class QueryService {
     const sources = this.resolve(ref);
     const imports = new Map<string, GraphNode>();
     for (const source of sources) {
-      for (const edge of this.store.edgesFrom(source.id, "Imports")) {
+      for (const edge of this.importEdgesFrom(source.id)) {
         const imported = this.store.getNode(edge.to);
         if (imported) imports.set(imported.id, imported);
       }
@@ -399,7 +409,7 @@ export class QueryService {
   private fileImporters(fileId: string): GraphNode[] {
     const importers = new Map<string, GraphNode>();
     const collect = (targetId: string) => {
-      for (const edge of this.store.edgesTo(targetId, "Imports")) {
+      for (const edge of this.importEdgesTo(targetId)) {
         const file = this.store.getNode(edge.from);
         if (file) importers.set(file.id, file);
       }

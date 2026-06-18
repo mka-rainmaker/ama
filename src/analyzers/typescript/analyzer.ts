@@ -346,20 +346,28 @@ export class TypeScriptAnalyzer implements Analyzer {
     edges: GraphEdge[],
     root: string,
   ): void {
-    const link = (name: ts.Node): void => {
+    // Type-only imports/exports (`import type`, `import { type X }`, `export
+    // type`) are erased at runtime, so they get an ImportsType edge — counted for
+    // dependents/affected but excluded from runtime analyses (circular_imports).
+    const link = (name: ts.Node, typeOnly: boolean): void => {
       const to = resolveImport(name, checker, declToId, root);
-      if (to) edges.push({ from: fromId, to, kind: "Imports" });
+      if (to) edges.push({ from: fromId, to, kind: typeOnly ? "ImportsType" : "Imports" });
     };
     // Imports can only appear as top-level statements in an ES module.
     for (const stmt of sf.statements) {
       if (ts.isImportDeclaration(stmt) && stmt.importClause) {
-        const { name, namedBindings } = stmt.importClause;
-        if (name) link(name); // default import
+        const clause = stmt.importClause;
+        if (clause.name) link(clause.name, clause.isTypeOnly); // default import
+        const { namedBindings } = clause;
         if (namedBindings) {
           if (ts.isNamedImports(namedBindings)) {
-            for (const spec of namedBindings.elements) link(spec.name);
+            // `import type {…}` makes the whole clause type-only; `import { type X }`
+            // marks a single specifier.
+            for (const spec of namedBindings.elements) {
+              link(spec.name, clause.isTypeOnly || spec.isTypeOnly);
+            }
           } else {
-            link(namedBindings.name); // `import * as ns` — aliases the module file
+            link(namedBindings.name, clause.isTypeOnly); // `import * as ns`
           }
         }
       } else if (
@@ -368,11 +376,13 @@ export class TypeScriptAnalyzer implements Analyzer {
       ) {
         const { exportClause } = stmt;
         if (!exportClause) {
-          link(stmt.moduleSpecifier); // `export * from` — no named clause; targets the module file
+          link(stmt.moduleSpecifier, stmt.isTypeOnly); // `export * from`
         } else if (ts.isNamedExports(exportClause)) {
-          for (const spec of exportClause.elements) link(spec.name);
+          for (const spec of exportClause.elements) {
+            link(spec.name, stmt.isTypeOnly || spec.isTypeOnly);
+          }
         } else {
-          link(exportClause.name); // `export * as ns from` — aliases the module file
+          link(exportClause.name, stmt.isTypeOnly); // `export * as ns from`
         }
       }
     }

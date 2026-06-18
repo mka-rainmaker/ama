@@ -32,6 +32,10 @@ export type EdgeKind =
   | "Implements"
   | "UsesType"
   | "Imports"
+  /** A type-only import (`import type` / `import { type X }`) — a compile-time
+   *  dependency erased at runtime. Counted as an import for dependents/affected,
+   *  but excluded from runtime analyses like circular_imports. */
+  | "ImportsType"
   /** A route (or other dispatch) refers to the symbol that handles it. */
   | "References";
 
