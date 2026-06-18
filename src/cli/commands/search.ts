@@ -9,7 +9,9 @@ import type { CliCommand } from "../index.js";
 import { dbPathFor } from "../paths.js";
 import { withQuery } from "../query-runner.js";
 
-const USAGE = "Usage: ama search <query> [--kind <Kind>] [--limit <N>]";
+const USAGE =
+  "Usage: ama search <query> [--kind <Kind>] [--limit <N>]\n" +
+  "  query may include inline filters: path:src/api kind:Function lang:python name:handler";
 
 /** Result of parsing `search` arguments: the query plus filters, or an error. */
 export interface SearchArgs {
@@ -93,7 +95,7 @@ async function runSearch(root: string, opts: SearchArgs): Promise<GraphNode[] | 
 
 export const searchCommand: CliCommand = {
   name: "search",
-  summary: "Find symbols by name, with --kind/--limit filters",
+  summary: "Find symbols by name, with inline path:/kind:/lang:/name: filters",
   usage: USAGE,
   async run(args, ctx) {
     const parsed = parseSearchArgs(args);

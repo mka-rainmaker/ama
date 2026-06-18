@@ -146,9 +146,15 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
   server.registerTool(
     "search_symbol",
     {
-      description: "Find symbols by name (case-insensitive substring).",
+      description:
+        "Find symbols by name (case-insensitive substring). The query also accepts " +
+        "inline filters to scope a search: path:<file-substring>, kind:<NodeKind>, " +
+        "lang:<typescript|python|…>, name:<substring> (quote values with spaces). " +
+        "E.g. `handler path:src/api kind:Function` or, filters-only, `path:src/store kind:Class`.",
       inputSchema: {
-        query: z.string().describe("Name or partial name to search for."),
+        query: z
+          .string()
+          .describe("Name or partial name, optionally with path:/kind:/lang:/name: filters."),
         limit: z.number().int().positive().optional().describe("Max results."),
         kind: z.enum(NODE_KINDS).optional().describe("Restrict to a single node kind."),
       },

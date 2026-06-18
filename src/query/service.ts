@@ -66,6 +66,84 @@ export interface Exploration {
   blastRadius: GraphNode[];
 }
 
+/** A search query split into free text and structured filters (ama-m8k.3). */
+export interface SearchQuery {
+  /** Free text matched against symbol name / qualified name. */
+  text: string;
+  /** File-path substring filter (`path:src/api`). */
+  path?: string;
+  /** Node-kind filter (`kind:Function`), matched case-insensitively. */
+  kind?: string;
+  /** Language filter (`lang:python`), derived from the file extension. */
+  lang?: string;
+  /** Explicit name-substring filter (`name:handler`), in addition to free text. */
+  name?: string;
+}
+
+// key:"quoted value" | key:bare | "quoted text" | bare-word.
+const SEARCH_TOKEN = /(\w+):"([^"]*)"|(\w+):(\S+)|"([^"]+)"|(\S+)/g;
+
+/**
+ * Parse a search string into free text plus `path:`/`kind:`/`lang:`/`name:`
+ * filters, honouring quotes for values with spaces. Unknown `key:value` tokens
+ * (e.g. a `http://…` URL) are kept verbatim as free text rather than dropped.
+ */
+export function parseSearchQuery(raw: string): SearchQuery {
+  const result: SearchQuery = { text: "" };
+  const text: string[] = [];
+  for (const m of raw.matchAll(SEARCH_TOKEN)) {
+    const key = m[1] ?? m[3];
+    const value = m[2] ?? m[4];
+    if (key !== undefined && value !== undefined) {
+      switch (key.toLowerCase()) {
+        case "path":
+          result.path = value;
+          break;
+        case "kind":
+          result.kind = value;
+          break;
+        case "lang":
+          result.lang = value;
+          break;
+        case "name":
+          result.name = value;
+          break;
+        default:
+          text.push(`${key}:${value}`); // unknown filter — keep as text
+      }
+    } else {
+      const bare = m[5] ?? m[6];
+      if (bare !== undefined) text.push(bare);
+    }
+  }
+  result.text = text.join(" ");
+  return result;
+}
+
+/** Source-file extension → language name, for the `lang:` search filter. A small
+ *  presentation-layer map (the authoritative extension set lives in each analyzer,
+ *  which the query layer must not import). */
+const LANGUAGE_BY_EXT: Record<string, string> = {
+  ".ts": "typescript",
+  ".tsx": "typescript",
+  ".mts": "typescript",
+  ".cts": "typescript",
+  ".js": "javascript",
+  ".jsx": "javascript",
+  ".mjs": "javascript",
+  ".cjs": "javascript",
+  ".py": "python",
+  ".go": "go",
+  ".rs": "rust",
+  ".java": "java",
+  ".cs": "csharp",
+};
+
+function languageForFile(file: string): string | undefined {
+  const dot = file.lastIndexOf(".");
+  return dot === -1 ? undefined : LANGUAGE_BY_EXT[file.slice(dot).toLowerCase()];
+}
+
 /**
  * Read-side of the graph: the four MVP questions an agent asks, answered from
  * the store. A "symbol reference" is either an exact node id (e.g.
@@ -83,8 +161,30 @@ export class QueryService {
    * (substring in-memory, FTS5 prefix in SQLite). Kind is filtered on top.
    */
   searchSymbol(query: string, opts: SearchOptions = {}): GraphNode[] {
-    const hits = this.store.searchByName(query, opts.limit ?? 50);
-    return opts.kind ? hits.filter((n) => n.kind === opts.kind) : hits;
+    const { text, path: pathFilter, kind: kindFilter, lang, name } = parseSearchQuery(query);
+    const limit = opts.limit ?? 50;
+    const kind = kindFilter ?? opts.kind;
+    // Free text searches the name index (relevance-ordered); a filters-only query
+    // (e.g. `path:src/api kind:Class`) scans every node since there's no name term.
+    const candidates = text
+      ? this.store.searchByName(text, Number.MAX_SAFE_INTEGER)
+      : this.store.allNodes();
+    const hits: GraphNode[] = [];
+    for (const node of candidates) {
+      if (kind && node.kind.toLowerCase() !== kind.toLowerCase()) continue;
+      if (pathFilter && !node.file.toLowerCase().includes(pathFilter.toLowerCase())) continue;
+      if (lang && languageForFile(node.file) !== lang.toLowerCase()) continue;
+      if (
+        name &&
+        !node.name.toLowerCase().includes(name.toLowerCase()) &&
+        !node.qualifiedName.toLowerCase().includes(name.toLowerCase())
+      ) {
+        continue;
+      }
+      hits.push(node);
+      if (hits.length >= limit) break;
+    }
+    return hits;
   }
 
   /** Every indexed file's metadata, sorted by repo-relative path. */
