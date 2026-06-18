@@ -62,9 +62,20 @@ export function renderFileSkeleton(skeleton: FileSkeleton, json: boolean): strin
 export function renderExploration(exploration: Exploration, json: boolean): string {
   if (json) return JSON.stringify(exploration, null, 2);
   const files = Object.entries(exploration.byFile);
-  const lines = [`Exploring "${exploration.question}" — matches in ${files.length} file(s):`];
+  const shown = exploration.relationships.length;
+  const matchSummary =
+    exploration.totalMatches > shown
+      ? `showing top ${shown} of ${exploration.totalMatches} matches in ${files.length} file(s) ` +
+        `(narrow the query to see more)`
+      : `matches in ${files.length} file(s)`;
+  const lines = [`Exploring "${exploration.question}" — ${matchSummary}:`];
   for (const [file, nodes] of files) lines.push(`  ${file}: ${names(nodes)}`);
-  lines.push(`blast radius: ${exploration.blastRadius.length} symbol(s)`);
+  const blast = exploration.blastRadius.length;
+  const blastSummary =
+    exploration.totalBlastRadius > blast
+      ? `${blast} of ${exploration.totalBlastRadius} symbol(s)`
+      : `${blast} symbol(s)`;
+  lines.push(`blast radius: ${blastSummary}`);
   return lines.join("\n");
 }
 
@@ -232,15 +243,25 @@ export const skeletonCommand: CliCommand = {
 export const exploreCommand: CliCommand = {
   name: "explore",
   summary: "Explore symbols matching a question and their blast radius",
-  usage: "Usage: ama explore <question>",
+  usage: "Usage: ama explore [--limit N] <question>",
   async run(args, ctx) {
-    const question = args.join(" ").trim();
+    let limit: number | undefined;
+    const words: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === "--limit" && i + 1 < args.length) {
+        const n = Number(args[++i]);
+        if (Number.isInteger(n) && n > 0) limit = n;
+        continue;
+      }
+      words.push(args[i] as string);
+    }
+    const question = words.join(" ").trim();
     if (question === "") {
-      emitError(ctx, "Usage: ama explore <question>");
+      emitError(ctx, "Usage: ama explore [--limit N] <question>");
       return 1;
     }
     const exploration = await withQuery(process.env.AMA_ROOT ?? ".", (query) =>
-      query.explore(question),
+      query.explore(question, { limit }),
     );
     if (exploration === undefined) {
       emitError(ctx, NO_INDEX);

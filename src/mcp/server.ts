@@ -523,14 +523,23 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     {
       description:
         "A one-call overview of a question: matching symbols grouped by file, their " +
-        "caller/callee relationships, and the combined blast radius.",
+        "caller/callee relationships, and the combined blast radius. Deep-dives only the " +
+        "top matches (see totalMatches); pass limit to widen or narrow.",
       inputSchema: {
         question: z.string().describe("A name or term to explore around."),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("How many top matches to deep-dive (default 15)."),
       },
     },
     tap(
       "explore",
-      queryTool(session, ({ question }: { question: string }) => session.explore(question)),
+      queryTool(session, ({ question, limit }: { question: string; limit?: number }) =>
+        session.explore(question, { limit }),
+      ),
     ),
   );
 

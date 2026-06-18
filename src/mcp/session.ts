@@ -301,8 +301,8 @@ export class AmaSession {
     return this.requireQuery().affected(files, opts);
   }
 
-  explore(question: string): Exploration {
-    return this.requireQuery().explore(question);
+  explore(question: string, opts: { limit?: number } = {}): Exploration {
+    return this.requireQuery().explore(question, opts);
   }
 
   private requireQuery(): QueryService {

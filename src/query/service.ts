@@ -76,12 +76,17 @@ export interface GraphSchema {
  *  caller/callee relationships, and the combined transitive blast radius. */
 export interface Exploration {
   question: string;
-  /** Symbols whose name matches the question, grouped by their file. */
+  /** Top matching symbols (capped by the output budget), grouped by their file. */
   byFile: Record<string, GraphNode[]>;
-  /** For each match: who calls it and what it calls. */
+  /** For each shown match: who calls it and what it calls. */
   relationships: { symbol: string; callers: GraphNode[]; callees: GraphNode[] }[];
-  /** Transitive callers of all matches — what changing them would affect. */
+  /** Transitive callers of the shown matches — what changing them would affect
+   *  (capped by the output budget). */
   blastRadius: GraphNode[];
+  /** Total matches before the budget cap — when > shown, refine the query. (ama-m8k.4) */
+  totalMatches: number;
+  /** Total blast-radius symbols before the budget cap. (ama-m8k.4) */
+  totalBlastRadius: number;
 }
 
 /** A search query split into free text and structured filters (ama-m8k.3). */
@@ -241,6 +246,13 @@ const CALL_EDGE_KINDS = ["Calls", "Instantiates"] as const satisfies readonly Ed
  *  return type. find_types_used/find_type_users report both; find_returns is the
  *  return half alone. (ama-37c) */
 const TYPE_EDGE_KINDS = ["UsesType", "Returns"] as const satisfies readonly EdgeKind[];
+
+/** explore() output budget (ama-m8k.4): deep-dive the top this-many matches,
+ *  scan up to this-many to report the true total, and show this-many blast-radius
+ *  symbols. A broad term ("node") otherwise floods — 134k chars in one call. */
+const EXPLORE_MATCH_LIMIT = 15;
+const EXPLORE_SCAN_LIMIT = 200;
+const EXPLORE_BLAST_LIMIT = 40;
 
 /** Pair a neighbour node with the metadata of the edge it was reached by. */
 function neighbor(symbol: GraphNode, edge: GraphEdge): EdgeNeighbor {
@@ -765,8 +777,13 @@ export class QueryService {
    * plus the combined transitive blast radius. Composes searchSymbol,
    * findCallers/findCallees, and impactAnalysis — no new graph logic.
    */
-  explore(question: string): Exploration {
-    const matches = this.searchSymbol(question);
+  explore(question: string, opts: { limit?: number } = {}): Exploration {
+    const limit = opts.limit ?? EXPLORE_MATCH_LIMIT;
+    // Rank generously to count how many matched, but only deep-dive the top
+    // `limit` — relationships and the blast radius are O(matches) and explode on
+    // broad terms (e.g. "node" matched hundreds, 134k chars of output). (ama-m8k.4)
+    const ranked = this.searchSymbol(question, { limit: EXPLORE_SCAN_LIMIT });
+    const matches = ranked.slice(0, limit);
     const byFile: Record<string, GraphNode[]> = {};
     for (const match of matches) {
       const group = byFile[match.file] ?? [];
@@ -782,7 +799,15 @@ export class QueryService {
     for (const match of matches) {
       for (const affected of this.impactAnalysis(match.id)) blast.set(affected.id, affected);
     }
-    return { question, byFile, relationships, blastRadius: [...blast.values()] };
+    const blastRanked = rankNodes([...blast.values()]);
+    return {
+      question,
+      byFile,
+      relationships,
+      blastRadius: blastRanked.slice(0, EXPLORE_BLAST_LIMIT),
+      totalMatches: ranked.length,
+      totalBlastRadius: blastRanked.length,
+    };
   }
 
   /** Verbatim source for a symbol, or undefined if it has no known location. */
