@@ -34,6 +34,7 @@ interface EdgeRow {
   provenance: string | null;
   at_line: number | null;
   at_column: number | null;
+  at_sites: string | null;
 }
 
 /**
@@ -75,7 +76,8 @@ export class SqliteStore implements Store {
         kind       TEXT NOT NULL,
         provenance TEXT,
         at_line    INTEGER,
-        at_column  INTEGER
+        at_column  INTEGER,
+        at_sites   TEXT
       );
       CREATE INDEX IF NOT EXISTS edges_from ON edges(from_id);
       CREATE INDEX IF NOT EXISTS edges_to ON edges(to_id);
@@ -100,6 +102,7 @@ export class SqliteStore implements Store {
       "ALTER TABLE edges ADD COLUMN provenance TEXT",
       "ALTER TABLE edges ADD COLUMN at_line INTEGER",
       "ALTER TABLE edges ADD COLUMN at_column INTEGER",
+      "ALTER TABLE edges ADD COLUMN at_sites TEXT",
     ]) {
       try {
         this.db.exec(ddl);
@@ -136,8 +139,8 @@ export class SqliteStore implements Store {
     // OR IGNORE drops a duplicate (from, to, kind) via the edges_unique index.
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO edges (from_id, to_id, kind, provenance, at_line, at_column)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO edges (from_id, to_id, kind, provenance, at_line, at_column, at_sites)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         edge.from,
@@ -146,6 +149,7 @@ export class SqliteStore implements Store {
         edge.provenance ?? null,
         edge.at?.line ?? null,
         edge.at?.column ?? null,
+        edge.sites ? JSON.stringify(edge.sites) : null,
       );
   }
 
@@ -336,6 +340,7 @@ function rowToEdge(r: EdgeRow): GraphEdge {
   if (r.at_line !== null && r.at_column !== null) {
     edge.at = { line: r.at_line, column: r.at_column };
   }
+  if (r.at_sites) edge.sites = JSON.parse(r.at_sites) as GraphEdge["sites"];
   return edge;
 }
 

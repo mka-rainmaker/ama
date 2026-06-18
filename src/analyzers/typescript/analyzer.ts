@@ -81,7 +81,7 @@ export class TypeScriptAnalyzer implements Analyzer {
     }
 
     this.resolveDispatch(nodes, edges);
-    return { nodes, edges, resolution };
+    return { nodes, edges: accumulateCallSites(edges), resolution };
   }
 
   /**
@@ -901,6 +901,31 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
  * a `new` expression too: its `.expression` is the constructed class, which
  * resolves the same way (so construction counts as a call site).
  */
+/** Collapse repeated Calls/Instantiates edges between the same (from, to) into a
+ *  single edge that records *every* call site in `sites`, so find_callers/callees
+ *  can report all of them rather than just the first the store would keep. Other
+ *  edge kinds pass through untouched. (ama-hft.10) */
+function accumulateCallSites(edges: GraphEdge[]): GraphEdge[] {
+  const callEdges = new Map<string, GraphEdge>();
+  const result: GraphEdge[] = [];
+  for (const edge of edges) {
+    if (edge.kind !== "Calls" && edge.kind !== "Instantiates") {
+      result.push(edge);
+      continue;
+    }
+    const key = `${edge.from} ${edge.to} ${edge.kind}`;
+    const existing = callEdges.get(key);
+    if (!existing) {
+      callEdges.set(key, edge);
+      result.push(edge);
+    } else if (edge.at) {
+      if (!existing.at) existing.at = edge.at;
+      else (existing.sites ??= [existing.at]).push(edge.at);
+    }
+  }
+  return result;
+}
+
 /** Built-in higher-order methods that invoke a function argument — Array
  *  iteration and Promise chaining. A named function passed to one of these is
  *  attributed a heuristic Calls edge (the method name is a pattern match, not a

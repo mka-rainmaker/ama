@@ -93,4 +93,7 @@ export interface GraphEdge {
    *  dedup on (from,to,kind), this is the first such site. Absent for edges with
    *  no single source point (Defines, Imports). (ama-hft.9) */
   at?: { line: number; column: number };
+  /** Every call/construction site for this edge, when a caller invokes a target
+   *  more than once (`sites[0] === at`). Absent for single-site edges. (ama-hft.10) */
+  sites?: { line: number; column: number }[];
 }

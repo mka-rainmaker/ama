@@ -69,6 +69,16 @@ export function runStoreContract(label: string, makeStore: () => Store): void {
       expect(store.edgesFrom("a")).toHaveLength(2);
     });
 
+    it("round-trips an edge's call sites (ama-hft.10)", () => {
+      const store = makeStore();
+      const sites = [
+        { line: 1, column: 2 },
+        { line: 3, column: 4 },
+      ];
+      store.addEdge({ from: "a", to: "b", kind: "Calls", at: sites[0], sites });
+      expect(store.edgesFrom("a", "Calls")[0]?.sites).toEqual(sites);
+    });
+
     it("iterates every node and tracks counts", () => {
       const store = makeStore();
       store.addNode(node({ id: "n1", name: "n1" }));

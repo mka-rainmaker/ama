@@ -37,6 +37,9 @@ export interface EdgeNeighbor {
   via: EdgeKind;
   /** The call-site line/column, when the edge records one. */
   at?: { line: number; column: number };
+  /** Every call site, when the caller invokes the target more than once
+   *  (`sites[0] === at`). Absent for single-site edges. (ama-hft.10) */
+  sites?: { line: number; column: number }[];
   /** How the edge was derived; absent ⇒ resolved. */
   provenance?: EdgeProvenance;
 }
@@ -266,6 +269,7 @@ const EXPLORE_BLAST_LIMIT = 40;
 function neighbor(symbol: GraphNode, edge: GraphEdge): EdgeNeighbor {
   const n: EdgeNeighbor = { symbol, via: edge.kind };
   if (edge.at) n.at = edge.at;
+  if (edge.sites) n.sites = edge.sites;
   if (edge.provenance) n.provenance = edge.provenance;
   return n;
 }
