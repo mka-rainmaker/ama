@@ -54,7 +54,7 @@ describe("single-file re-index (reindexFile)", () => {
   });
 
   it("re-resolves a re-indexed file's outbound edges against files it never walks", async () => {
-    expect(session.findCallees("caller").map((n) => n.name)).toContain("target");
+    expect(session.findCallees("caller").map((n) => n.symbol.name)).toContain("target");
     expect(session.findImports("b.ts").map((n) => n.name)).toEqual(
       expect.arrayContaining(["target", "Shape"]),
     );
@@ -64,7 +64,7 @@ describe("single-file re-index (reindexFile)", () => {
 
     // Re-analyzing b alone never walks a, so caller->target and b's imports must
     // be re-resolved by location against a's still-present nodes.
-    expect(session.findCallees("caller").map((n) => n.name)).toContain("target");
+    expect(session.findCallees("caller").map((n) => n.symbol.name)).toContain("target");
     expect(session.findImports("b.ts").map((n) => n.name)).toEqual(
       expect.arrayContaining(["target", "Shape"]),
     );
@@ -72,11 +72,11 @@ describe("single-file re-index (reindexFile)", () => {
 
   it("leaves edges owned by a file that was not re-indexed untouched", async () => {
     // a.ts calls helper (in b). That edge is owned by a, not b.
-    expect(session.findCallees("target").map((n) => n.name)).toContain("helper");
+    expect(session.findCallees("target").map((n) => n.symbol.name)).toContain("helper");
     write("b.ts", B.replace("void s;", "void s; // touched"));
     await session.reindexFile("b.ts");
     // Reconciling b must not disturb a's call into b.
-    expect(session.findCallees("target").map((n) => n.name)).toContain("helper");
+    expect(session.findCallees("target").map((n) => n.symbol.name)).toContain("helper");
   });
 
   it("drops a symbol removed from the re-indexed file", async () => {
@@ -85,6 +85,6 @@ describe("single-file re-index (reindexFile)", () => {
     await session.reindexFile("b.ts");
     expect(session.searchSymbol("caller").filter((n) => n.kind === "Function")).toEqual([]);
     // helper survives the edit, so a's call into it stays valid.
-    expect(session.findCallees("target").map((n) => n.name)).toContain("helper");
+    expect(session.findCallees("target").map((n) => n.symbol.name)).toContain("helper");
   });
 });

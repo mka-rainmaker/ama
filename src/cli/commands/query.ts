@@ -96,11 +96,11 @@ function refQueryCommand(
 }
 
 export const callersCommand = refQueryCommand("callers", "List the callers of a symbol", (q, ref) =>
-  q.findCallers(ref),
+  q.findCallers(ref).map((c) => c.symbol),
 );
 
 export const calleesCommand = refQueryCommand("callees", "List what a symbol calls", (q, ref) =>
-  q.findCallees(ref),
+  q.findCallees(ref).map((c) => c.symbol),
 );
 
 export const implementationsCommand = refQueryCommand(

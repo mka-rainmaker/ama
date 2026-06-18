@@ -172,7 +172,9 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
   server.registerTool(
     "find_callers",
     {
-      description: "Every place that calls a function or method.",
+      description:
+        "Every place that calls a function or method — each result is " +
+        "{ symbol, at: { line, column } } so you see who calls it and where.",
       inputSchema: {
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
       },
@@ -186,7 +188,9 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
   server.registerTool(
     "find_callees",
     {
-      description: "What a function or method calls.",
+      description:
+        "What a function or method calls — each result is { symbol, at: { line, column } }, " +
+        "the callee and the call site.",
       inputSchema: {
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
       },

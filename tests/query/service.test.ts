@@ -26,14 +26,14 @@ describe("QueryService", () => {
   it("finds all callers of a function", () => {
     const names = q
       .findCallers("helper")
-      .map((n) => n.qualifiedName)
+      .map((n) => n.symbol.qualifiedName)
       .sort();
     expect(names).toEqual(["Service.compute", "main"]);
   });
 
   it("finds the callees of a method", () => {
     const callees = q.findCallees("Service.compute");
-    expect(callees.map((n) => n.name)).toContain("helper");
+    expect(callees.map((n) => n.symbol.name)).toContain("helper");
   });
 
   it("returns a verbatim source snippet for a symbol", () => {

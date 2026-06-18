@@ -18,7 +18,7 @@ describe("find_* relationship ranking (ama-bc2)", () => {
     store.addEdge({ from: "tests/t.test.ts#testCaller", to: "src/t.ts#target", kind: "Calls" });
     store.addEdge({ from: "src/s.ts#srcCaller", to: "src/t.ts#target", kind: "Calls" });
 
-    const ids = new QueryService(store, "/repo").findCallers("target").map((n) => n.id);
+    const ids = new QueryService(store, "/repo").findCallers("target").map((n) => n.symbol.id);
     expect(ids.indexOf("src/s.ts#srcCaller")).toBeLessThan(
       ids.indexOf("tests/t.test.ts#testCaller"),
     );

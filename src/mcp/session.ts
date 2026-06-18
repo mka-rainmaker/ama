@@ -6,6 +6,7 @@ import type { IndexStats, Indexer, LanguageCoverage, SyncResult } from "../index
 import { FileWatcher, type WatchSource } from "../indexer/watcher.js";
 import { QueryService } from "../query/service.js";
 import type {
+  EdgeNeighbor,
   Exploration,
   FileSkeleton,
   GraphSchema,
@@ -216,11 +217,11 @@ export class AmaSession {
     return this.requireQuery().searchCode(query, opts);
   }
 
-  findCallers(ref: string): GraphNode[] {
+  findCallers(ref: string): EdgeNeighbor[] {
     return this.requireQuery().findCallers(ref);
   }
 
-  findCallees(ref: string): GraphNode[] {
+  findCallees(ref: string): EdgeNeighbor[] {
     return this.requireQuery().findCallees(ref);
   }
 

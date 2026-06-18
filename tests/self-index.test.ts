@@ -41,7 +41,7 @@ describe("self-index regression gate", () => {
   });
 
   it("resolves a real internal call edge (getCodeSnippet -> resolve)", () => {
-    const callees = session.findCallees("getCodeSnippet").map((n) => n.name);
+    const callees = session.findCallees("getCodeSnippet").map((n) => n.symbol.name);
     expect(callees).toContain("resolve");
   });
 
@@ -58,7 +58,7 @@ describe("self-index regression gate", () => {
   it("tracks construction (new-expressions) as Calls edges", () => {
     // AmaSession.indexRepository does `new QueryService(...)`, so it must show
     // up as a caller of QueryService now that new-expressions are call sites.
-    const callers = session.findCallers("QueryService").map((n) => n.name);
+    const callers = session.findCallers("QueryService").map((n) => n.symbol.name);
     expect(callers).toContain("indexRepository");
   });
 
@@ -70,14 +70,14 @@ describe("self-index regression gate", () => {
   it("resolves calls made through an interface to the interface method", () => {
     // QueryService.findCallers calls this.store.edgesTo, where store is the
     // Store *interface* — that call only resolves once interface methods are nodes.
-    const callees = session.findCallees("QueryService.findCallers").map((n) => n.name);
+    const callees = session.findCallees("QueryService.findCallers").map((n) => n.symbol.name);
     expect(callees).toContain("edgesTo");
   });
 
   it("fans interface-mediated calls out to implementations (virtual dispatch)", () => {
     // QueryService calls this.store.edgesTo (store: Store), which dispatch should
     // fan out to the concrete InMemoryStore.edgesTo.
-    const callers = session.findCallers("InMemoryStore.edgesTo").map((n) => n.name);
+    const callers = session.findCallers("InMemoryStore.edgesTo").map((n) => n.symbol.name);
     expect(callers).toContain("findCallers");
   });
 });

@@ -139,7 +139,9 @@ describe("MCP query tools", () => {
         }),
       ),
     );
-    const names = callers.map((n: { qualifiedName: string }) => n.qualifiedName).sort();
+    const names = callers
+      .map((n: { symbol: { qualifiedName: string } }) => n.symbol.qualifiedName)
+      .sort();
     expect(names).toEqual(["Service.compute", "main"]);
   });
 
@@ -153,7 +155,7 @@ describe("MCP query tools", () => {
         }),
       ),
     );
-    expect(callees.map((n: { name: string }) => n.name)).toContain("helper");
+    expect(callees.map((n: { symbol: { name: string } }) => n.symbol.name)).toContain("helper");
   });
 
   it("get_code_snippet returns verbatim source", async () => {

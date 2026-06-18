@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { GraphEdge, GraphNode, NodeKind } from "../graph/index.js";
+import type { EdgeProvenance, GraphEdge, GraphNode, NodeKind } from "../graph/index.js";
 import type { FileMeta, Store } from "../store/types.js";
 
 export interface SearchOptions {
@@ -16,6 +16,18 @@ export interface Snippet {
   startLine: number;
   endLine: number;
   text: string;
+}
+
+/** A neighbour reached across one edge, carrying that edge's metadata: the
+ *  call-site location (ama-hft.9) and provenance (ama-m8k.1). Returned by
+ *  find_callers/find_callees so an agent sees not just who, but where. */
+export interface EdgeNeighbor {
+  /** The symbol at the other end of the edge (the caller, or the callee). */
+  symbol: GraphNode;
+  /** The call-site line/column, when the edge records one. */
+  at?: { line: number; column: number };
+  /** How the edge was derived; absent ⇒ resolved. */
+  provenance?: EdgeProvenance;
 }
 
 /** Everything about one node in a single answer — the higher-order `node` query. */
@@ -211,6 +223,23 @@ function rankNodes(nodes: GraphNode[]): GraphNode[] {
   );
 }
 
+/** Pair a neighbour node with the metadata of the edge it was reached by. */
+function neighbor(symbol: GraphNode, edge: GraphEdge): EdgeNeighbor {
+  const n: EdgeNeighbor = { symbol };
+  if (edge.at) n.at = edge.at;
+  if (edge.provenance) n.provenance = edge.provenance;
+  return n;
+}
+
+/** {@link rankNodes} for edge neighbours — ranks by the neighbour symbol. */
+function rankNeighbors(neighbors: EdgeNeighbor[]): EdgeNeighbor[] {
+  return [...neighbors].sort(
+    (a, b) =>
+      scoreSymbol(b.symbol, "") - scoreSymbol(a.symbol, "") ||
+      a.symbol.qualifiedName.localeCompare(b.symbol.qualifiedName),
+  );
+}
+
 /**
  * Read-side of the graph: the four MVP questions an agent asks, answered from
  * the store. A "symbol reference" is either an exact node id (e.g.
@@ -301,30 +330,28 @@ export class QueryService {
     return matches;
   }
 
-  /** Symbols that call the referenced symbol. */
-  findCallers(ref: string): GraphNode[] {
-    const targets = this.resolve(ref);
-    const callers = new Map<string, GraphNode>();
-    for (const target of targets) {
+  /** Symbols that call the referenced symbol, each with its call-site location. */
+  findCallers(ref: string): EdgeNeighbor[] {
+    const callers = new Map<string, EdgeNeighbor>();
+    for (const target of this.resolve(ref)) {
       for (const edge of this.store.edgesTo(target.id, "Calls")) {
         const caller = this.store.getNode(edge.from);
-        if (caller) callers.set(caller.id, caller);
+        if (caller && !callers.has(caller.id)) callers.set(caller.id, neighbor(caller, edge));
       }
     }
-    return rankNodes([...callers.values()]);
+    return rankNeighbors([...callers.values()]);
   }
 
-  /** Symbols the referenced symbol calls. */
-  findCallees(ref: string): GraphNode[] {
-    const sources = this.resolve(ref);
-    const callees = new Map<string, GraphNode>();
-    for (const source of sources) {
+  /** Symbols the referenced symbol calls, each with its call-site location. */
+  findCallees(ref: string): EdgeNeighbor[] {
+    const callees = new Map<string, EdgeNeighbor>();
+    for (const source of this.resolve(ref)) {
       for (const edge of this.store.edgesFrom(source.id, "Calls")) {
         const callee = this.store.getNode(edge.to);
-        if (callee) callees.set(callee.id, callee);
+        if (callee && !callees.has(callee.id)) callees.set(callee.id, neighbor(callee, edge));
       }
     }
-    return rankNodes([...callees.values()]);
+    return rankNeighbors([...callees.values()]);
   }
 
   /** The handler symbols a route refers to (route → References → handler). */
@@ -464,8 +491,8 @@ export class QueryService {
     return {
       node: primary,
       snippet: this.getCodeSnippet(ref),
-      callers: this.findCallers(ref),
-      callees: this.findCallees(ref),
+      callers: this.findCallers(ref).map((c) => c.symbol),
+      callees: this.findCallees(ref).map((c) => c.symbol),
       referrers: this.findReferrers(ref),
       dependents: this.findImporters(ref),
     };
@@ -682,8 +709,8 @@ export class QueryService {
     }
     const relationships = matches.map((match) => ({
       symbol: match.qualifiedName || match.name,
-      callers: this.findCallers(match.id),
-      callees: this.findCallees(match.id),
+      callers: this.findCallers(match.id).map((c) => c.symbol),
+      callees: this.findCallees(match.id).map((c) => c.symbol),
     }));
     const blast = new Map<string, GraphNode>();
     for (const match of matches) {
