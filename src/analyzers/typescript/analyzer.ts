@@ -270,6 +270,28 @@ export class TypeScriptAnalyzer implements Analyzer {
           // Unresolved — record what it called (by root) so coverage is explainable. (ama-qbn)
           const targetRoot = calleeRoot(child);
           if (targetRoot) counts.unresolved[targetRoot] = (counts.unresolved[targetRoot] ?? 0) + 1;
+          // An unresolved higher-order call (arr.map(fn), p.then(handler)) invokes
+          // its function argument; attribute a heuristic Calls edge to each named
+          // callback, since that control flow is otherwise invisible. (ama-hft.15)
+          if (
+            ts.isCallExpression(child) &&
+            ts.isPropertyAccessExpression(child.expression) &&
+            HIGHER_ORDER_METHODS.has(child.expression.name.text)
+          ) {
+            for (const arg of child.arguments) {
+              if (!ts.isIdentifier(arg) && !ts.isPropertyAccessExpression(arg)) continue;
+              const cb = resolveValueRef(arg, checker, declToId, root);
+              if (cb && cb !== enclosingId) {
+                edges.push({
+                  from: enclosingId,
+                  to: cb,
+                  kind: "Calls",
+                  provenance: "heuristic",
+                  at: locationOf(arg),
+                });
+              }
+            }
+          }
         }
       }
       const childId = declToId.get(child);
@@ -879,6 +901,29 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
  * a `new` expression too: its `.expression` is the constructed class, which
  * resolves the same way (so construction counts as a call site).
  */
+/** Built-in higher-order methods that invoke a function argument — Array
+ *  iteration and Promise chaining. A named function passed to one of these is
+ *  attributed a heuristic Calls edge (the method name is a pattern match, not a
+ *  proof it calls the arg, hence heuristic). (ama-hft.15) */
+const HIGHER_ORDER_METHODS = new Set([
+  "map",
+  "forEach",
+  "filter",
+  "reduce",
+  "reduceRight",
+  "flatMap",
+  "some",
+  "every",
+  "find",
+  "findIndex",
+  "findLast",
+  "findLastIndex",
+  "sort",
+  "then",
+  "catch",
+  "finally",
+]);
+
 /** The leftmost identifier of a call's callee — `ts` for `ts.isCallExpression(x)`,
  *  `helper` for `helper()` — used to group unresolved calls by what they target
  *  (a module/object name). `this.X...` groups by `X` (the property/method on
