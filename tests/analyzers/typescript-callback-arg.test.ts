@@ -44,7 +44,30 @@ describe("TypeScriptAnalyzer inline callback arguments (ama-y9q)", () => {
   it("leaves a transparent callback's body calls attributed to the enclosing scope", () => {
     expect(
       result.edges.some(
-        (e) => e.kind === "Calls" && e.from === id("setup") && e.to === id("audited"),
+        (e) => e.kind === "Calls" && e.from === id("setup") && e.to === id("loose"),
+      ),
+    ).toBe(true);
+  });
+
+  // ama-63x: the handler arrow nested inside a second wrapper whose first arg is
+  // not a string (tap("name", queryTool(session, () => …))) is still keyed by the
+  // outer value-position name.
+  it("synthesizes a node for a handler nested inside a non-named inner wrapper", () => {
+    expect(result.nodes.find((n) => n.id === id("nested handler"))?.kind).toBe("Function");
+  });
+
+  it("attributes the doubly-wrapped handler's body calls to its node", () => {
+    expect(
+      result.edges.some(
+        (e) => e.kind === "Calls" && e.from === id("nested handler") && e.to === id("audited"),
+      ),
+    ).toBe(true);
+  });
+
+  it("links the enclosing function to the doubly-wrapped handler", () => {
+    expect(
+      result.edges.some(
+        (e) => e.kind === "References" && e.from === id("setup") && e.to === id("nested handler"),
       ),
     ).toBe(true);
   });

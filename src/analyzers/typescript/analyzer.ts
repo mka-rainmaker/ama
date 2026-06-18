@@ -517,6 +517,12 @@ export class TypeScriptAnalyzer implements Analyzer {
    * from a fire-and-forget test block like `it(name, fn)` / `describe(name, fn)`:
    * only the former becomes a node, so the graph isn't flooded with one node per
    * test case. (ama-y9q)
+   *
+   * The handler need not be a *direct* argument: it may be nested inside a second
+   * wrapper whose own first argument is not a string — `tap("search",
+   * queryTool(session, () => …))`. `collectHandlerArrows` digs through such
+   * wrapper-call arguments (stopping at the first function, so a handler's body is
+   * never mistaken for another handler), keying every one by the outer name. (ama-63x)
    */
   private collectCallbackHandlers(
     node: ts.Node,
@@ -536,8 +542,7 @@ export class TypeScriptAnalyzer implements Analyzer {
         ts.isStringLiteralLike(first)
       ) {
         let inlineCount = 0;
-        for (const arg of child.arguments) {
-          if (!ts.isArrowFunction(arg) && !ts.isFunctionExpression(arg)) continue;
+        for (const arg of collectHandlerArrows(child.arguments)) {
           if (declToId.has(arg)) continue; // already a node (e.g. a route handler)
           const handlerName = `${first.text} handler${inlineCount === 0 ? "" : ` ${inlineCount + 1}`}`;
           inlineCount++;
@@ -631,6 +636,31 @@ function valueDeclOf(expr: ts.Expression, checker: ts.TypeChecker): ts.Node | un
   if (!symbol) return undefined;
   if (symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
   return symbol.valueDeclaration ?? symbol.declarations?.[0];
+}
+
+/**
+ * The inline handler callbacks reachable from a registration call's arguments:
+ * direct arrow/function args, plus arrows nested inside wrapper calls —
+ * `tap("name", queryTool(session, () => …))`. Descends through call-argument
+ * positions but stops at the first function in each branch: an arrow's body is its
+ * own scope (its `.map`/`.then` callbacks are not handlers), and the wrapper's
+ * non-call args (`session`) carry nothing. (ama-63x)
+ */
+function collectHandlerArrows(
+  args: readonly ts.Expression[],
+): (ts.ArrowFunction | ts.FunctionExpression)[] {
+  const out: (ts.ArrowFunction | ts.FunctionExpression)[] = [];
+  const dig = (expr: ts.Expression): void => {
+    if (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)) {
+      out.push(expr); // a handler — do not descend into its body
+      return;
+    }
+    if (ts.isCallExpression(expr)) {
+      for (const a of expr.arguments) dig(a);
+    }
+  };
+  for (const a of args) dig(a);
+  return out;
 }
 
 /** Join a controller prefix and a method sub-path into a leading-slash route path. */
