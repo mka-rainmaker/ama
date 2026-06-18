@@ -72,6 +72,13 @@ describe("renderSearch", () => {
   it("emits the raw node array as JSON when json=true", () => {
     expect(JSON.parse(renderSearch("Status", NODES, true))).toEqual(NODES);
   });
+
+  it("appends a refine-the-query nudge when low-confidence (ama-b79)", () => {
+    expect(renderSearch("tatus", NODES, false, true)).toContain("refine the query");
+    // ...but not for a confident match, nor in JSON mode.
+    expect(renderSearch("Status", NODES, false, false)).not.toContain("refine the query");
+    expect(JSON.parse(renderSearch("tatus", NODES, true, true))).toEqual(NODES);
+  });
 });
 
 describe("search command", () => {

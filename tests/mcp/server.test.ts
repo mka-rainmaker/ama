@@ -105,6 +105,29 @@ describe("MCP query tools", () => {
     expect(hits.map((n: { name: string }) => n.name)).toContain("helper");
   });
 
+  it("search_symbol appends a low-confidence hint for a loose substring match (ama-b79)", async () => {
+    const client = await indexedClient();
+    const result = (await client.callTool({
+      name: "search_symbol",
+      arguments: { query: "ervic" }, // substring of "Service", no exact/prefix hit
+    })) as { content: Array<{ type: string; text: string }> };
+    // The first block is still the JSON array (backward compatible)...
+    const hits = JSON.parse(result.content[0]?.text ?? "[]");
+    expect(hits.map((n: { name: string }) => n.name)).toContain("Service");
+    // ...and a second block carries the refine-the-query hint.
+    expect(result.content).toHaveLength(2);
+    expect(result.content[1]?.text).toContain("substring");
+  });
+
+  it("search_symbol stays a single block for a strong (exact) match", async () => {
+    const client = await indexedClient();
+    const result = (await client.callTool({
+      name: "search_symbol",
+      arguments: { query: "helper" },
+    })) as { content: Array<{ type: string; text: string }> };
+    expect(result.content).toHaveLength(1);
+  });
+
   it("search_symbol filters by node kind", async () => {
     const client = await indexedClient();
     const asClass = JSON.parse(

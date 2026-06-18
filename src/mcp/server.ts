@@ -18,10 +18,15 @@ function json(value: unknown) {
  * edits still in its debounce window — so a caller sees the caveat before the
  * (possibly stale) data. No banner ⇒ identical to {@link json}.
  */
-function reply(session: AmaSession, value: unknown) {
+function reply(session: AmaSession, value: unknown, hint?: string) {
   const banner = session.stalenessBanner();
-  const data = { type: "text" as const, text: JSON.stringify(value ?? null, null, 2) };
-  return { content: banner ? [{ type: "text" as const, text: banner }, data] : [data] };
+  const text = (t: string) => ({ type: "text" as const, text: t });
+  const content = [text(JSON.stringify(value ?? null, null, 2))];
+  // Banner first (most urgent: results may be stale); hint last (advisory). The
+  // data block stays at a fixed position so a consumer reading the JSON is robust.
+  if (banner) content.unshift(text(banner));
+  if (hint) content.push(text(hint));
+  return { content };
 }
 
 /**
@@ -161,11 +166,18 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     },
     tap(
       "search_symbol",
-      queryTool(
-        session,
-        ({ query, limit, kind }: { query: string; limit?: number; kind?: NodeKind }) =>
-          session.searchSymbol(query, { limit, kind }),
-      ),
+      async ({ query, limit, kind }: { query: string; limit?: number; kind?: NodeKind }) => {
+        await session.catchUpIfNeeded();
+        const { results, lowConfidence } = session.searchSymbolWithConfidence(query, {
+          limit,
+          kind,
+        });
+        const hint = lowConfidence
+          ? `⚠️ Ama: no exact or name-prefix match for "${query}" — these are loose substring ` +
+            `hits, so they may not be what you meant. Double-check the name or refine the query.`
+          : undefined;
+        return reply(session, results, hint);
+      },
     ),
   );
 

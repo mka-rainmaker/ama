@@ -12,6 +12,7 @@ import type {
   GraphSchema,
   NodeView,
   SearchOptions,
+  SearchResult,
   Snippet,
 } from "../query/service.js";
 import type { Store } from "../store/types.js";
@@ -211,6 +212,10 @@ export class AmaSession {
 
   searchSymbol(query: string, opts?: SearchOptions): GraphNode[] {
     return this.requireQuery().searchSymbol(query, opts);
+  }
+
+  searchSymbolWithConfidence(query: string, opts?: SearchOptions): SearchResult {
+    return this.requireQuery().searchSymbolWithConfidence(query, opts);
   }
 
   searchCode(query: string, opts?: { limit?: number }): GraphNode[] {

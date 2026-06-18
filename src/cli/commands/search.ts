@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { type GraphNode, NODE_KINDS, type NodeKind } from "../../graph/types.js";
 import { createDefaultIndexer } from "../../indexer/indexer.js";
-import { QueryService } from "../../query/service.js";
+import { QueryService, type SearchResult } from "../../query/service.js";
 import { SqliteStore } from "../../store/sqlite.js";
 import { emitError } from "../emit.js";
 import type { CliCommand } from "../index.js";
@@ -58,8 +58,14 @@ export function parseSearchArgs(args: string[]): SearchArgs {
   return { query, kind, limit };
 }
 
-/** Render search hits for the terminal, or `--json` (the raw node array). */
-export function renderSearch(query: string, nodes: GraphNode[], json: boolean): string {
+/** Render search hits for the terminal, or `--json` (the raw node array).
+ *  `lowConfidence` appends a refine-the-query nudge in human mode (ama-b79). */
+export function renderSearch(
+  query: string,
+  nodes: GraphNode[],
+  json: boolean,
+  lowConfidence = false,
+): string {
   if (json) return JSON.stringify(nodes, null, 2);
   if (nodes.length === 0) return `No symbols match "${query}".`;
   const lines = [`${nodes.length} result${nodes.length === 1 ? "" : "s"} for "${query}":`];
@@ -67,6 +73,9 @@ export function renderSearch(query: string, nodes: GraphNode[], json: boolean): 
     const where = node.range ? `${node.file}:${node.range.startLine}` : node.file;
     const label = node.qualifiedName || node.name;
     lines.push(`  ${node.kind.padEnd(10)} ${label}  ${where}  [${node.tier}]`);
+  }
+  if (lowConfidence) {
+    lines.push("  ⚠️  no exact or prefix match — loose substring hits; refine the query.");
   }
   return lines.join("\n");
 }
@@ -76,7 +85,7 @@ export function renderSearch(query: string, nodes: GraphNode[], json: boolean): 
  * (not `[]`) when there is no usable index, so the command can distinguish
  * "no index" from "indexed, zero matches".
  */
-async function runSearch(root: string, opts: SearchArgs): Promise<GraphNode[] | undefined> {
+async function runSearch(root: string, opts: SearchArgs): Promise<SearchResult | undefined> {
   const dbPath = dbPathFor(root);
   if (!fs.existsSync(dbPath)) return undefined;
   const abs = path.resolve(root);
@@ -84,7 +93,7 @@ async function runSearch(root: string, opts: SearchArgs): Promise<GraphNode[] | 
   const opened = await indexer.open(abs);
   if (!opened) return undefined;
   try {
-    return new QueryService(opened.store, abs).searchSymbol(opts.query ?? "", {
+    return new QueryService(opened.store, abs).searchSymbolWithConfidence(opts.query ?? "", {
       kind: opts.kind,
       limit: opts.limit,
     });
@@ -104,12 +113,12 @@ export const searchCommand: CliCommand = {
       return 1;
     }
     const root = process.env.AMA_ROOT ?? ".";
-    const hits = await runSearch(root, parsed);
-    if (hits === undefined) {
+    const hit = await runSearch(root, parsed);
+    if (hit === undefined) {
       emitError(ctx, "No index found. Run `ama index` first.");
       return 1;
     }
-    ctx.write(renderSearch(parsed.query, hits, ctx.json));
+    ctx.write(renderSearch(parsed.query, hit.results, ctx.json, hit.lowConfidence));
     return 0;
   },
 };

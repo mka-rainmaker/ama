@@ -10,6 +10,14 @@ export interface SearchOptions {
   kind?: NodeKind;
 }
 
+/** A search plus a confidence signal (ama-b79). */
+export interface SearchResult {
+  results: GraphNode[];
+  /** True when there are results but none is an exact or name-prefix match — the
+   *  best is only a loose substring/qualified hit, so the caller should refine. */
+  lowConfidence: boolean;
+}
+
 export interface Snippet {
   id: string;
   file: string;
@@ -317,6 +325,22 @@ export class QueryService {
       (a, b) => b.score - a.score || a.node.qualifiedName.localeCompare(b.node.qualifiedName),
     );
     return scored.slice(0, limit).map((s) => s.node);
+  }
+
+  /**
+   * searchSymbol plus a confidence signal: low-confidence when there is a free-text
+   * term and results, but none is an exact or name-prefix match — the matches are
+   * loose substring/qualified hits, so the caller likely mistyped or should refine
+   * rather than trust the top hit. (ama-b79)
+   */
+  searchSymbolWithConfidence(query: string, opts: SearchOptions = {}): SearchResult {
+    const results = this.searchSymbol(query, opts);
+    const t = parseSearchQuery(query).text.trim().toLowerCase();
+    const strong = results.some((r) => {
+      const name = r.name.toLowerCase();
+      return name === t || name.startsWith(t) || r.qualifiedName.toLowerCase() === t;
+    });
+    return { results, lowConfidence: t !== "" && results.length > 0 && !strong };
   }
 
   /** Every indexed file's metadata, sorted by repo-relative path. */
