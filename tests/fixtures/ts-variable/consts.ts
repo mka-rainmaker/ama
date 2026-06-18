@@ -11,6 +11,12 @@ const ROUTE_METHODS = new Set(["get", "post"]);
 
 export const LABELS = ["a", "b"] as const;
 
+// An annotated variable: a UsesType edge should point at the named type `Millis`.
+export type Millis = number;
+export const TIMEOUT: Millis = 5000;
+
+// Reads MAX_RETRIES, ROUTE_METHODS, LABELS — each a References edge from useThem
+// to that Variable node ("who references MAX_RETRIES" → useThem).
 export function useThem(): number {
   return MAX_RETRIES + (ROUTE_METHODS.has("get") ? 1 : 0) + LABELS.length;
 }

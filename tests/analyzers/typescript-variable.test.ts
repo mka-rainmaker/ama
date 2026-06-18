@@ -41,4 +41,33 @@ describe("TypeScriptAnalyzer module-level variables (ama-hft.12)", () => {
     expect(result.nodes.some((n) => n.id === id("config"))).toBe(false);
     expect(result.nodes.find((n) => n.id === id("config.run"))?.kind).toBe("Method");
   });
+
+  // ama-6k0: who reads a module-level variable.
+  it("emits a References edge from a reader to each variable it reads", () => {
+    for (const v of ["MAX_RETRIES", "ROUTE_METHODS", "LABELS"]) {
+      expect(
+        result.edges.some(
+          (e) => e.kind === "References" && e.from === id("useThem") && e.to === id(v),
+        ),
+        `useThem should reference ${v}`,
+      ).toBe(true);
+    }
+  });
+
+  it("does not emit a self-reference for a variable's own declaration name", () => {
+    expect(
+      result.edges.some(
+        (e) =>
+          e.kind === "References" && e.from === id("MAX_RETRIES") && e.to === id("MAX_RETRIES"),
+      ),
+    ).toBe(false);
+  });
+
+  it("emits a UsesType edge from an annotated variable to its named type", () => {
+    expect(
+      result.edges.some(
+        (e) => e.kind === "UsesType" && e.from === id("TIMEOUT") && e.to === id("Millis"),
+      ),
+    ).toBe(true);
+  });
 });

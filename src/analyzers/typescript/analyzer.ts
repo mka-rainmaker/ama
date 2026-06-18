@@ -58,6 +58,10 @@ export class TypeScriptAnalyzer implements Analyzer {
       if (sf) this.collectMounts(sf, checker, mountPrefixes);
     }
 
+    // The Variable nodes (ama-hft.12), so collectVarReferences can emit a
+    // References edge only when an identifier read resolves to one of them.
+    const variableIds = new Set(nodes.filter((n) => n.kind === "Variable").map((n) => n.id));
+
     for (const [abs, rel] of relByAbs) {
       const sf = program.getSourceFile(abs);
       if (sf) {
@@ -68,6 +72,7 @@ export class TypeScriptAnalyzer implements Analyzer {
         // register the arrow before collectCalls so its body attributes to it.
         this.collectCallbackHandlers(sf, undefined, rel, sf, declToId, nodes, edges);
         this.collectCalls(sf, undefined, declToId, checker, edges, root);
+        this.collectVarReferences(sf, undefined, declToId, variableIds, checker, edges, root);
         this.collectHeritage(sf, declToId, checker, edges, root);
         this.collectTypeUsages(sf, undefined, declToId, checker, edges, root);
         this.collectImports(sf, fileId(rel), declToId, checker, edges, root);
@@ -257,6 +262,54 @@ export class TypeScriptAnalyzer implements Analyzer {
     });
   }
 
+  /**
+   * Emit a `References` edge from the enclosing symbol to a module-level Variable
+   * node (ama-hft.12) each time its value is read — so `find_callers("MAX_RETRIES")`
+   * answers "who reads this constant". Mirrors `collectCalls`' enclosing-tracking.
+   *
+   * Targets are restricted to `variableIds`, so reads of functions/classes (which
+   * are Calls/UsesType, or out of scope) don't become References. Most false
+   * positives filter themselves out: a property-access member name resolves to a
+   * library member (not in `declToId`), an import specifier sits at top level
+   * (no enclosing), and a declaration's own name resolves to the very symbol that
+   * encloses it — caught by the `to !== enclosingId` guard. (ama-6k0)
+   */
+  private collectVarReferences(
+    node: ts.Node,
+    enclosingId: string | undefined,
+    declToId: Map<ts.Node, string>,
+    variableIds: Set<string>,
+    checker: ts.TypeChecker,
+    edges: GraphEdge[],
+    root: string,
+  ): void {
+    node.forEachChild((child) => {
+      if (
+        ts.isIdentifier(child) &&
+        enclosingId &&
+        // The member side of `obj.foo` is not an independent value read.
+        !(ts.isPropertyAccessExpression(child.parent) && child.parent.name === child)
+      ) {
+        const to = resolveValueRef(child, checker, declToId, root);
+        if (to && to !== enclosingId && variableIds.has(to)) {
+          edges.push({ from: enclosingId, to, kind: "References" });
+        }
+      }
+      const childId = declToId.get(child);
+      const nextEnclosing =
+        childId &&
+        (ts.isFunctionDeclaration(child) ||
+          ts.isMethodDeclaration(child) ||
+          ts.isVariableDeclaration(child) ||
+          ts.isPropertyAssignment(child) ||
+          ts.isArrowFunction(child) ||
+          ts.isFunctionExpression(child))
+          ? childId
+          : enclosingId;
+      this.collectVarReferences(child, nextEnclosing, declToId, variableIds, checker, edges, root);
+    });
+  }
+
   /** Walk a subtree emitting an `Implements` edge for each `class … implements I`. */
   private collectHeritage(
     node: ts.Node,
@@ -343,7 +396,12 @@ export class TypeScriptAnalyzer implements Analyzer {
     root: string,
   ): void {
     const annotations: ts.TypeNode[] = [];
-    if (ts.isParameter(node) || ts.isPropertyDeclaration(node) || ts.isPropertySignature(node)) {
+    if (
+      ts.isParameter(node) ||
+      ts.isPropertyDeclaration(node) ||
+      ts.isPropertySignature(node) ||
+      ts.isVariableDeclaration(node)
+    ) {
       if (node.type) annotations.push(node.type);
     } else if (
       ts.isFunctionDeclaration(node) ||
