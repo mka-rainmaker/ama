@@ -64,6 +64,9 @@ export class TypeScriptAnalyzer implements Analyzer {
         // Routes first: it registers inline-handler arrows in declToId, so the
         // following collectCalls attributes each handler's body to its node.
         this.collectRoutes(sf, rel, declToId, checker, nodes, edges, root, mountPrefixes);
+        // Then callback-argument handlers (tap("name", () => …)) — same trick:
+        // register the arrow before collectCalls so its body attributes to it.
+        this.collectCallbackHandlers(sf, undefined, rel, sf, declToId, nodes, edges);
         this.collectCalls(sf, undefined, declToId, checker, edges, root);
         this.collectHeritage(sf, declToId, checker, edges, root);
         this.collectTypeUsages(sf, undefined, declToId, checker, edges, root);
@@ -498,6 +501,75 @@ export class TypeScriptAnalyzer implements Analyzer {
       n.forEachChild(visit);
     };
     visit(sf);
+  }
+
+  /**
+   * Synthesize a Function node for an inline arrow/function-expression passed as an
+   * argument to a *string-named* call whose result is itself consumed —
+   * `register("work", wrap("work", () => …))`. The leading string literal names the
+   * node (`"work handler"`); registering the arrow in `declToId` before
+   * `collectCalls` makes the callback body's calls attribute to it instead of
+   * leaking to the enclosing function (so per-handler blast radius is precise).
+   *
+   * Runs after `collectRoutes`, so a route's inline handler — already registered —
+   * is skipped. The "result is consumed" gate (the call is not a bare expression
+   * statement) is what separates a handler-producing wrapper like `tap(name, fn)`
+   * from a fire-and-forget test block like `it(name, fn)` / `describe(name, fn)`:
+   * only the former becomes a node, so the graph isn't flooded with one node per
+   * test case. (ama-y9q)
+   */
+  private collectCallbackHandlers(
+    node: ts.Node,
+    enclosingId: string | undefined,
+    rel: string,
+    sf: ts.SourceFile,
+    declToId: Map<ts.Node, string>,
+    nodes: GraphNode[],
+    edges: GraphEdge[],
+  ): void {
+    node.forEachChild((child) => {
+      const first = ts.isCallExpression(child) ? child.arguments[0] : undefined;
+      if (
+        ts.isCallExpression(child) &&
+        !ts.isExpressionStatement(child.parent) &&
+        first !== undefined &&
+        ts.isStringLiteralLike(first)
+      ) {
+        let inlineCount = 0;
+        for (const arg of child.arguments) {
+          if (!ts.isArrowFunction(arg) && !ts.isFunctionExpression(arg)) continue;
+          if (declToId.has(arg)) continue; // already a node (e.g. a route handler)
+          const handlerName = `${first.text} handler${inlineCount === 0 ? "" : ` ${inlineCount + 1}`}`;
+          inlineCount++;
+          const handlerId = symbolId({ file: rel, qualifiedName: handlerName });
+          nodes.push({
+            id: handlerId,
+            kind: "Function",
+            name: handlerName,
+            file: rel,
+            qualifiedName: handlerName,
+            tier: "deep",
+            range: rangeOf(arg, sf),
+          });
+          declToId.set(arg, handlerId);
+          if (enclosingId) edges.push({ from: enclosingId, to: handlerId, kind: "References" });
+        }
+      }
+      const childId = declToId.get(child);
+      // Mirror collectCalls' enclosing rule so a synthesized handler nested inside
+      // another becomes the `from` of the inner one's reference edge.
+      const nextEnclosing =
+        childId &&
+        (ts.isFunctionDeclaration(child) ||
+          ts.isMethodDeclaration(child) ||
+          ts.isVariableDeclaration(child) ||
+          ts.isPropertyAssignment(child) ||
+          ts.isArrowFunction(child) ||
+          ts.isFunctionExpression(child))
+          ? childId
+          : enclosingId;
+      this.collectCallbackHandlers(child, nextEnclosing, rel, sf, declToId, nodes, edges);
+    });
   }
 
   /**
