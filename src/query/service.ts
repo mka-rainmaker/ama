@@ -144,6 +144,57 @@ function languageForFile(file: string): string | undefined {
   return dot === -1 ? undefined : LANGUAGE_BY_EXT[file.slice(dot).toLowerCase()];
 }
 
+/** Relevance weight per node kind — top-level definitions outrank members and
+ *  variables when match quality ties. */
+const KIND_BONUS: Partial<Record<NodeKind, number>> = {
+  Class: 8,
+  Interface: 8,
+  Function: 8,
+  Enum: 6,
+  TypeAlias: 6,
+  Module: 6,
+  Route: 4,
+  Method: 2,
+  Property: 1,
+  Variable: 1,
+};
+
+/** Test and generated/build files — real but rarely the symbol you searched for,
+ *  so a match there is demoted below an equivalent match in source. */
+function isDeprioritizedFile(file: string): boolean {
+  const f = file.toLowerCase();
+  return (
+    /(^|\/)(tests?|__tests__)\//.test(f) ||
+    /\.(test|spec)\./.test(f) ||
+    f.endsWith(".d.ts") ||
+    /\.generated\./.test(f) ||
+    /(^|\/)(dist|build|coverage)\//.test(f)
+  );
+}
+
+/**
+ * A relevance score for a symbol against the free-text part of a search. Higher
+ * is better: exact name/qualified-name match dominates, then prefix, then
+ * substring; a brevity bonus favours the more specific (shorter) name; a kind
+ * bonus lifts top-level definitions; test/generated files are demoted. With no
+ * free text (a filters-only query) only the kind/demotion terms apply. (ama-m8k.2)
+ */
+function scoreSymbol(node: GraphNode, query: string): number {
+  let score = KIND_BONUS[node.kind] ?? 0;
+  if (isDeprioritizedFile(node.file)) score -= 50;
+  if (query) {
+    const q = query.toLowerCase();
+    const name = node.name.toLowerCase();
+    const qn = node.qualifiedName.toLowerCase();
+    if (name === q || qn === q) score += 100;
+    else if (name.startsWith(q)) score += 60;
+    else if (name.includes(q)) score += 30;
+    else if (qn.includes(q)) score += 12; // matched only via the qualified name
+    score += Math.max(0, 16 - name.length); // brevity: a shorter name is more specific
+  }
+  return score;
+}
+
 /**
  * Read-side of the graph: the four MVP questions an agent asks, answered from
  * the store. A "symbol reference" is either an exact node id (e.g.
@@ -182,9 +233,14 @@ export class QueryService {
         continue;
       }
       hits.push(node);
-      if (hits.length >= limit) break;
     }
-    return hits;
+    // Rank by relevance (match quality, kind, test/generated demotion) then slice —
+    // so the best matches survive the limit, not just the first ones found. (ama-m8k.2)
+    const scored = hits.map((node) => ({ node, score: scoreSymbol(node, text) }));
+    scored.sort(
+      (a, b) => b.score - a.score || a.node.qualifiedName.localeCompare(b.node.qualifiedName),
+    );
+    return scored.slice(0, limit).map((s) => s.node);
   }
 
   /** Every indexed file's metadata, sorted by repo-relative path. */
