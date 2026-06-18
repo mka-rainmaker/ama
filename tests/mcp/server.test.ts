@@ -280,6 +280,16 @@ describe("MCP route tools", () => {
     );
     expect(routes.map((n: { name: string }) => n.name)).toContain("GET /users");
   });
+
+  it("find_referrers returns everything that references a symbol", async () => {
+    const client = await indexedClient();
+    const referrers = JSON.parse(
+      firstText(
+        await client.callTool({ name: "find_referrers", arguments: { symbol: "listUsers" } }),
+      ),
+    );
+    expect(referrers.map((n: { name: string }) => n.name)).toContain("GET /users");
+  });
 });
 
 describe("MCP tool-call logging", () => {

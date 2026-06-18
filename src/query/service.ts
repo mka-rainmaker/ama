@@ -28,6 +28,9 @@ export interface NodeView {
   callers: GraphNode[];
   /** Symbols it calls. */
   callees: GraphNode[];
+  /** Symbols that reference it via a References edge — variable readers, the
+   *  routes that map to a handler, and other dispatch references. */
+  referrers: GraphNode[];
   /** Files that import (or re-export) it. */
   dependents: GraphNode[];
 }
@@ -165,17 +168,28 @@ export class QueryService {
     return [...handlers.values()];
   }
 
-  /** The routes (or other referrers) that point at a symbol (referrer → References → symbol). */
-  findRoutes(ref: string): GraphNode[] {
+  /**
+   * Everything that points at a symbol via a References edge: the readers of a
+   * module-level Variable (ama-6k0), the routes that map to a handler (rme.1), and
+   * any other dispatch reference. The general "who refers to this" — answers the
+   * question `find_callers` can't, since reads aren't calls. (ama-pfm)
+   */
+  findReferrers(ref: string): GraphNode[] {
     const targets = this.resolve(ref);
-    const routes = new Map<string, GraphNode>();
+    const referrers = new Map<string, GraphNode>();
     for (const target of targets) {
       for (const edge of this.store.edgesTo(target.id, "References")) {
-        const route = this.store.getNode(edge.from);
-        if (route) routes.set(route.id, route);
+        const referrer = this.store.getNode(edge.from);
+        if (referrer) referrers.set(referrer.id, referrer);
       }
     }
-    return [...routes.values()];
+    return [...referrers.values()];
+  }
+
+  /** The routes that map to a handler — the route-domain framing of
+   *  {@link findReferrers} (a route References its handler). */
+  findRoutes(ref: string): GraphNode[] {
+    return this.findReferrers(ref);
   }
 
   /** Classes that implement the referenced interface. */
@@ -270,6 +284,7 @@ export class QueryService {
       snippet: this.getCodeSnippet(ref),
       callers: this.findCallers(ref),
       callees: this.findCallees(ref),
+      referrers: this.findReferrers(ref),
       dependents: this.findImporters(ref),
     };
   }

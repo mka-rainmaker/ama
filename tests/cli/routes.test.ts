@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { indexCommand } from "../../src/cli/commands/lifecycle.js";
-import { handlersCommand, routesCommand } from "../../src/cli/commands/query.js";
+import { handlersCommand, referrersCommand, routesCommand } from "../../src/cli/commands/query.js";
 import { COMMANDS } from "../../src/cli/index.js";
 import type { GraphNode } from "../../src/graph/types.js";
 
@@ -54,9 +54,18 @@ describe("route CLI commands", () => {
     expect(names).toContain("GET /users");
   });
 
-  it("registers handlers and routes", () => {
+  it("referrers lists everything that references a symbol", async () => {
+    await indexExpress();
+    const out = capture();
+    await referrersCommand.run(["listUsers"], { json: true, write: out.write });
+    const names = (JSON.parse(out.text()) as GraphNode[]).map((n) => n.name);
+    expect(names).toContain("GET /users");
+  });
+
+  it("registers handlers, routes, and referrers", () => {
     const names = COMMANDS.map((c) => c.name);
     expect(names).toContain("handlers");
     expect(names).toContain("routes");
+    expect(names).toContain("referrers");
   });
 });

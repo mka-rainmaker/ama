@@ -220,6 +220,24 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
   );
 
   server.registerTool(
+    "find_referrers",
+    {
+      description:
+        "Everything that references a symbol via a References edge: who reads a module-level " +
+        "constant/variable, the routes that map to a handler, and other dispatch references. " +
+        "Use this for 'who uses X' when X isn't called (reads aren't calls, so find_callers " +
+        "won't see them).",
+      inputSchema: {
+        symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
+      },
+    },
+    tap(
+      "find_referrers",
+      queryTool(session, ({ symbol }: { symbol: string }) => session.findReferrers(symbol)),
+    ),
+  );
+
+  server.registerTool(
     "find_implementations",
     {
       description: "Every class that implements an interface.",

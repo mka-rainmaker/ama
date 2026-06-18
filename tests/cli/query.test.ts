@@ -38,7 +38,13 @@ const HELPER: GraphNode = {
   range: { startLine: 1, endLine: 3 },
   tier: "deep",
 };
-const VIEW: NodeView = { node: MAIN, callers: [], callees: [HELPER], dependents: [] };
+const VIEW: NodeView = {
+  node: MAIN,
+  callers: [],
+  callees: [HELPER],
+  referrers: [],
+  dependents: [],
+};
 const EXP: Exploration = {
   question: "helper",
   byFile: { "f.ts": [HELPER] },
@@ -75,6 +81,7 @@ describe("renderNodeView", () => {
     expect(text).toContain("helper");
     expect(text.toLowerCase()).toContain("callers");
     expect(text.toLowerCase()).toContain("callees");
+    expect(text.toLowerCase()).toContain("referrers");
     expect(text.toLowerCase()).toContain("dependents");
   });
 

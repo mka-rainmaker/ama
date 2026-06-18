@@ -232,6 +232,10 @@ export class AmaSession {
     return this.requireQuery().findRoutes(ref);
   }
 
+  findReferrers(ref: string): GraphNode[] {
+    return this.requireQuery().findReferrers(ref);
+  }
+
   findImplementations(ref: string): GraphNode[] {
     return this.requireQuery().findImplementations(ref);
   }

@@ -40,6 +40,7 @@ export function renderNodeView(view: NodeView, json: boolean): string {
   lines.push(
     `  callers (${view.callers.length}): ${names(view.callers)}`,
     `  callees (${view.callees.length}): ${names(view.callees)}`,
+    `  referrers (${view.referrers.length}): ${names(view.referrers)}`,
     `  dependents (${view.dependents.length}): ${names(view.dependents)}`,
   );
   return lines.join("\n");
@@ -146,6 +147,12 @@ export const routesCommand = refQueryCommand(
   "routes",
   "List the routes that map to a symbol",
   (q, ref) => q.findRoutes(ref),
+);
+
+export const referrersCommand = refQueryCommand(
+  "referrers",
+  "List everything that references a symbol (variable readers, routes, dispatch)",
+  (q, ref) => q.findReferrers(ref),
 );
 
 export const nodeCommand: CliCommand = {
