@@ -364,6 +364,21 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
   );
 
   server.registerTool(
+    "find_returns",
+    {
+      description:
+        "The named type(s) a function or method returns — the return half of find_types_used.",
+      inputSchema: {
+        symbol: z.string().describe("Function/method id, simple name, or dotted qualified name."),
+      },
+    },
+    tap(
+      "find_returns",
+      queryTool(session, ({ symbol }: { symbol: string }) => session.findReturns(symbol)),
+    ),
+  );
+
+  server.registerTool(
     "get_code_snippet",
     {
       description: "A symbol's verbatim source.",

@@ -273,6 +273,10 @@ export class AmaSession {
     return this.requireQuery().findTypesUsed(ref);
   }
 
+  findReturns(ref: string): GraphNode[] {
+    return this.requireQuery().findReturns(ref);
+  }
+
   getCodeSnippet(ref: string): Snippet | undefined {
     return this.requireQuery().getCodeSnippet(ref);
   }

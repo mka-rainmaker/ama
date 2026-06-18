@@ -18,14 +18,15 @@ describe("TypeScriptAnalyzer UsesType resolution", () => {
   const usesType = () => result.edges.filter((e) => e.kind === "UsesType");
   const has = (from: string, to: string) => usesType().some((e) => e.from === from && e.to === to);
 
-  it("links a function to its parameter and return types", () => {
+  it("links a function to its parameter type (the return type is a Returns edge)", () => {
     expect(has(id("build"), id("Widget"))).toBe(true);
-    expect(has(id("build"), id("Gadget"))).toBe(true);
+    // The return type is now a distinct Returns edge, not folded into UsesType.
+    expect(has(id("build"), id("Gadget"))).toBe(false);
   });
 
-  it("attributes a method's parameter and return types to the method", () => {
+  it("attributes a method's parameter type to the method (return is a Returns edge)", () => {
     expect(has(id("Factory.make"), id("Widget"))).toBe(true);
-    expect(has(id("Factory.make"), id("Gadget"))).toBe(true);
+    expect(has(id("Factory.make"), id("Gadget"))).toBe(false);
   });
 
   it("attributes a property's type to the property node, not the enclosing class", () => {

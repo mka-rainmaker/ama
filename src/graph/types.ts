@@ -37,6 +37,9 @@ export type EdgeKind =
   | "Inherits"
   | "Implements"
   | "UsesType"
+  /** A function/method → its declared return type, distinct from the param/property
+   *  type usages of UsesType. (ama-37c) */
+  | "Returns"
   | "Imports"
   /** A type-only import (`import type` / `import { type X }`) — a compile-time
    *  dependency erased at runtime. Counted as an import for dependents/affected,

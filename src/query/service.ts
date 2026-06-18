@@ -237,6 +237,11 @@ function rankNodes(nodes: GraphNode[]): GraphNode[] {
  *  construction. find_callers/find_callees report both, labelled by `via`. */
 const CALL_EDGE_KINDS = ["Calls", "Instantiates"] as const satisfies readonly EdgeKind[];
 
+/** The edge kinds that mean "X uses type Y" — a param/property annotation and a
+ *  return type. find_types_used/find_type_users report both; find_returns is the
+ *  return half alone. (ama-37c) */
+const TYPE_EDGE_KINDS = ["UsesType", "Returns"] as const satisfies readonly EdgeKind[];
+
 /** Pair a neighbour node with the metadata of the edge it was reached by. */
 function neighbor(symbol: GraphNode, edge: GraphEdge): EdgeNeighbor {
   const n: EdgeNeighbor = { symbol, via: edge.kind };
@@ -499,12 +504,13 @@ export class QueryService {
 
   /** Symbols that use the referenced type in a parameter, return, or property. */
   findTypeUsers(ref: string): GraphNode[] {
-    const targets = this.resolve(ref);
     const users = new Map<string, GraphNode>();
-    for (const target of targets) {
-      for (const edge of this.store.edgesTo(target.id, "UsesType")) {
-        const user = this.store.getNode(edge.from);
-        if (user) users.set(user.id, user);
+    for (const target of this.resolve(ref)) {
+      for (const kind of TYPE_EDGE_KINDS) {
+        for (const edge of this.store.edgesTo(target.id, kind)) {
+          const user = this.store.getNode(edge.from);
+          if (user) users.set(user.id, user);
+        }
       }
     }
     return rankNodes([...users.values()]);
@@ -512,10 +518,23 @@ export class QueryService {
 
   /** Types the referenced symbol uses in a parameter, return, or property. */
   findTypesUsed(ref: string): GraphNode[] {
-    const sources = this.resolve(ref);
     const types = new Map<string, GraphNode>();
-    for (const source of sources) {
-      for (const edge of this.store.edgesFrom(source.id, "UsesType")) {
+    for (const source of this.resolve(ref)) {
+      for (const kind of TYPE_EDGE_KINDS) {
+        for (const edge of this.store.edgesFrom(source.id, kind)) {
+          const type = this.store.getNode(edge.to);
+          if (type) types.set(type.id, type);
+        }
+      }
+    }
+    return rankNodes([...types.values()]);
+  }
+
+  /** The named types a symbol returns (function/method → its return type). */
+  findReturns(ref: string): GraphNode[] {
+    const types = new Map<string, GraphNode>();
+    for (const source of this.resolve(ref)) {
+      for (const edge of this.store.edgesFrom(source.id, "Returns")) {
         const type = this.store.getNode(edge.to);
         if (type) types.set(type.id, type);
       }

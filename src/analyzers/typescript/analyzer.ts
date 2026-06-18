@@ -430,6 +430,7 @@ export class TypeScriptAnalyzer implements Analyzer {
     root: string,
   ): void {
     const annotations: ts.TypeNode[] = [];
+    const returnAnnotations: ts.TypeNode[] = []; // → Returns, kept distinct (ama-37c)
     if (
       ts.isParameter(node) ||
       ts.isPropertyDeclaration(node) ||
@@ -443,7 +444,7 @@ export class TypeScriptAnalyzer implements Analyzer {
       ts.isMethodSignature(node) ||
       ts.isGetAccessorDeclaration(node)
     ) {
-      if (node.type) annotations.push(node.type); // return type
+      if (node.type) returnAnnotations.push(node.type); // return type → Returns
     } else if (
       ts.isCallExpression(node) ||
       ts.isNewExpression(node) ||
@@ -458,6 +459,12 @@ export class TypeScriptAnalyzer implements Analyzer {
           const to = resolveTypeRef(ref.typeName, checker, declToId, root);
           // A type used inside its own declaration's signature is noise, not a usage.
           if (to && to !== enclosingId) edges.push({ from: enclosingId, to, kind: "UsesType" });
+        }
+      }
+      for (const annotation of returnAnnotations) {
+        for (const ref of typeReferencesIn(annotation)) {
+          const to = resolveTypeRef(ref.typeName, checker, declToId, root);
+          if (to && to !== enclosingId) edges.push({ from: enclosingId, to, kind: "Returns" });
         }
       }
       // A decorator is a metadata/annotation dependency of the decorated symbol —

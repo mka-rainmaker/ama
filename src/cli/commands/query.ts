@@ -137,6 +137,12 @@ export const typesUsedCommand = refQueryCommand(
   (q, ref) => q.findTypesUsed(ref),
 );
 
+export const returnsCommand = refQueryCommand(
+  "returns",
+  "List the named type(s) a function or method returns",
+  (q, ref) => q.findReturns(ref),
+);
+
 export const handlersCommand = refQueryCommand(
   "handlers",
   "List the handler(s) a route maps to",
