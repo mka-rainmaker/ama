@@ -64,10 +64,20 @@ export interface GraphNode {
   tier: Tier;
 }
 
+/**
+ * How an edge was derived. `resolved` (the default when absent) means a
+ * type-checker- or symbol-backed fact; `heuristic` means a pattern/string match
+ * that isn't checker-verified (route detection, callback-handler synthesis). Lets
+ * query results label edge trust — the node-level tier honesty rule, at edge level.
+ */
+export type EdgeProvenance = "resolved" | "heuristic";
+
 export interface GraphEdge {
   /** Source node id. */
   from: string;
   /** Target node id. */
   to: string;
   kind: EdgeKind;
+  /** How the edge was derived; absent ⇒ `resolved`. */
+  provenance?: EdgeProvenance;
 }

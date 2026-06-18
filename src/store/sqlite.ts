@@ -1,5 +1,12 @@
 import { DatabaseSync } from "node:sqlite";
-import type { EdgeKind, GraphEdge, GraphNode, NodeKind, Tier } from "../graph/index.js";
+import type {
+  EdgeKind,
+  EdgeProvenance,
+  GraphEdge,
+  GraphNode,
+  NodeKind,
+  Tier,
+} from "../graph/index.js";
 import type { FileMeta, Store } from "./types.js";
 
 interface FileRow {
@@ -24,6 +31,7 @@ interface EdgeRow {
   from_id: string;
   to_id: string;
   kind: string;
+  provenance: string | null;
 }
 
 /**
@@ -60,9 +68,10 @@ export class SqliteStore implements Store {
       );
       CREATE INDEX IF NOT EXISTS nodes_name ON nodes(name);
       CREATE TABLE IF NOT EXISTS edges (
-        from_id TEXT NOT NULL,
-        to_id   TEXT NOT NULL,
-        kind    TEXT NOT NULL
+        from_id    TEXT NOT NULL,
+        to_id      TEXT NOT NULL,
+        kind       TEXT NOT NULL,
+        provenance TEXT
       );
       CREATE INDEX IF NOT EXISTS edges_from ON edges(from_id);
       CREATE INDEX IF NOT EXISTS edges_to ON edges(to_id);
@@ -81,6 +90,13 @@ export class SqliteStore implements Store {
         value TEXT NOT NULL
       );
     `);
+    // Additive migration for a DB created before the column existed (ama-m8k.1).
+    // `ADD COLUMN` is idempotent only via this guard — it throws if it's there.
+    try {
+      this.db.exec("ALTER TABLE edges ADD COLUMN provenance TEXT");
+    } catch {
+      // Column already present (fresh DB or already migrated) — nothing to do.
+    }
   }
 
   addNode(node: GraphNode): void {
@@ -109,8 +125,8 @@ export class SqliteStore implements Store {
   addEdge(edge: GraphEdge): void {
     // OR IGNORE drops a duplicate (from, to, kind) via the edges_unique index.
     this.db
-      .prepare("INSERT OR IGNORE INTO edges (from_id, to_id, kind) VALUES (?, ?, ?)")
-      .run(edge.from, edge.to, edge.kind);
+      .prepare("INSERT OR IGNORE INTO edges (from_id, to_id, kind, provenance) VALUES (?, ?, ?, ?)")
+      .run(edge.from, edge.to, edge.kind, edge.provenance ?? null);
   }
 
   getNode(id: string): GraphNode | undefined {
@@ -295,7 +311,9 @@ function rowToNode(r: NodeRow): GraphNode {
 }
 
 function rowToEdge(r: EdgeRow): GraphEdge {
-  return { from: r.from_id, to: r.to_id, kind: r.kind as EdgeKind };
+  const edge: GraphEdge = { from: r.from_id, to: r.to_id, kind: r.kind as EdgeKind };
+  if (r.provenance) edge.provenance = r.provenance as EdgeProvenance;
+  return edge;
 }
 
 /** Canonical identity of an edge: its (from, to, kind) triple, as printable JSON. */

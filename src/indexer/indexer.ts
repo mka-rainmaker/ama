@@ -38,7 +38,7 @@ export interface IndexStats {
  * into it changes. A persisted index stamped with a different version is treated
  * as unusable and rebuilt rather than reopened.
  */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2; // 2: edges carry provenance (ama-m8k.1)
 
 /** What a catch-up {@link Indexer.sync} reconciled. */
 export interface SyncResult {

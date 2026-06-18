@@ -529,11 +529,18 @@ export class TypeScriptAnalyzer implements Analyzer {
                 range: rangeOf(handler, sf),
               });
               declToId.set(handler, handlerId);
-              edges.push({ from: routeId, to: handlerId, kind: "References" });
+              edges.push({
+                from: routeId,
+                to: handlerId,
+                kind: "References",
+                provenance: "heuristic",
+              });
               continue;
             }
             const to = resolveValueRef(handler, checker, declToId, root);
-            if (to && to !== routeId) edges.push({ from: routeId, to, kind: "References" });
+            if (to && to !== routeId) {
+              edges.push({ from: routeId, to, kind: "References", provenance: "heuristic" });
+            }
           }
         }
       }
@@ -563,7 +570,12 @@ export class TypeScriptAnalyzer implements Analyzer {
                 tier: "deep",
                 range: rangeOf(member, sf),
               });
-              edges.push({ from: routeId, to: handlerId, kind: "References" });
+              edges.push({
+                from: routeId,
+                to: handlerId,
+                kind: "References",
+                provenance: "heuristic",
+              });
             }
           }
         }
@@ -627,7 +639,14 @@ export class TypeScriptAnalyzer implements Analyzer {
             range: rangeOf(arg, sf),
           });
           declToId.set(arg, handlerId);
-          if (enclosingId) edges.push({ from: enclosingId, to: handlerId, kind: "References" });
+          if (enclosingId) {
+            edges.push({
+              from: enclosingId,
+              to: handlerId,
+              kind: "References",
+              provenance: "heuristic",
+            });
+          }
         }
       }
       const childId = declToId.get(child);

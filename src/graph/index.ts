@@ -1,6 +1,7 @@
 export type {
   NodeKind,
   EdgeKind,
+  EdgeProvenance,
   Tier,
   SourceRange,
   GraphNode,
