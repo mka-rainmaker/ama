@@ -28,6 +28,12 @@ export type NodeKind = (typeof NODE_KINDS)[number];
 export type EdgeKind =
   | "Defines"
   | "Calls"
+  /** A `new X()` construction — distinct from a plain Calls so "who instantiates
+   *  X" is separable from "who calls X". (ama-hft.11) */
+  | "Instantiates"
+  /** A subtype method that overrides/implements a supertype method of the same
+   *  name (subtype.method → supertype.method). (ama-hft.11) */
+  | "Overrides"
   | "Inherits"
   | "Implements"
   | "UsesType"

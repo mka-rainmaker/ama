@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { EdgeProvenance, GraphEdge, GraphNode, NodeKind } from "../graph/index.js";
+import type { EdgeKind, EdgeProvenance, GraphEdge, GraphNode, NodeKind } from "../graph/index.js";
 import type { FileMeta, Store } from "../store/types.js";
 
 export interface SearchOptions {
@@ -24,6 +24,9 @@ export interface Snippet {
 export interface EdgeNeighbor {
   /** The symbol at the other end of the edge (the caller, or the callee). */
   symbol: GraphNode;
+  /** Which edge kind connected them — e.g. `Calls` vs `Instantiates` (a `new X()`
+   *  construction), so the two are separable in one result. (ama-hft.11) */
+  via: EdgeKind;
   /** The call-site line/column, when the edge records one. */
   at?: { line: number; column: number };
   /** How the edge was derived; absent ⇒ resolved. */
@@ -230,9 +233,13 @@ function rankNodes(nodes: GraphNode[]): GraphNode[] {
   );
 }
 
+/** The edge kinds that mean "X invokes Y": a plain call and a `new Y()`
+ *  construction. find_callers/find_callees report both, labelled by `via`. */
+const CALL_EDGE_KINDS = ["Calls", "Instantiates"] as const satisfies readonly EdgeKind[];
+
 /** Pair a neighbour node with the metadata of the edge it was reached by. */
 function neighbor(symbol: GraphNode, edge: GraphEdge): EdgeNeighbor {
-  const n: EdgeNeighbor = { symbol };
+  const n: EdgeNeighbor = { symbol, via: edge.kind };
   if (edge.at) n.at = edge.at;
   if (edge.provenance) n.provenance = edge.provenance;
   return n;
@@ -337,25 +344,31 @@ export class QueryService {
     return matches;
   }
 
-  /** Symbols that call the referenced symbol, each with its call-site location. */
+  /** Symbols that call or construct the referenced symbol, each labelled by the
+   *  edge kind (`Calls` / `Instantiates`) and its call-site location. */
   findCallers(ref: string): EdgeNeighbor[] {
     const callers = new Map<string, EdgeNeighbor>();
     for (const target of this.resolve(ref)) {
-      for (const edge of this.store.edgesTo(target.id, "Calls")) {
-        const caller = this.store.getNode(edge.from);
-        if (caller && !callers.has(caller.id)) callers.set(caller.id, neighbor(caller, edge));
+      for (const kind of CALL_EDGE_KINDS) {
+        for (const edge of this.store.edgesTo(target.id, kind)) {
+          const caller = this.store.getNode(edge.from);
+          if (caller && !callers.has(caller.id)) callers.set(caller.id, neighbor(caller, edge));
+        }
       }
     }
     return rankNeighbors([...callers.values()]);
   }
 
-  /** Symbols the referenced symbol calls, each with its call-site location. */
+  /** Symbols the referenced symbol calls or constructs, each labelled by the edge
+   *  kind (`Calls` / `Instantiates`) and its call-site location. */
   findCallees(ref: string): EdgeNeighbor[] {
     const callees = new Map<string, EdgeNeighbor>();
     for (const source of this.resolve(ref)) {
-      for (const edge of this.store.edgesFrom(source.id, "Calls")) {
-        const callee = this.store.getNode(edge.to);
-        if (callee && !callees.has(callee.id)) callees.set(callee.id, neighbor(callee, edge));
+      for (const kind of CALL_EDGE_KINDS) {
+        for (const edge of this.store.edgesFrom(source.id, kind)) {
+          const callee = this.store.getNode(edge.to);
+          if (callee && !callees.has(callee.id)) callees.set(callee.id, neighbor(callee, edge));
+        }
       }
     }
     return rankNeighbors([...callees.values()]);

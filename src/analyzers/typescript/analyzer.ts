@@ -115,6 +115,24 @@ export class TypeScriptAnalyzer implements Analyzer {
         subtypes.set(edge.to, list);
       }
     }
+    // Overrides: a subtype method of the same name as a supertype method
+    // overrides/implements it. Independent of any call — emitted for every such
+    // pair, using the same subtype/method maps. (ama-hft.11)
+    for (const [superId, subIds] of subtypes) {
+      const superMethods = methodsByContainer.get(superId);
+      if (!superMethods) continue;
+      for (const subId of subIds) {
+        const subMethods = methodsByContainer.get(subId);
+        if (!subMethods) continue;
+        for (const [name, subMethodId] of subMethods) {
+          const superMethodId = superMethods.get(name);
+          if (superMethodId && superMethodId !== subMethodId) {
+            edges.push({ from: subMethodId, to: superMethodId, kind: "Overrides" });
+          }
+        }
+      }
+    }
+
     const fanned: GraphEdge[] = [];
     for (const edge of edges) {
       if (edge.kind !== "Calls") continue;
@@ -239,7 +257,9 @@ export class TypeScriptAnalyzer implements Analyzer {
       if ((ts.isCallExpression(child) || ts.isNewExpression(child)) && enclosingId) {
         const callee = resolveCallee(child, checker, declToId, root);
         if (callee) {
-          edges.push({ from: enclosingId, to: callee, kind: "Calls", at: locationOf(child) });
+          // `new X()` is a construction — a distinct Instantiates edge, not Calls.
+          const kind = ts.isNewExpression(child) ? "Instantiates" : "Calls";
+          edges.push({ from: enclosingId, to: callee, kind, at: locationOf(child) });
         }
       }
       const childId = declToId.get(child);
