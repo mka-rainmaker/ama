@@ -1,5 +1,5 @@
 import type { GraphNode } from "../../graph/types.js";
-import type { Exploration, NodeView, QueryService } from "../../query/service.js";
+import type { Exploration, FileSkeleton, NodeView, QueryService } from "../../query/service.js";
 import { emitError } from "../emit.js";
 import type { CliCommand } from "../index.js";
 import { withQuery } from "../query-runner.js";
@@ -42,6 +42,18 @@ export function renderNodeView(view: NodeView, json: boolean): string {
     `  callees (${view.callees.length}): ${names(view.callees)}`,
     `  dependents (${view.dependents.length}): ${names(view.dependents)}`,
   );
+  return lines.join("\n");
+}
+
+/** Render a {@link FileSkeleton} (the `skeleton` command) for the terminal, or `--json`. */
+export function renderFileSkeleton(skeleton: FileSkeleton, json: boolean): string {
+  if (json) return JSON.stringify(skeleton, null, 2);
+  const lines = [
+    `${skeleton.file.file} — ${skeleton.symbols.length} symbol(s), ` +
+      `${skeleton.dependents.length} dependent(s)`,
+  ];
+  for (const sym of skeleton.symbols) lines.push(nodeLine(sym));
+  lines.push(`  dependents (${skeleton.dependents.length}): ${names(skeleton.dependents)}`);
   return lines.join("\n");
 }
 
@@ -160,6 +172,34 @@ export const nodeCommand: CliCommand = {
       return 1;
     }
     ctx.write(renderNodeView(result.view, ctx.json));
+    return 0;
+  },
+};
+
+export const skeletonCommand: CliCommand = {
+  name: "skeleton",
+  summary: "Show a file's symbol outline and the files that depend on it",
+  usage: "Usage: ama skeleton <file>",
+  async run(args, ctx) {
+    const ref = args[0];
+    if (ref === undefined) {
+      emitError(ctx, "Usage: ama skeleton <file>");
+      return 1;
+    }
+    // Wrap so the outer undefined ("no index") stays distinct from
+    // fileSkeleton()'s own undefined ("file not found").
+    const result = await withQuery(process.env.AMA_ROOT ?? ".", (query) => ({
+      skeleton: query.fileSkeleton(ref),
+    }));
+    if (result === undefined) {
+      emitError(ctx, NO_INDEX);
+      return 1;
+    }
+    if (result.skeleton === undefined) {
+      emitError(ctx, `File not found: ${ref}`);
+      return 1;
+    }
+    ctx.write(renderFileSkeleton(result.skeleton, ctx.json));
     return 0;
   },
 };

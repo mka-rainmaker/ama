@@ -15,6 +15,7 @@ import {
   interfacesCommand,
   nodeCommand,
   routesCommand,
+  skeletonCommand,
   typeUsersCommand,
   typesUsedCommand,
 } from "./commands/query.js";
@@ -116,6 +117,7 @@ export const COMMANDS: readonly CliCommand[] = [
   routesCommand,
   searchCodeCommand,
   searchCommand,
+  skeletonCommand,
   statusCommand,
   syncCommand,
   typeUsersCommand,
