@@ -722,6 +722,20 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
   ) {
     return { kind: "Method", name: node.name.text };
   }
+  // Any other module-level variable binding (`const MAX_RETRIES = 3`, `const SET =
+  // new Set(...)`, `const LABELS = [...] as const`) — a Variable node so it's
+  // searchable, snippet-able, and listed in a file's outline. Function-valued and
+  // object-literal initializers are handled above / by `visit` (their members
+  // become nodes; the object const itself stays a non-node, the ama-zkr rule).
+  // `visit` only reaches top-level / class-member / object-member declarations, so
+  // locals inside function bodies never become Variable nodes.
+  if (
+    ts.isVariableDeclaration(node) &&
+    ts.isIdentifier(node.name) &&
+    !(node.initializer !== undefined && ts.isObjectLiteralExpression(node.initializer))
+  ) {
+    return { kind: "Variable", name: node.name.text };
+  }
   return undefined;
 }
 

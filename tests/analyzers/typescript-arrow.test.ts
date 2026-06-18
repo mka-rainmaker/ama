@@ -23,8 +23,8 @@ describe("TypeScriptAnalyzer function-valued const declarations", () => {
     expect(result.nodes.find((n) => n.id === id("compute"))?.kind).toBe("Function");
   });
 
-  it("does not emit a node for a non-function const", () => {
-    expect(result.nodes.some((n) => n.id === id("NOT_A_FN"))).toBe(false);
+  it("emits a Variable node for a non-function const (ama-hft.12)", () => {
+    expect(result.nodes.find((n) => n.id === id("NOT_A_FN"))?.kind).toBe("Variable");
   });
 
   it("attributes a call inside an arrow-const body to the const", () => {

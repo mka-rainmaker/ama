@@ -1,5 +1,6 @@
 // Fixture for function-valued const declarations: the arrow and the function
-// expression should each become a Function node; the plain const should not.
+// expression should each become a Function node; the plain const becomes a
+// Variable node (ama-hft.12).
 export const greet = (): string => "hi";
 
 // biome-ignore lint/complexity/useArrowFunction: intentionally a function expression to exercise that branch

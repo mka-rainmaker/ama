@@ -17,6 +17,8 @@ export const NODE_KINDS = [
   "Function",
   "Method",
   "Property",
+  /** A module-level variable/constant binding, e.g. `const MAX_RETRIES = 3`. */
+  "Variable",
   /** A framework route, e.g. "GET /users" — its handler is found via a References edge. */
   "Route",
 ] as const;
