@@ -1,5 +1,6 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { BaselineAnalyzer } from "../analyzers/baseline/analyzer.js";
 import { csharpSpec } from "../analyzers/baseline/csharp.js";
@@ -50,6 +51,28 @@ export interface SyncResult {
   removed: string[];
 }
 
+/** Absolute directories far too broad to index — likely to pull in secrets,
+ *  exhaust memory, or never finish. A real project lives in a subdirectory, so
+ *  refusing these never blocks legitimate use. (ama-m8k.10) */
+const UNSAFE_DIRS = new Set(
+  ["/usr", "/etc", "/bin", "/sbin", "/var", "/opt", "/lib", "/dev", "/proc", "/System", "/Library"].map(
+    (p) => path.resolve(p),
+  ),
+);
+
+/** Throw if `root` resolves to the filesystem root, the user's home directory,
+ *  or a well-known system directory — a guardrail so a stray `index_repository`
+ *  call (an agent, a typo) can't walk the whole machine. (ama-m8k.10) */
+export function assertSafeRoot(root: string): void {
+  const abs = path.resolve(root);
+  if (abs === path.parse(abs).root || abs === path.resolve(os.homedir()) || UNSAFE_DIRS.has(abs)) {
+    throw new Error(
+      `Refusing to index ${abs}: that's the filesystem root, your home directory, or a system ` +
+        "directory — far too broad. Point Ama at a specific project directory.",
+    );
+  }
+}
+
 /**
  * Turns a directory into a graph: discover source files, hand each to the
  * analyzer that claims its extension, and collect the resulting nodes/edges
@@ -64,6 +87,8 @@ export class Indexer {
   ) {}
 
   async index(root: string): Promise<{ store: Store; stats: IndexStats }> {
+    // Refuse dangerously broad roots before touching the filesystem.
+    assertSafeRoot(root);
     // A clear error beats a raw ENOTDIR/ENOENT when the root isn't a directory.
     if (!fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) {
       throw new Error(`Not a directory: ${root}`);
