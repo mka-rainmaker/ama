@@ -252,6 +252,7 @@ export class TypeScriptAnalyzer implements Analyzer {
         childId &&
         (ts.isFunctionDeclaration(child) ||
           ts.isMethodDeclaration(child) ||
+          ts.isConstructorDeclaration(child) ||
           ts.isVariableDeclaration(child) ||
           ts.isPropertyAssignment(child) ||
           ts.isArrowFunction(child) ||
@@ -300,6 +301,7 @@ export class TypeScriptAnalyzer implements Analyzer {
         childId &&
         (ts.isFunctionDeclaration(child) ||
           ts.isMethodDeclaration(child) ||
+          ts.isConstructorDeclaration(child) ||
           ts.isVariableDeclaration(child) ||
           ts.isPropertyAssignment(child) ||
           ts.isArrowFunction(child) ||
@@ -635,6 +637,7 @@ export class TypeScriptAnalyzer implements Analyzer {
         childId &&
         (ts.isFunctionDeclaration(child) ||
           ts.isMethodDeclaration(child) ||
+          ts.isConstructorDeclaration(child) ||
           ts.isVariableDeclaration(child) ||
           ts.isPropertyAssignment(child) ||
           ts.isArrowFunction(child) ||
@@ -759,6 +762,12 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
   }
   if ((ts.isMethodDeclaration(node) || ts.isMethodSignature(node)) && ts.isIdentifier(node.name)) {
     return { kind: "Method", name: node.name.text };
+  }
+  // A constructor is a Method named "constructor" (qualified `Cls.constructor`),
+  // so its body's wiring — calls, references, param-type usages — attributes to it
+  // instead of being dropped at the class boundary. (ama-vz8)
+  if (ts.isConstructorDeclaration(node)) {
+    return { kind: "Method", name: "constructor" };
   }
   if (
     (ts.isPropertyDeclaration(node) || ts.isPropertySignature(node)) &&
