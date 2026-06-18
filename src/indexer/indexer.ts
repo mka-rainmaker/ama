@@ -9,7 +9,7 @@ import { javascriptSpec } from "../analyzers/baseline/javascript.js";
 import { pythonSpec } from "../analyzers/baseline/python.js";
 import { rustSpec } from "../analyzers/baseline/rust.js";
 import { AnalyzerRegistry } from "../analyzers/registry.js";
-import type { AnalysisResult, Analyzer } from "../analyzers/types.js";
+import type { AnalysisResult, Analyzer, ResolutionStats } from "../analyzers/types.js";
 import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
@@ -31,6 +31,8 @@ export interface IndexStats {
   fileCount: number;
   /** Per-language coverage, each carrying the analyzer's tier. */
   languages: LanguageCoverage[];
+  /** Aggregate call-resolution coverage across deep analyzers, when measured. */
+  resolution?: ResolutionStats;
 }
 
 /**
@@ -83,6 +85,7 @@ export class Indexer {
     }
 
     const languages: LanguageCoverage[] = [];
+    const resolution: ResolutionStats = { callsTotal: 0, callsResolved: 0 };
     let fileCount = 0;
     for (const [analyzer, files] of byAnalyzer) {
       // Isolate each analyzer: a crash on one language's batch (a pathological
@@ -104,6 +107,10 @@ export class Indexer {
       for (const e of result.edges) store.addEdge(e);
       for (const rel of files) store.recordFile(fingerprint(root, rel));
       fileCount += files.length;
+      if (result.resolution) {
+        resolution.callsTotal += result.resolution.callsTotal;
+        resolution.callsResolved += result.resolution.callsResolved;
+      }
       languages.push({
         language: analyzer.language,
         tier: analyzer.tier,
@@ -112,9 +119,10 @@ export class Indexer {
     }
 
     // Persist enough to reopen this index next process without re-analyzing:
-    // coverage (for index_status), the root it was built for, and the schema
-    // version that wrote it.
+    // coverage + resolution (for index_status), the root it was built for, and
+    // the schema version that wrote it.
     store.setMeta("ama:coverage", JSON.stringify({ fileCount, languages }));
+    store.setMeta("ama:resolution", JSON.stringify(resolution));
     store.setMeta("ama:root", root);
     store.setMeta("ama:schema", String(SCHEMA_VERSION));
 
@@ -126,6 +134,7 @@ export class Indexer {
         edgeCount: store.edgeCount,
         fileCount,
         languages,
+        resolution,
       },
     };
   }
@@ -154,9 +163,20 @@ export class Indexer {
       fileCount: number;
       languages: LanguageCoverage[];
     };
+    // Resolution coverage is additive — an index written before ama-m8k.12 simply
+    // lacks it, so it stays undefined rather than gating reopen.
+    const resolutionRaw = store.getMeta("ama:resolution");
+    const resolution = resolutionRaw ? (JSON.parse(resolutionRaw) as ResolutionStats) : undefined;
     return {
       store,
-      stats: { root, nodeCount: store.nodeCount, edgeCount: store.edgeCount, fileCount, languages },
+      stats: {
+        root,
+        nodeCount: store.nodeCount,
+        edgeCount: store.edgeCount,
+        fileCount,
+        languages,
+        ...(resolution ? { resolution } : {}),
+      },
     };
   }
 

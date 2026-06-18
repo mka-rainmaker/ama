@@ -47,6 +47,10 @@ describe("MCP server", () => {
       language: "typescript",
       tier: "deep",
     });
+    // Resolution coverage travels too (ama-m8k.12) — an honest "how much of the
+    // call graph resolved" signal, internally consistent (resolved <= total).
+    expect(status.resolution.callsTotal).toBeGreaterThan(0);
+    expect(status.resolution.callsResolved).toBeLessThanOrEqual(status.resolution.callsTotal);
     // The build stamp travels over the protocol so a client can check freshness.
     expect(typeof status.server.version).toBe("string");
     expect(status.server).toHaveProperty("revision");

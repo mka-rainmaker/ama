@@ -2,7 +2,7 @@ import * as path from "node:path";
 import ts from "typescript";
 import { fileId, symbolId } from "../../graph/index.js";
 import type { GraphEdge, GraphNode, NodeKind, SourceRange } from "../../graph/index.js";
-import type { AnalysisResult, Analyzer } from "../types.js";
+import type { AnalysisResult, Analyzer, ResolutionStats } from "../types.js";
 
 /**
  * Deep TypeScript analyzer built on the TypeScript Compiler API.
@@ -39,6 +39,7 @@ export class TypeScriptAnalyzer implements Analyzer {
 
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
+    const resolution: ResolutionStats = { callsTotal: 0, callsResolved: 0 };
     /** AST declaration node -> graph node id, so resolved calls find their target. */
     const declToId = new Map<ts.Node, string>();
 
@@ -71,7 +72,7 @@ export class TypeScriptAnalyzer implements Analyzer {
         // Then callback-argument handlers (tap("name", () => …)) — same trick:
         // register the arrow before collectCalls so its body attributes to it.
         this.collectCallbackHandlers(sf, undefined, rel, sf, declToId, nodes, edges);
-        this.collectCalls(sf, undefined, declToId, checker, edges, root);
+        this.collectCalls(sf, undefined, declToId, checker, edges, root, resolution);
         this.collectVarReferences(sf, undefined, declToId, variableIds, checker, edges, root);
         this.collectHeritage(sf, declToId, checker, edges, root);
         this.collectTypeUsages(sf, undefined, declToId, checker, edges, root);
@@ -80,7 +81,7 @@ export class TypeScriptAnalyzer implements Analyzer {
     }
 
     this.resolveDispatch(nodes, edges);
-    return { nodes, edges };
+    return { nodes, edges, resolution };
   }
 
   /**
@@ -245,6 +246,7 @@ export class TypeScriptAnalyzer implements Analyzer {
     checker: ts.TypeChecker,
     edges: GraphEdge[],
     root: string,
+    counts: ResolutionStats,
   ): void {
     node.forEachChild((child) => {
       // Decorators are usage edges, not calls (collectTypeUsages emits a UsesType
@@ -255,8 +257,12 @@ export class TypeScriptAnalyzer implements Analyzer {
       // A `new Foo()` is a construction call site, resolved the same way as a
       // plain call (to Foo's class node), so `find_callers` sees constructions.
       if ((ts.isCallExpression(child) || ts.isNewExpression(child)) && enclosingId) {
+        // A call site that can be attributed (has an enclosing function) — count
+        // it, and whether it resolved, for the coverage metric. (ama-m8k.12)
+        counts.callsTotal++;
         const callee = resolveCallee(child, checker, declToId, root);
         if (callee) {
+          counts.callsResolved++;
           // `new X()` is a construction — a distinct Instantiates edge, not Calls.
           const kind = ts.isNewExpression(child) ? "Instantiates" : "Calls";
           edges.push({ from: enclosingId, to: callee, kind, at: locationOf(child) });
@@ -281,7 +287,7 @@ export class TypeScriptAnalyzer implements Analyzer {
           ts.isFunctionExpression(child))
           ? childId
           : enclosingId;
-      this.collectCalls(child, nextEnclosing, declToId, checker, edges, root);
+      this.collectCalls(child, nextEnclosing, declToId, checker, edges, root, counts);
     });
   }
 

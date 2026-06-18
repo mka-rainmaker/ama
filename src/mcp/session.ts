@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import type { ResolutionStats } from "../analyzers/types.js";
 import type { GraphNode } from "../graph/index.js";
 import { Debouncer } from "../indexer/debouncer.js";
 import { createDefaultIndexer } from "../indexer/indexer.js";
@@ -30,6 +31,9 @@ export type IndexStatus =
       edgeCount: number;
       fileCount: number;
       languages: LanguageCoverage[];
+      /** Call-resolution coverage (resolved vs total attributable call sites), when
+       *  measured — an honest signal of how complete the call graph is. */
+      resolution?: ResolutionStats;
       /** Edits the auto-syncer has queued but not yet re-indexed (0 if not watching). */
       pendingSync: number;
       /** Running-server build stamp, for detecting a stale server (see build-info). */
@@ -197,7 +201,7 @@ export class AmaSession {
 
   indexStatus(): IndexStatus {
     if (!this.stats) return { indexed: false, server: serverStamp };
-    const { root, nodeCount, edgeCount, fileCount, languages } = this.stats;
+    const { root, nodeCount, edgeCount, fileCount, languages, resolution } = this.stats;
     return {
       indexed: true,
       root,
@@ -205,6 +209,7 @@ export class AmaSession {
       edgeCount,
       fileCount,
       languages,
+      ...(resolution ? { resolution } : {}),
       pendingSync: this.debouncer?.pendingCount ?? 0,
       server: serverStamp,
     };
