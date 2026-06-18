@@ -199,6 +199,19 @@ function scoreSymbol(node: GraphNode, query: string): number {
 }
 
 /**
+ * Order relationship results (callers, callees, importers, …) by relevance with no
+ * free-text term: the query-less `scoreSymbol` lifts top-level definitions over
+ * members/variables and demotes test/generated files, so a symbol's real source
+ * relationships surface above its test-file ones. Ties break alphabetically. (ama-bc2)
+ */
+function rankNodes(nodes: GraphNode[]): GraphNode[] {
+  return [...nodes].sort(
+    (a, b) =>
+      scoreSymbol(b, "") - scoreSymbol(a, "") || a.qualifiedName.localeCompare(b.qualifiedName),
+  );
+}
+
+/**
  * Read-side of the graph: the four MVP questions an agent asks, answered from
  * the store. A "symbol reference" is either an exact node id (e.g.
  * "src/a.ts#Foo.bar") or a bare name ("bar"); names may resolve to several nodes.
@@ -298,7 +311,7 @@ export class QueryService {
         if (caller) callers.set(caller.id, caller);
       }
     }
-    return [...callers.values()];
+    return rankNodes([...callers.values()]);
   }
 
   /** Symbols the referenced symbol calls. */
@@ -311,7 +324,7 @@ export class QueryService {
         if (callee) callees.set(callee.id, callee);
       }
     }
-    return [...callees.values()];
+    return rankNodes([...callees.values()]);
   }
 
   /** The handler symbols a route refers to (route → References → handler). */
@@ -324,7 +337,7 @@ export class QueryService {
         if (handler) handlers.set(handler.id, handler);
       }
     }
-    return [...handlers.values()];
+    return rankNodes([...handlers.values()]);
   }
 
   /**
@@ -342,7 +355,7 @@ export class QueryService {
         if (referrer) referrers.set(referrer.id, referrer);
       }
     }
-    return [...referrers.values()];
+    return rankNodes([...referrers.values()]);
   }
 
   /** The routes that map to a handler — the route-domain framing of
@@ -361,7 +374,7 @@ export class QueryService {
         if (cls) implementers.set(cls.id, cls);
       }
     }
-    return [...implementers.values()];
+    return rankNodes([...implementers.values()]);
   }
 
   /** Interfaces the referenced class implements. */
@@ -374,7 +387,7 @@ export class QueryService {
         if (iface) interfaces.set(iface.id, iface);
       }
     }
-    return [...interfaces.values()];
+    return rankNodes([...interfaces.values()]);
   }
 
   /** Edges representing an import of/by `id` — value (`Imports`) and type-only
@@ -397,7 +410,7 @@ export class QueryService {
         if (file) importers.set(file.id, file);
       }
     }
-    return [...importers.values()];
+    return rankNodes([...importers.values()]);
   }
 
   /** Symbols the referenced file imports (or re-exports). */
@@ -410,7 +423,7 @@ export class QueryService {
         if (imported) imports.set(imported.id, imported);
       }
     }
-    return [...imports.values()];
+    return rankNodes([...imports.values()]);
   }
 
   /** Symbols that use the referenced type in a parameter, return, or property. */
@@ -423,7 +436,7 @@ export class QueryService {
         if (user) users.set(user.id, user);
       }
     }
-    return [...users.values()];
+    return rankNodes([...users.values()]);
   }
 
   /** Types the referenced symbol uses in a parameter, return, or property. */
@@ -436,7 +449,7 @@ export class QueryService {
         if (type) types.set(type.id, type);
       }
     }
-    return [...types.values()];
+    return rankNodes([...types.values()]);
   }
 
   /**
