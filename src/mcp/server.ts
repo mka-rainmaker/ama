@@ -435,14 +435,21 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     {
       description:
         "Files affected by changing the given files: the transitive set that imports from them " +
-        "(directly or via a defined symbol) — which files/tests to recheck.",
+        "(directly or via a defined symbol) — which files/tests to recheck. Pass testsOnly to " +
+        "get just the affected test files (which tests to run for a change).",
       inputSchema: {
         files: z.array(z.string()).describe("File node ids (repo-relative paths) or basenames."),
+        testsOnly: z
+          .boolean()
+          .optional()
+          .describe("Return only the affected test files (test-impact mode)."),
       },
     },
     tap(
       "affected",
-      queryTool(session, ({ files }: { files: string[] }) => session.affected(files)),
+      queryTool(session, ({ files, testsOnly }: { files: string[]; testsOnly?: boolean }) =>
+        session.affected(files, { testsOnly }),
+      ),
     ),
   );
 

@@ -73,19 +73,23 @@ export const impactCommand: CliCommand = {
 
 export const affectedCommand: CliCommand = {
   name: "affected",
-  summary: "Show files impacted by changes to the given files",
-  usage: "Usage: ama affected <file> [file...]",
+  summary: "Show files impacted by changes to the given files (--tests for test-impact)",
+  usage: "Usage: ama affected [--tests] <file> [file...]",
   async run(args, ctx) {
-    if (args.length === 0) {
-      emitError(ctx, "Usage: ama affected <file> [file...]");
+    const testsOnly = args.includes("--tests");
+    const files = args.filter((a) => !a.startsWith("-"));
+    if (files.length === 0) {
+      emitError(ctx, "Usage: ama affected [--tests] <file> [file...]");
       return 1;
     }
-    const nodes = await withQuery(process.env.AMA_ROOT ?? ".", (query) => query.affected(args));
+    const nodes = await withQuery(process.env.AMA_ROOT ?? ".", (query) =>
+      query.affected(files, { testsOnly }),
+    );
     if (nodes === undefined) {
       emitError(ctx, NO_INDEX);
       return 1;
     }
-    ctx.write(renderAffected(args, nodes, ctx.json));
+    ctx.write(renderAffected(files, nodes, ctx.json));
     return 0;
   },
 };

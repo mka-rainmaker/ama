@@ -285,8 +285,8 @@ export class AmaSession {
     return this.requireQuery().getGraphSchema();
   }
 
-  affected(files: string[]): GraphNode[] {
-    return this.requireQuery().affected(files);
+  affected(files: string[], opts: { testsOnly?: boolean } = {}): GraphNode[] {
+    return this.requireQuery().affected(files, opts);
   }
 
   explore(question: string): Exploration {

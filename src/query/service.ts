@@ -174,13 +174,20 @@ const KIND_BONUS: Partial<Record<NodeKind, number>> = {
   Variable: 1,
 };
 
+/** Whether a path looks like a test file — `tests/`/`__tests__/` dirs or a
+ *  `.test.`/`.spec.` name. Used by test-impact filtering (ama-5gs.9) and search
+ *  demotion. */
+export function isTestFile(file: string): boolean {
+  const f = file.toLowerCase();
+  return /(^|\/)(tests?|__tests__)\//.test(f) || /\.(test|spec)\./.test(f);
+}
+
 /** Test and generated/build files — real but rarely the symbol you searched for,
  *  so a match there is demoted below an equivalent match in source. */
 function isDeprioritizedFile(file: string): boolean {
   const f = file.toLowerCase();
   return (
-    /(^|\/)(tests?|__tests__)\//.test(f) ||
-    /\.(test|spec)\./.test(f) ||
+    isTestFile(file) ||
     f.endsWith(".d.ts") ||
     /\.generated\./.test(f) ||
     /(^|\/)(dist|build|coverage)\//.test(f)
@@ -577,7 +584,7 @@ export class QueryService {
    * "which files (and tests) should I recheck?". Non-file refs and unknowns
    * contribute nothing.
    */
-  affected(refs: string[]): GraphNode[] {
+  affected(refs: string[], opts: { testsOnly?: boolean } = {}): GraphNode[] {
     const seeds = new Set<string>();
     for (const ref of refs) {
       for (const node of this.resolve(ref)) {
@@ -599,7 +606,10 @@ export class QueryService {
       }
       frontier = next;
     }
-    return [...result.values()];
+    const all = [...result.values()];
+    // Test-impact mode: keep only the affected test files — "which tests to run
+    // for this change". (ama-5gs.9)
+    return opts.testsOnly ? all.filter((n) => isTestFile(n.file)) : all;
   }
 
   /**
