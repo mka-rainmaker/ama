@@ -9,7 +9,7 @@ import { javascriptSpec } from "../analyzers/baseline/javascript.js";
 import { pythonSpec } from "../analyzers/baseline/python.js";
 import { rustSpec } from "../analyzers/baseline/rust.js";
 import { AnalyzerRegistry } from "../analyzers/registry.js";
-import type { Analyzer } from "../analyzers/types.js";
+import type { AnalysisResult, Analyzer } from "../analyzers/types.js";
 import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
@@ -85,9 +85,23 @@ export class Indexer {
     const languages: LanguageCoverage[] = [];
     let fileCount = 0;
     for (const [analyzer, files] of byAnalyzer) {
-      const { nodes, edges } = await analyzer.analyze(root, files);
-      for (const n of nodes) store.addNode(n);
-      for (const e of edges) store.addEdge(e);
+      // Isolate each analyzer: a crash on one language's batch (a pathological
+      // file, an analyzer bug) must not abort the whole index — the other
+      // languages still produce a usable graph. The failure is reported to
+      // stderr (never silently dropped) and that language is left out of
+      // coverage so the index honestly reflects what was analyzed. (ama-m8k.9)
+      let result: AnalysisResult;
+      try {
+        result = await analyzer.analyze(root, files);
+      } catch (err) {
+        console.error(
+          `[ama] ${analyzer.language} analyzer failed on ${files.length} file(s); ` +
+            `skipping them. ${err instanceof Error ? err.message : String(err)}`,
+        );
+        continue;
+      }
+      for (const n of result.nodes) store.addNode(n);
+      for (const e of result.edges) store.addEdge(e);
       for (const rel of files) store.recordFile(fingerprint(root, rel));
       fileCount += files.length;
       languages.push({
