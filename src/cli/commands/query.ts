@@ -155,6 +155,18 @@ export const referrersCommand = refQueryCommand(
   (q, ref) => q.findReferrers(ref).map((r) => r.symbol),
 );
 
+export const overridesCommand = refQueryCommand(
+  "overrides",
+  "List the supertype methods a method overrides/implements",
+  (q, ref) => q.findOverrides(ref).map((o) => o.symbol),
+);
+
+export const overriddenByCommand = refQueryCommand(
+  "overridden-by",
+  "List the methods that override a method",
+  (q, ref) => q.findOverriddenBy(ref).map((o) => o.symbol),
+);
+
 export const nodeCommand: CliCommand = {
   name: "node",
   summary: "Show a symbol with its callers, callees, and dependents",

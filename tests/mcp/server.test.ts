@@ -310,6 +310,26 @@ describe("MCP analysis tools", () => {
   });
 });
 
+const implementsRoot = path.resolve(here, "../fixtures/ts-implements");
+
+describe("MCP override tools", () => {
+  it("find_overrides returns the interface method a class method overrides", async () => {
+    const client = await connectClient();
+    await client.callTool({ name: "index_repository", arguments: { path: implementsRoot } });
+    const overrides = JSON.parse(
+      firstText(
+        await client.callTool({
+          name: "find_overrides",
+          arguments: { symbol: "FriendlyGreeter.greet" },
+        }),
+      ),
+    );
+    expect(
+      overrides.map((n: { symbol: { qualifiedName: string } }) => n.symbol.qualifiedName),
+    ).toContain("Greeter.greet");
+  });
+});
+
 describe("MCP tool-call logging", () => {
   const realEnv = process.env.AMA_LOG_TOOLS;
   afterEach(() => {

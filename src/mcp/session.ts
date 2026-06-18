@@ -237,6 +237,14 @@ export class AmaSession {
     return this.requireQuery().findReferrers(ref);
   }
 
+  findOverrides(ref: string): EdgeNeighbor[] {
+    return this.requireQuery().findOverrides(ref);
+  }
+
+  findOverriddenBy(ref: string): EdgeNeighbor[] {
+    return this.requireQuery().findOverriddenBy(ref);
+  }
+
   circularImports(): GraphNode[][] {
     return this.requireQuery().circularImports();
   }

@@ -411,6 +411,30 @@ export class QueryService {
     return this.findReferrers(ref);
   }
 
+  /** The supertype methods a method overrides or implements (method → super). */
+  findOverrides(ref: string): EdgeNeighbor[] {
+    const result = new Map<string, EdgeNeighbor>();
+    for (const source of this.resolve(ref)) {
+      for (const edge of this.store.edgesFrom(source.id, "Overrides")) {
+        const target = this.store.getNode(edge.to);
+        if (target && !result.has(target.id)) result.set(target.id, neighbor(target, edge));
+      }
+    }
+    return rankNeighbors([...result.values()]);
+  }
+
+  /** The subtype methods that override a method (who overrides this — incoming). */
+  findOverriddenBy(ref: string): EdgeNeighbor[] {
+    const result = new Map<string, EdgeNeighbor>();
+    for (const target of this.resolve(ref)) {
+      for (const edge of this.store.edgesTo(target.id, "Overrides")) {
+        const source = this.store.getNode(edge.from);
+        if (source && !result.has(source.id)) result.set(source.id, neighbor(source, edge));
+      }
+    }
+    return rankNeighbors([...result.values()]);
+  }
+
   /** Classes that implement the referenced interface. */
   findImplementations(ref: string): GraphNode[] {
     const targets = this.resolve(ref);

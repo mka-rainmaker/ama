@@ -230,6 +230,38 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
   );
 
   server.registerTool(
+    "find_overrides",
+    {
+      description:
+        "The supertype methods a method overrides or implements (method → the " +
+        "interface/base method of the same name).",
+      inputSchema: {
+        symbol: z.string().describe("Method id, simple name, or dotted qualified name."),
+      },
+    },
+    tap(
+      "find_overrides",
+      queryTool(session, ({ symbol }: { symbol: string }) => session.findOverrides(symbol)),
+    ),
+  );
+
+  server.registerTool(
+    "find_overridden_by",
+    {
+      description:
+        "The subtype methods that override a method — what breaks if you change this " +
+        "interface/base method.",
+      inputSchema: {
+        symbol: z.string().describe("Method id, simple name, or dotted qualified name."),
+      },
+    },
+    tap(
+      "find_overridden_by",
+      queryTool(session, ({ symbol }: { symbol: string }) => session.findOverriddenBy(symbol)),
+    ),
+  );
+
+  server.registerTool(
     "find_referrers",
     {
       description:
