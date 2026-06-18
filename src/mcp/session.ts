@@ -225,15 +225,15 @@ export class AmaSession {
     return this.requireQuery().findCallees(ref);
   }
 
-  findHandlers(ref: string): GraphNode[] {
+  findHandlers(ref: string): EdgeNeighbor[] {
     return this.requireQuery().findHandlers(ref);
   }
 
-  findRoutes(ref: string): GraphNode[] {
+  findRoutes(ref: string): EdgeNeighbor[] {
     return this.requireQuery().findRoutes(ref);
   }
 
-  findReferrers(ref: string): GraphNode[] {
+  findReferrers(ref: string): EdgeNeighbor[] {
     return this.requireQuery().findReferrers(ref);
   }
 

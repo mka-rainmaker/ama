@@ -18,12 +18,12 @@ function setup(): QueryService {
 
 describe("Route / References model", () => {
   it("finds the handlers a route references", () => {
-    expect(setup().findHandlers("GET /users").map((n) => n.name)).toEqual(["getUsers"]);
+    expect(setup().findHandlers("GET /users").map((n) => n.symbol.name)).toEqual(["getUsers"]);
   });
 
   it("finds the routes that reference a handler", () => {
     const routes = setup().findRoutes("getUsers");
-    expect(routes.map((n) => n.name)).toEqual(["GET /users"]);
-    expect(routes[0]?.kind).toBe("Route");
+    expect(routes.map((n) => n.symbol.name)).toEqual(["GET /users"]);
+    expect(routes[0]?.symbol.kind).toBe("Route");
   });
 });

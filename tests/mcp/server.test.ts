@@ -272,7 +272,7 @@ describe("MCP route tools", () => {
         await client.callTool({ name: "find_handlers", arguments: { route: "GET /users" } }),
       ),
     );
-    expect(handlers.map((n: { name: string }) => n.name)).toContain("listUsers");
+    expect(handlers.map((n: { symbol: { name: string } }) => n.symbol.name)).toContain("listUsers");
   });
 
   it("find_routes returns the routes that reference a handler", async () => {
@@ -280,7 +280,7 @@ describe("MCP route tools", () => {
     const routes = JSON.parse(
       firstText(await client.callTool({ name: "find_routes", arguments: { symbol: "listUsers" } })),
     );
-    expect(routes.map((n: { name: string }) => n.name)).toContain("GET /users");
+    expect(routes.map((n: { symbol: { name: string } }) => n.symbol.name)).toContain("GET /users");
   });
 
   it("find_referrers returns everything that references a symbol", async () => {
@@ -290,7 +290,9 @@ describe("MCP route tools", () => {
         await client.callTool({ name: "find_referrers", arguments: { symbol: "listUsers" } }),
       ),
     );
-    expect(referrers.map((n: { name: string }) => n.name)).toContain("GET /users");
+    expect(referrers.map((n: { symbol: { name: string } }) => n.symbol.name)).toContain(
+      "GET /users",
+    );
   });
 });
 

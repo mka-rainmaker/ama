@@ -355,16 +355,15 @@ export class QueryService {
   }
 
   /** The handler symbols a route refers to (route → References → handler). */
-  findHandlers(ref: string): GraphNode[] {
-    const routes = this.resolve(ref);
-    const handlers = new Map<string, GraphNode>();
-    for (const route of routes) {
+  findHandlers(ref: string): EdgeNeighbor[] {
+    const handlers = new Map<string, EdgeNeighbor>();
+    for (const route of this.resolve(ref)) {
       for (const edge of this.store.edgesFrom(route.id, "References")) {
         const handler = this.store.getNode(edge.to);
-        if (handler) handlers.set(handler.id, handler);
+        if (handler && !handlers.has(handler.id)) handlers.set(handler.id, neighbor(handler, edge));
       }
     }
-    return rankNodes([...handlers.values()]);
+    return rankNeighbors([...handlers.values()]);
   }
 
   /**
@@ -373,21 +372,22 @@ export class QueryService {
    * any other dispatch reference. The general "who refers to this" — answers the
    * question `find_callers` can't, since reads aren't calls. (ama-pfm)
    */
-  findReferrers(ref: string): GraphNode[] {
-    const targets = this.resolve(ref);
-    const referrers = new Map<string, GraphNode>();
-    for (const target of targets) {
+  findReferrers(ref: string): EdgeNeighbor[] {
+    const referrers = new Map<string, EdgeNeighbor>();
+    for (const target of this.resolve(ref)) {
       for (const edge of this.store.edgesTo(target.id, "References")) {
         const referrer = this.store.getNode(edge.from);
-        if (referrer) referrers.set(referrer.id, referrer);
+        if (referrer && !referrers.has(referrer.id)) {
+          referrers.set(referrer.id, neighbor(referrer, edge));
+        }
       }
     }
-    return rankNodes([...referrers.values()]);
+    return rankNeighbors([...referrers.values()]);
   }
 
   /** The routes that map to a handler — the route-domain framing of
    *  {@link findReferrers} (a route References its handler). */
-  findRoutes(ref: string): GraphNode[] {
+  findRoutes(ref: string): EdgeNeighbor[] {
     return this.findReferrers(ref);
   }
 
@@ -493,7 +493,7 @@ export class QueryService {
       snippet: this.getCodeSnippet(ref),
       callers: this.findCallers(ref).map((c) => c.symbol),
       callees: this.findCallees(ref).map((c) => c.symbol),
-      referrers: this.findReferrers(ref),
+      referrers: this.findReferrers(ref).map((c) => c.symbol),
       dependents: this.findImporters(ref),
     };
   }

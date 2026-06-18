@@ -28,14 +28,14 @@ describe("QueryService.findReferrers (ama-pfm)", () => {
     expect(
       setup()
         .findReferrers("MAX")
-        .map((n) => n.name),
+        .map((n) => n.symbol.name),
     ).toEqual(["reader"]);
   });
 
   it("returns the routes that reference a handler (same traversal as findRoutes)", () => {
     const q = setup();
-    expect(q.findReferrers("handler").map((n) => n.name)).toEqual(["GET /x"]);
-    expect(q.findRoutes("handler").map((n) => n.name)).toEqual(["GET /x"]);
+    expect(q.findReferrers("handler").map((n) => n.symbol.name)).toEqual(["GET /x"]);
+    expect(q.findRoutes("handler").map((n) => n.symbol.name)).toEqual(["GET /x"]);
   });
 
   it("node() includes the referrers of a symbol", () => {

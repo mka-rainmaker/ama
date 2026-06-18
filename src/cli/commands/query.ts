@@ -140,19 +140,19 @@ export const typesUsedCommand = refQueryCommand(
 export const handlersCommand = refQueryCommand(
   "handlers",
   "List the handler(s) a route maps to",
-  (q, ref) => q.findHandlers(ref),
+  (q, ref) => q.findHandlers(ref).map((h) => h.symbol),
 );
 
 export const routesCommand = refQueryCommand(
   "routes",
   "List the routes that map to a symbol",
-  (q, ref) => q.findRoutes(ref),
+  (q, ref) => q.findRoutes(ref).map((r) => r.symbol),
 );
 
 export const referrersCommand = refQueryCommand(
   "referrers",
   "List everything that references a symbol (variable readers, routes, dispatch)",
-  (q, ref) => q.findReferrers(ref),
+  (q, ref) => q.findReferrers(ref).map((r) => r.symbol),
 );
 
 export const nodeCommand: CliCommand = {
