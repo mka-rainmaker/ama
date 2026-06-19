@@ -69,8 +69,8 @@ export class TypeScriptAnalyzer implements Analyzer {
         // Routes first: it registers inline-handler arrows in declToId, so the
         // following collectCalls attributes each handler's body to its node.
         this.collectRoutes(sf, rel, declToId, checker, nodes, edges, root, mountPrefixes);
-        // File-based routes: the URL comes from the file path, not a call. (ama-rme.7)
-        this.collectFileRoutes(sf, rel, declToId, nodes, edges);
+        // File-based routes: the URL comes from the file path, not a call. (ama-rme.7, ama-w7g)
+        this.collectFileRoutes(sf, rel, declToId, checker, nodes, edges, root);
         // Then callback-argument handlers (tap("name", () => …)) — same trick:
         // register the arrow before collectCalls so its body attributes to it.
         this.collectCallbackHandlers(sf, undefined, rel, sf, declToId, nodes, edges);
@@ -912,10 +912,16 @@ export class TypeScriptAnalyzer implements Analyzer {
     sf: ts.SourceFile,
     rel: string,
     declToId: Map<ts.Node, string>,
+    checker: ts.TypeChecker,
     nodes: GraphNode[],
     edges: GraphEdge[],
+    root: string,
   ): void {
-    const routePath = fileRoutePath(rel);
+    // Marker-file conventions (route.ts/+server.ts → directory path, ama-rme.7)
+    // and filename conventions (pages//server/ → filename path, ama-w7g).
+    const marker = fileRoutePath(rel);
+    const named = filenameRoutePath(rel);
+    const routePath = marker ?? named?.path;
     if (routePath === undefined) return;
     const emit = (methodName: string, decl: ts.Node): void => {
       if (!ROUTE_METHODS.has(methodName.toLowerCase())) return;
@@ -947,6 +953,50 @@ export class TypeScriptAnalyzer implements Analyzer {
           ) {
             emit(d.name.text, d);
           }
+        }
+      }
+    }
+    // A default-export request handler (Next.js Pages Router, Nuxt) — an any-method
+    // route. Page components (a default export outside an `api` dir) are excluded
+    // by `allowDefault`. (ama-w7g)
+    if (named?.allowDefault) {
+      const handler = findDefaultExportHandler(sf);
+      if (handler) {
+        const handlerNode = "decl" in handler ? handler.decl : handler.expr;
+        const name = `ALL ${named.path}`;
+        const routeId = symbolId({ file: rel, qualifiedName: name });
+        nodes.push({
+          id: routeId,
+          kind: "Route",
+          name,
+          file: rel,
+          qualifiedName: name,
+          tier: "deep",
+          range: rangeOf(handlerNode, sf),
+        });
+        if ("decl" in handler) {
+          const handlerId = declToId.get(handler.decl);
+          if (handlerId) {
+            edges.push({
+              from: routeId,
+              to: handlerId,
+              kind: "References",
+              provenance: "heuristic",
+            });
+          }
+        } else {
+          this.emitRouteHandlers(
+            routeId,
+            name,
+            [handler.expr],
+            rel,
+            sf,
+            declToId,
+            checker,
+            nodes,
+            edges,
+            root,
+          );
         }
       }
     }
@@ -1365,6 +1415,89 @@ function fileRoutePath(rel: string): string | undefined {
     .map(routeSegment)
     .filter((s): s is string => s !== undefined);
   return `/${segs.join("/")}`;
+}
+
+/** Module extensions a filename-routed endpoint can use. (ama-w7g) */
+const FILE_ROUTE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs"]);
+
+/** The URL path for a *filename*-routed module (the route includes the filename),
+ *  plus whether a default export should count as a handler. Next.js Pages Router
+ *  & Astro live under `pages/`/`src/pages/`; Nuxt under `server/api/` (keeps the
+ *  `/api` prefix) or `server/routes/` (stripped). `index` maps to its directory.
+ *  `allowDefault` is true only in an API context — a `pages/about.tsx` default
+ *  export is a page component, not a route. (ama-w7g) */
+function filenameRoutePath(rel: string): { path: string; allowDefault: boolean } | undefined {
+  const parts = rel.split("/");
+  const file = parts[parts.length - 1] ?? "";
+  const dot = file.lastIndexOf(".");
+  if (dot < 0 || !FILE_ROUTE_EXTS.has(file.slice(dot))) return undefined;
+  const base = file.slice(0, dot);
+  if (base.startsWith("_")) return undefined; // Next.js specials: _app, _document
+
+  const pagesIdx = parts.lastIndexOf("pages");
+  const serverIdx = parts.lastIndexOf("server");
+  let rootIdx: number;
+  let allowDefault: boolean;
+  if (pagesIdx >= 0) {
+    rootIdx = pagesIdx;
+    allowDefault = parts[pagesIdx + 1] === "api"; // Next API routes live under pages/api
+  } else if (serverIdx >= 0 && parts[serverIdx + 1] === "routes") {
+    rootIdx = serverIdx + 1; // server/routes — `routes` stripped from the URL
+    allowDefault = true;
+  } else if (serverIdx >= 0 && parts[serverIdx + 1] === "api") {
+    rootIdx = serverIdx; // server/api — `api` kept in the URL
+    allowDefault = true;
+  } else {
+    return undefined;
+  }
+  const dirs = parts.slice(rootIdx + 1, parts.length - 1);
+  const leaf = base === "index" ? [] : [base];
+  const segs = [...dirs, ...leaf].map(routeSegment).filter((s): s is string => s !== undefined);
+  return { path: `/${segs.join("/")}`, allowDefault };
+}
+
+/** Whether a declaration carries the `default` modifier (`export default …`). (ama-w7g) */
+function isDefaultExported(node: ts.Node): boolean {
+  return (
+    ts.canHaveModifiers(node) &&
+    (ts.getModifiers(node) ?? []).some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)
+  );
+}
+
+/** Whether a callee is Nuxt's `defineEventHandler`/`eventHandler` wrapper. (ama-w7g) */
+function isEventHandlerWrapper(expr: ts.Expression): boolean {
+  const name = ts.isIdentifier(expr)
+    ? expr.text
+    : ts.isPropertyAccessExpression(expr)
+      ? expr.name.text
+      : "";
+  return name === "defineEventHandler" || name === "eventHandler";
+}
+
+/** A module's default-export request handler: a named `export default function`
+ *  (linked via declToId) or an `export default <expr>` (arrow/ref, with Nuxt's
+ *  `defineEventHandler(...)` unwrapped). Anonymous default functions have no node
+ *  to link, so they're skipped. (ama-w7g) */
+function findDefaultExportHandler(
+  sf: ts.SourceFile,
+): { decl: ts.Node } | { expr: ts.Expression } | undefined {
+  for (const stmt of sf.statements) {
+    if (ts.isFunctionDeclaration(stmt) && isDefaultExported(stmt)) {
+      return stmt.name ? { decl: stmt } : undefined;
+    }
+    if (ts.isExportAssignment(stmt) && !stmt.isExportEquals) {
+      let expr = stmt.expression;
+      if (
+        ts.isCallExpression(expr) &&
+        isEventHandlerWrapper(expr.expression) &&
+        expr.arguments[0]
+      ) {
+        expr = expr.arguments[0];
+      }
+      return { expr };
+    }
+  }
+  return undefined;
 }
 
 /** Whether a top-level statement carries an `export` modifier. (ama-rme.7) */
