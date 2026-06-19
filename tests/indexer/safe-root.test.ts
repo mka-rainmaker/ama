@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AnalyzerRegistry } from "../../src/analyzers/registry.js";
-import { assertSafeRoot, Indexer } from "../../src/indexer/indexer.js";
+import { Indexer, assertSafeRoot } from "../../src/indexer/indexer.js";
 
 describe("assertSafeRoot — unsafe-root guardrail (ama-m8k.10)", () => {
   it("rejects the filesystem root", () => {
@@ -32,9 +32,9 @@ describe("Indexer.index wires the guardrail (ama-m8k.10)", () => {
 
   // Safe to call: the guard throws before any filesystem walk.
   it("refuses to index the filesystem root", async () => {
-    await expect(new Indexer(new AnalyzerRegistry()).index(path.parse(process.cwd()).root)).rejects.toThrow(
-      /refus/i,
-    );
+    await expect(
+      new Indexer(new AnalyzerRegistry()).index(path.parse(process.cwd()).root),
+    ).rejects.toThrow(/refus/i);
   });
 
   it("still indexes a normal directory", async () => {

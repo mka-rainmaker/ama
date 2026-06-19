@@ -920,7 +920,10 @@ function accumulateCallSites(edges: GraphEdge[]): GraphEdge[] {
       result.push(edge);
     } else if (edge.at) {
       if (!existing.at) existing.at = edge.at;
-      else (existing.sites ??= [existing.at]).push(edge.at);
+      else {
+        existing.sites ??= [existing.at];
+        existing.sites.push(edge.at);
+      }
     }
   }
   return result;

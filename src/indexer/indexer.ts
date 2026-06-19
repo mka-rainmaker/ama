@@ -55,9 +55,19 @@ export interface SyncResult {
  *  exhaust memory, or never finish. A real project lives in a subdirectory, so
  *  refusing these never blocks legitimate use. (ama-m8k.10) */
 const UNSAFE_DIRS = new Set(
-  ["/usr", "/etc", "/bin", "/sbin", "/var", "/opt", "/lib", "/dev", "/proc", "/System", "/Library"].map(
-    (p) => path.resolve(p),
-  ),
+  [
+    "/usr",
+    "/etc",
+    "/bin",
+    "/sbin",
+    "/var",
+    "/opt",
+    "/lib",
+    "/dev",
+    "/proc",
+    "/System",
+    "/Library",
+  ].map((p) => path.resolve(p)),
 );
 
 /** Throw if `root` resolves to the filesystem root, the user's home directory,
@@ -67,8 +77,7 @@ export function assertSafeRoot(root: string): void {
   const abs = path.resolve(root);
   if (abs === path.parse(abs).root || abs === path.resolve(os.homedir()) || UNSAFE_DIRS.has(abs)) {
     throw new Error(
-      `Refusing to index ${abs}: that's the filesystem root, your home directory, or a system ` +
-        "directory — far too broad. Point Ama at a specific project directory.",
+      `Refusing to index ${abs}: that's the filesystem root, your home directory, or a system directory — far too broad. Point Ama at a specific project directory.`,
     );
   }
 }

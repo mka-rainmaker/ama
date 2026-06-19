@@ -65,8 +65,7 @@ export function renderExploration(exploration: Exploration, json: boolean): stri
   const shown = exploration.relationships.length;
   const matchSummary =
     exploration.totalMatches > shown
-      ? `showing top ${shown} of ${exploration.totalMatches} matches in ${files.length} file(s) ` +
-        `(narrow the query to see more)`
+      ? `showing top ${shown} of ${exploration.totalMatches} matches in ${files.length} file(s) (narrow the query to see more)`
       : `matches in ${files.length} file(s)`;
   const lines = [`Exploring "${exploration.question}" — ${matchSummary}:`];
   for (const [file, nodes] of files) lines.push(`  ${file}: ${names(nodes)}`);

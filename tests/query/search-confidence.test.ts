@@ -4,7 +4,14 @@ import { QueryService } from "../../src/query/service.js";
 import { InMemoryStore } from "../../src/store/memory.js";
 
 function fn(name: string, qualifiedName = name): GraphNode {
-  return { id: `a.ts#${qualifiedName}`, kind: "Function", name, file: "a.ts", qualifiedName, tier: "deep" };
+  return {
+    id: `a.ts#${qualifiedName}`,
+    kind: "Function",
+    name,
+    file: "a.ts",
+    qualifiedName,
+    tier: "deep",
+  };
 }
 
 function setup(): QueryService {

@@ -11,7 +11,14 @@ function fn(id: string): GraphNode {
 /** A file with 30 functions all matching the term "item". */
 function setup(): QueryService {
   const store = new InMemoryStore();
-  store.addNode({ id: "f.ts", kind: "File", name: "f.ts", file: "f.ts", qualifiedName: "", tier: "deep" });
+  store.addNode({
+    id: "f.ts",
+    kind: "File",
+    name: "f.ts",
+    file: "f.ts",
+    qualifiedName: "",
+    tier: "deep",
+  });
   for (let i = 0; i < 30; i++) {
     const node = fn(`f.ts#item${i}`);
     store.addNode(node);

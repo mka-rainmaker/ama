@@ -173,8 +173,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
           kind,
         });
         const hint = lowConfidence
-          ? `⚠️ Ama: no exact or name-prefix match for "${query}" — these are loose substring ` +
-            `hits, so they may not be what you meant. Double-check the name or refine the query.`
+          ? `⚠️ Ama: no exact or name-prefix match for "${query}" — these are loose substring hits, so they may not be what you meant. Double-check the name or refine the query.`
           : undefined;
         return reply(session, results, hint);
       },

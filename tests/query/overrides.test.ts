@@ -24,10 +24,18 @@ function setup(): QueryService {
 
 describe("Overrides queries (ama-38n)", () => {
   it("findOverrides returns what a method overrides (outgoing)", () => {
-    expect(setup().findOverrides("Sub.run").map((n) => n.symbol.id)).toEqual(["a.ts#Super.run"]);
+    expect(
+      setup()
+        .findOverrides("Sub.run")
+        .map((n) => n.symbol.id),
+    ).toEqual(["a.ts#Super.run"]);
   });
 
   it("findOverriddenBy returns what overrides a method (incoming)", () => {
-    expect(setup().findOverriddenBy("Super.run").map((n) => n.symbol.id)).toEqual(["a.ts#Sub.run"]);
+    expect(
+      setup()
+        .findOverriddenBy("Super.run")
+        .map((n) => n.symbol.id),
+    ).toEqual(["a.ts#Sub.run"]);
   });
 });

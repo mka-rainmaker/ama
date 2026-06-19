@@ -1,8 +1,8 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { TypeScriptAnalyzer } from "../../src/analyzers/typescript/analyzer.js";
 import type { AnalysisResult } from "../../src/analyzers/types.js";
+import { TypeScriptAnalyzer } from "../../src/analyzers/typescript/analyzer.js";
 import { symbolId } from "../../src/graph/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));

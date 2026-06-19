@@ -16,9 +16,7 @@ describe("TypeScriptAnalyzer higher-order callback attribution (ama-hft.15)", ()
   });
 
   const callback = (from: string, to: string) =>
-    result.edges.find(
-      (e) => e.kind === "Calls" && e.from === id(from) && e.to === id(to),
-    );
+    result.edges.find((e) => e.kind === "Calls" && e.from === id(from) && e.to === id(to));
 
   it("attributes a named callback passed to .map() as a Calls edge", () => {
     expect(callback("run", "transform")).toBeDefined();
