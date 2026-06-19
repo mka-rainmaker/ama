@@ -8,6 +8,7 @@ import { csharpSpec } from "../analyzers/baseline/csharp.js";
 import { goSpec } from "../analyzers/baseline/go.js";
 import { javaSpec } from "../analyzers/baseline/java.js";
 import { javascriptSpec } from "../analyzers/baseline/javascript.js";
+import { kotlinSpec } from "../analyzers/baseline/kotlin.js";
 import { phpSpec } from "../analyzers/baseline/php.js";
 import { pythonSpec } from "../analyzers/baseline/python.js";
 import { rustSpec } from "../analyzers/baseline/rust.js";
@@ -291,6 +292,7 @@ export function createDefaultIndexer(createStore?: () => Store): Indexer {
   registry.register(new BaselineAnalyzer(phpSpec));
   registry.register(new BaselineAnalyzer(cSpec));
   registry.register(new BaselineAnalyzer(cppSpec));
+  registry.register(new BaselineAnalyzer(kotlinSpec));
   return new Indexer(registry, createStore);
 }
 

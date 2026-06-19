@@ -23,6 +23,7 @@ const GRAMMARS: Record<string, string> = {
   php: "tree-sitter-php.wasm",
   c: "tree-sitter-c.wasm",
   cpp: "tree-sitter-cpp.wasm",
+  kotlin: "tree-sitter-kotlin.wasm",
 };
 
 /** Runtime init is one-shot; each grammar is loaded once and cached. */

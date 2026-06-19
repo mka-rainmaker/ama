@@ -130,14 +130,20 @@ export class BaselineAnalyzer implements Analyzer {
   }
 }
 
-/** A symbol's name: the `name` field for most languages, falling back to the
- *  `declarator` field for C/C++ (a `function_definition`/`type_definition` has no
- *  `name` — the identifier is nested inside the declarator chain). (ama-s8q.9) */
+/** A symbol's name, by descending tiers of grammar convention:
+ *  1. a `name` field (most languages);
+ *  2. a `declarator` field drilled to its identifier (C/C++ — ama-s8q.9);
+ *  3. the first identifier-like child (Kotlin et al. name declarations
+ *     positionally, with no field — ama-0ze). */
 function symbolName(node: Parser.SyntaxNode, rule: SymbolRule): string | undefined {
   const named = node.childForFieldName(rule.nameField ?? "name");
   if (named) return named.text;
   const decl = node.childForFieldName("declarator");
-  return decl ? declaratorIdentifier(decl) : undefined;
+  if (decl) return declaratorIdentifier(decl);
+  for (const child of node.namedChildren) {
+    if (child.type.endsWith("identifier")) return child.text;
+  }
+  return undefined;
 }
 
 /** Drill a C/C++ declarator (function_declarator, pointer_declarator, …) down its
