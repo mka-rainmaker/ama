@@ -72,6 +72,9 @@ export class TypeScriptAnalyzer implements Analyzer {
         // Then callback-argument handlers (tap("name", () => …)) — same trick:
         // register the arrow before collectCalls so its body attributes to it.
         this.collectCallbackHandlers(sf, undefined, rel, sf, declToId, nodes, edges);
+        // Events after callback-handler synthesis so inline `.on("ch", () => …)`
+        // arrows are already handler nodes it can connect an emit to. (ama-hft.14)
+        this.collectEvents(sf, declToId, checker, edges, root);
         this.collectCalls(sf, undefined, declToId, checker, edges, root, resolution);
         this.collectVarReferences(sf, undefined, declToId, variableIds, checker, edges, root);
         this.collectHeritage(sf, declToId, checker, edges, root);
@@ -742,6 +745,88 @@ export class TypeScriptAnalyzer implements Analyzer {
   }
 
   /**
+   * Synthesize call edges for the EventEmitter pattern: an `emitter.emit("ch")`
+   * invokes every handler registered with `.on("ch", h)` (or once/addListener)
+   * for the same channel string. Heuristic — matched by channel name, not proven
+   * dispatch — so the synthesized edges carry `provenance: "heuristic"`. Runs
+   * after collectCallbackHandlers so inline `.on("ch", () => …)` arrows (already
+   * synthesized into handler nodes there) are connectable too. (ama-hft.14)
+   */
+  private collectEvents(
+    sf: ts.SourceFile,
+    declToId: Map<ts.Node, string>,
+    checker: ts.TypeChecker,
+    edges: GraphEdge[],
+    root: string,
+  ): void {
+    // Pass 1: channel -> the handler node(s) registered for it.
+    const handlers = new Map<string, string[]>();
+    const collectRegistrations = (node: ts.Node): void => {
+      node.forEachChild((child) => {
+        if (
+          ts.isCallExpression(child) &&
+          ts.isPropertyAccessExpression(child.expression) &&
+          ON_METHODS.has(child.expression.name.text)
+        ) {
+          const [channel, handler] = child.arguments;
+          if (channel && ts.isStringLiteralLike(channel) && handler) {
+            const handlerId = eventHandlerId(handler, declToId, checker, root);
+            if (handlerId) {
+              const list = handlers.get(channel.text) ?? [];
+              list.push(handlerId);
+              handlers.set(channel.text, list);
+            }
+          }
+        }
+        collectRegistrations(child);
+      });
+    };
+    collectRegistrations(sf);
+    if (handlers.size === 0) return; // nothing listens — no edges to synthesize
+
+    // Pass 2: each `emit("ch")` calls every handler registered for "ch".
+    const collectEmits = (node: ts.Node, enclosingId: string | undefined): void => {
+      node.forEachChild((child) => {
+        if (
+          enclosingId &&
+          ts.isCallExpression(child) &&
+          ts.isPropertyAccessExpression(child.expression) &&
+          child.expression.name.text === "emit"
+        ) {
+          const channel = child.arguments[0];
+          if (channel && ts.isStringLiteralLike(channel)) {
+            for (const handlerId of handlers.get(channel.text) ?? []) {
+              if (handlerId !== enclosingId) {
+                edges.push({
+                  from: enclosingId,
+                  to: handlerId,
+                  kind: "Calls",
+                  provenance: "heuristic",
+                  at: locationOf(child),
+                });
+              }
+            }
+          }
+        }
+        const childId = declToId.get(child);
+        const nextEnclosing =
+          childId &&
+          (ts.isFunctionDeclaration(child) ||
+            ts.isMethodDeclaration(child) ||
+            ts.isConstructorDeclaration(child) ||
+            ts.isVariableDeclaration(child) ||
+            ts.isPropertyAssignment(child) ||
+            ts.isArrowFunction(child) ||
+            ts.isFunctionExpression(child))
+            ? childId
+            : enclosingId;
+        collectEmits(child, nextEnclosing);
+      });
+    };
+    collectEmits(sf, undefined);
+  }
+
+  /**
    * Find Express mounts — `app.use("/prefix", router, …)` — and map each mounted
    * argument's declaration to the prefix. Runs over every file before route
    * detection so a router defined in one file and mounted in another composes.
@@ -970,6 +1055,28 @@ const HIGHER_ORDER_METHODS = new Set([
   "catch",
   "finally",
 ]);
+
+/** EventEmitter registration methods: `.on/.once/.addListener("ch", handler)` and
+ *  their prepend variants all bind a handler to a channel. (ama-hft.14) */
+const ON_METHODS = new Set(["on", "once", "addListener", "prependListener", "prependOnceListener"]);
+
+/** The node a `.on("ch", handler)` argument refers to: a named function/method
+ *  (resolved via the checker) or an inline arrow already synthesized into a
+ *  handler node by collectCallbackHandlers. (ama-hft.14) */
+function eventHandlerId(
+  arg: ts.Expression,
+  declToId: Map<ts.Node, string>,
+  checker: ts.TypeChecker,
+  root: string,
+): string | undefined {
+  if (ts.isIdentifier(arg) || ts.isPropertyAccessExpression(arg)) {
+    return resolveValueRef(arg, checker, declToId, root);
+  }
+  if (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) {
+    return declToId.get(arg);
+  }
+  return undefined;
+}
 
 /** The leftmost identifier of a call's callee — `ts` for `ts.isCallExpression(x)`,
  *  `helper` for `helper()` — used to group unresolved calls by what they target
