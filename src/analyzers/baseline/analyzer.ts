@@ -90,9 +90,8 @@ export class BaselineAnalyzer implements Analyzer {
   ): void {
     for (const child of node.namedChildren) {
       const rule = this.spec.symbols[child.type];
-      const nameNode = rule ? child.childForFieldName(rule.nameField ?? "name") : null;
-      if (rule && nameNode) {
-        const name = nameNode.text;
+      const name = rule ? symbolName(child, rule) : undefined;
+      if (rule && name) {
         const qualifiedName = prefix ? `${prefix}.${name}` : name;
         const id = symbolId({ file: rel, qualifiedName });
         nodes.push({
@@ -113,6 +112,24 @@ export class BaselineAnalyzer implements Analyzer {
       }
     }
   }
+}
+
+/** A symbol's name: the `name` field for most languages, falling back to the
+ *  `declarator` field for C/C++ (a `function_definition`/`type_definition` has no
+ *  `name` — the identifier is nested inside the declarator chain). (ama-s8q.9) */
+function symbolName(node: Parser.SyntaxNode, rule: SymbolRule): string | undefined {
+  const named = node.childForFieldName(rule.nameField ?? "name");
+  if (named) return named.text;
+  const decl = node.childForFieldName("declarator");
+  return decl ? declaratorIdentifier(decl) : undefined;
+}
+
+/** Drill a C/C++ declarator (function_declarator, pointer_declarator, …) down its
+ *  `declarator` field to the identifier it ultimately names. (ama-s8q.9) */
+function declaratorIdentifier(node: Parser.SyntaxNode): string | undefined {
+  if (node.type.endsWith("identifier")) return node.text;
+  const inner = node.childForFieldName("declarator");
+  return inner ? declaratorIdentifier(inner) : undefined;
 }
 
 /** Resolve a symbol's kind, refining by a child node type when the rule asks. */

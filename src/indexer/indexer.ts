@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { BaselineAnalyzer } from "../analyzers/baseline/analyzer.js";
+import { cSpec, cppSpec } from "../analyzers/baseline/c.js";
 import { csharpSpec } from "../analyzers/baseline/csharp.js";
 import { goSpec } from "../analyzers/baseline/go.js";
 import { javaSpec } from "../analyzers/baseline/java.js";
@@ -288,6 +289,8 @@ export function createDefaultIndexer(createStore?: () => Store): Indexer {
   registry.register(new BaselineAnalyzer(goSpec));
   registry.register(new BaselineAnalyzer(rustSpec));
   registry.register(new BaselineAnalyzer(phpSpec));
+  registry.register(new BaselineAnalyzer(cSpec));
+  registry.register(new BaselineAnalyzer(cppSpec));
   return new Indexer(registry, createStore);
 }
 

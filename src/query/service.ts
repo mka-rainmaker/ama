@@ -172,6 +172,13 @@ const LANGUAGE_BY_EXT: Record<string, string> = {
   ".java": "java",
   ".cs": "csharp",
   ".php": "php",
+  ".c": "c",
+  ".cpp": "cpp",
+  ".cc": "cpp",
+  ".cxx": "cpp",
+  ".hpp": "cpp",
+  ".hh": "cpp",
+  ".h": "cpp",
 };
 
 function languageForFile(file: string): string | undefined {
