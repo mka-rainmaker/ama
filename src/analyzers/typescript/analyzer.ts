@@ -586,38 +586,64 @@ export class TypeScriptAnalyzer implements Analyzer {
             tier: "deep",
             range: rangeOf(n, sf),
           });
-          let inlineCount = 0;
-          for (const handler of handlers) {
-            if (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) {
-              // Inline handler: synthesize a Function node (named by the route) so
-              // the route can reference it AND — because we register the arrow in
-              // declToId and run before collectCalls — its body's calls attribute
-              // to it. A suffix disambiguates multiple inline handlers on one route.
-              const handlerName = `${name} handler${inlineCount === 0 ? "" : ` ${inlineCount + 1}`}`;
-              inlineCount++;
-              const handlerId = symbolId({ file: rel, qualifiedName: handlerName });
-              nodes.push({
-                id: handlerId,
-                kind: "Function",
-                name: handlerName,
-                file: rel,
-                qualifiedName: handlerName,
-                tier: "deep",
-                range: rangeOf(handler, sf),
-              });
-              declToId.set(handler, handlerId);
-              edges.push({
-                from: routeId,
-                to: handlerId,
-                kind: "References",
-                provenance: "heuristic",
-              });
-              continue;
-            }
-            const to = resolveValueRef(handler, checker, declToId, root);
-            if (to && to !== routeId) {
-              edges.push({ from: routeId, to, kind: "References", provenance: "heuristic" });
-            }
+          this.emitRouteHandlers(
+            routeId,
+            name,
+            handlers,
+            rel,
+            sf,
+            declToId,
+            checker,
+            nodes,
+            edges,
+            root,
+          );
+        }
+      }
+      // Object-config routes: Hapi `server.route({ method, path, handler })` and
+      // Fastify `fastify.route({ method, url, handler })` (also `.route([{…}])`).
+      // The method-named path above already covers the `app.get(path, h)` style
+      // that Fastify/Koa/Hono share with Express. (ama-rme.10)
+      if (
+        ts.isCallExpression(n) &&
+        ts.isPropertyAccessExpression(n.expression) &&
+        n.expression.name.text === "route"
+      ) {
+        const arg = n.arguments[0];
+        const configs = arg ? (ts.isArrayLiteralExpression(arg) ? arg.elements : [arg]) : [];
+        for (const config of configs) {
+          if (!ts.isObjectLiteralExpression(config)) continue;
+          const methods = routeMethods(objectProp(config, "method"));
+          const pathExpr = objectProp(config, "path") ?? objectProp(config, "url");
+          const handler = objectProp(config, "handler");
+          if (methods.length === 0 || !pathExpr || !ts.isStringLiteralLike(pathExpr) || !handler) {
+            continue;
+          }
+          if (!pathExpr.text.startsWith("/")) continue;
+          for (const method of methods) {
+            const name = `${method.toUpperCase()} ${pathExpr.text}`;
+            const routeId = symbolId({ file: rel, qualifiedName: name });
+            nodes.push({
+              id: routeId,
+              kind: "Route",
+              name,
+              file: rel,
+              qualifiedName: name,
+              tier: "deep",
+              range: rangeOf(config, sf),
+            });
+            this.emitRouteHandlers(
+              routeId,
+              name,
+              [handler],
+              rel,
+              sf,
+              declToId,
+              checker,
+              nodes,
+              edges,
+              root,
+            );
           }
         }
       }
@@ -660,6 +686,51 @@ export class TypeScriptAnalyzer implements Analyzer {
       n.forEachChild(visit);
     };
     visit(sf);
+  }
+
+  /**
+   * Wire a route to its handler argument(s): an inline arrow/function becomes a
+   * synthesized handler Function node (named by the route, registered so its body
+   * attributes to it), while a named handler reference resolves to its node. Each
+   * gets a heuristic References edge from the route. Shared by every route style.
+   * (ama-rme.1, ama-rme.10)
+   */
+  private emitRouteHandlers(
+    routeId: string,
+    name: string,
+    handlers: readonly ts.Expression[],
+    rel: string,
+    sf: ts.SourceFile,
+    declToId: Map<ts.Node, string>,
+    checker: ts.TypeChecker,
+    nodes: GraphNode[],
+    edges: GraphEdge[],
+    root: string,
+  ): void {
+    let inlineCount = 0;
+    for (const handler of handlers) {
+      if (ts.isArrowFunction(handler) || ts.isFunctionExpression(handler)) {
+        const handlerName = `${name} handler${inlineCount === 0 ? "" : ` ${inlineCount + 1}`}`;
+        inlineCount++;
+        const handlerId = symbolId({ file: rel, qualifiedName: handlerName });
+        nodes.push({
+          id: handlerId,
+          kind: "Function",
+          name: handlerName,
+          file: rel,
+          qualifiedName: handlerName,
+          tier: "deep",
+          range: rangeOf(handler, sf),
+        });
+        declToId.set(handler, handlerId);
+        edges.push({ from: routeId, to: handlerId, kind: "References", provenance: "heuristic" });
+        continue;
+      }
+      const to = resolveValueRef(handler, checker, declToId, root);
+      if (to && to !== routeId) {
+        edges.push({ from: routeId, to, kind: "References", provenance: "heuristic" });
+      }
+    }
   }
 
   /**
@@ -1076,6 +1147,28 @@ function eventHandlerId(
     return declToId.get(arg);
   }
   return undefined;
+}
+
+/** The initializer of an object-literal property by key — reads route-config
+ *  fields (method/path/url/handler) for object-style routing. (ama-rme.10) */
+function objectProp(obj: ts.ObjectLiteralExpression, key: string): ts.Expression | undefined {
+  for (const prop of obj.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === key) {
+      return prop.initializer;
+    }
+  }
+  return undefined;
+}
+
+/** HTTP method(s) from a route config's `method` value — a single string ("GET")
+ *  or an array (["GET", "POST"]). (ama-rme.10) */
+function routeMethods(expr: ts.Expression | undefined): string[] {
+  if (!expr) return [];
+  if (ts.isStringLiteralLike(expr)) return [expr.text];
+  if (ts.isArrayLiteralExpression(expr)) {
+    return expr.elements.filter(ts.isStringLiteralLike).map((e) => e.text);
+  }
+  return [];
 }
 
 /** The leftmost identifier of a call's callee — `ts` for `ts.isCallExpression(x)`,
