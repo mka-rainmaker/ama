@@ -236,6 +236,19 @@ export class TypeScriptAnalyzer implements Analyzer {
         this.visit(member, sf, rel, id, qualifiedName, nodes, edges, declToId);
       }
     }
+
+    // A namespace/module is a container: recurse into its body so members nest
+    // (`Geometry.area`) and don't collide with same-named top-level symbols. The
+    // body is a block of statements, or a nested namespace for `namespace A.B`. (ama-hft.13)
+    if (ts.isModuleDeclaration(node) && node.body) {
+      if (ts.isModuleBlock(node.body)) {
+        for (const stmt of node.body.statements) {
+          this.visit(stmt, sf, rel, id, qualifiedName, nodes, edges, declToId);
+        }
+      } else if (ts.isModuleDeclaration(node.body)) {
+        this.visit(node.body, sf, rel, id, qualifiedName, nodes, edges, declToId);
+      }
+    }
   }
 
   /** Walk a subtree, attributing each call to the nearest enclosing symbol. */
@@ -839,6 +852,12 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
   }
   if (ts.isTypeAliasDeclaration(node)) {
     return { kind: "TypeAlias", name: node.name.text };
+  }
+  // A `namespace N {}` / `module N {}` or an ambient `declare module "pkg" {}` —
+  // the declared-but-never-emitted Module kind. The name is an Identifier
+  // (namespace) or a StringLiteral (ambient module); both expose `.text`. (ama-hft.13)
+  if (ts.isModuleDeclaration(node)) {
+    return { kind: "Module", name: node.name.text };
   }
   if ((ts.isMethodDeclaration(node) || ts.isMethodSignature(node)) && ts.isIdentifier(node.name)) {
     return { kind: "Method", name: node.name.text };
