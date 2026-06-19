@@ -21,6 +21,8 @@ export const NODE_KINDS = [
   "Variable",
   /** A framework route, e.g. "GET /users" — its handler is found via a References edge. */
   "Route",
+  /** A UI component — a JSX-returning function (React) or a Vue `defineComponent`. */
+  "Component",
 ] as const;
 
 export type NodeKind = (typeof NODE_KINDS)[number];

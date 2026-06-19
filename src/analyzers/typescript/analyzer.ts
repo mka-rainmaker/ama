@@ -1132,7 +1132,8 @@ function joinRoutePath(prefix: string | undefined, sub: string | undefined): str
 /** Map a declaration node to a (kind, name) pair, or undefined if it isn't one. */
 function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
   if (ts.isFunctionDeclaration(node) && node.name) {
-    return { kind: "Function", name: node.name.text };
+    const component = isComponentName(node.name.text) && returnsJsx(node);
+    return { kind: component ? "Component" : "Function", name: node.name.text };
   }
   if (ts.isClassDeclaration(node) && node.name) {
     return { kind: "Class", name: node.name.text };
@@ -1180,7 +1181,19 @@ function describe(node: ts.Node): { kind: NodeKind; name: string } | undefined {
     (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer)) &&
     ts.isIdentifier(node.name)
   ) {
-    return { kind: "Function", name: node.name.text };
+    const component = isComponentName(node.name.text) && returnsJsx(node.initializer);
+    return { kind: component ? "Component" : "Function", name: node.name.text };
+  }
+  // A Vue component: `const X = defineComponent({ … })`. Before the Variable
+  // catch-all (its initializer is a call, not an object literal). (ama-rme.9)
+  if (
+    ts.isVariableDeclaration(node) &&
+    ts.isIdentifier(node.name) &&
+    node.initializer !== undefined &&
+    ts.isCallExpression(node.initializer) &&
+    isDefineComponentCall(node.initializer)
+  ) {
+    return { kind: "Component", name: node.name.text };
   }
   // A function-valued object-literal property (`{ run: () => … }`) — a method in
   // all but syntax. Method shorthand (`{ run() {} }`) is already a MethodDeclaration.
@@ -1360,6 +1373,56 @@ function isExported(node: ts.Node): boolean {
     ts.canHaveModifiers(node) &&
     (ts.getModifiers(node) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
   );
+}
+
+/** React requires a component name to be capitalized (so JSX `<Foo/>` isn't a host
+ *  element). Used to tell a JSX-returning component from a render helper. (ama-rme.9) */
+function isComponentName(name: string): boolean {
+  return /^[A-Z]/.test(name);
+}
+
+/** Whether an expression is a JSX element/fragment (through parentheses). (ama-rme.9) */
+function isJsxLike(expr: ts.Expression): boolean {
+  let e = expr;
+  while (ts.isParenthesizedExpression(e)) e = e.expression;
+  return ts.isJsxElement(e) || ts.isJsxFragment(e) || ts.isJsxSelfClosingElement(e);
+}
+
+/** Whether a function returns JSX — an arrow with a JSX concise body, or any
+ *  `return <jsx>` in its block (not counting nested functions). (ama-rme.9) */
+function returnsJsx(
+  fn: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration,
+): boolean {
+  if (ts.isArrowFunction(fn) && fn.body && !ts.isBlock(fn.body)) return isJsxLike(fn.body);
+  if (!fn.body) return false;
+  let found = false;
+  const visit = (n: ts.Node): void => {
+    if (found) return;
+    if (ts.isReturnStatement(n) && n.expression && isJsxLike(n.expression)) {
+      found = true;
+      return;
+    }
+    // A nested function/class has its own returns — don't attribute them here.
+    if (
+      ts.isFunctionDeclaration(n) ||
+      ts.isFunctionExpression(n) ||
+      ts.isArrowFunction(n) ||
+      ts.isClassDeclaration(n)
+    ) {
+      return;
+    }
+    n.forEachChild(visit);
+  };
+  visit(fn.body);
+  return found;
+}
+
+/** Whether a call is `defineComponent(...)` — Vue's component factory. (ama-rme.9) */
+function isDefineComponentCall(call: ts.CallExpression): boolean {
+  const callee = call.expression;
+  if (ts.isIdentifier(callee)) return callee.text === "defineComponent";
+  if (ts.isPropertyAccessExpression(callee)) return callee.name.text === "defineComponent";
+  return false;
 }
 
 /** The leftmost identifier of a call's callee — `ts` for `ts.isCallExpression(x)`,
