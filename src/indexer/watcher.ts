@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { MAX_FILE_SIZE_BYTES, isIgnoredPath } from "./ignore.js";
+import { type IgnoreRules, MAX_FILE_SIZE_BYTES, isIgnoredPath, loadIgnoreRules } from "./ignore.js";
 
 /**
  * How a {@link FileWatcher} receives raw change events: given the root and a
@@ -41,6 +41,8 @@ export class FileWatcher {
   private subscription?: { close(): void };
   private readonly maxFileSizeBytes: number;
   private readonly source: WatchSource;
+  /** Loaded once so the watched set matches what the index built (incl .gitignore). */
+  private readonly ignoreRules: IgnoreRules;
 
   constructor(
     private readonly root: string,
@@ -49,6 +51,7 @@ export class FileWatcher {
   ) {
     this.maxFileSizeBytes = options.maxFileSizeBytes ?? MAX_FILE_SIZE_BYTES;
     this.source = options.source ?? fsWatchSource;
+    this.ignoreRules = loadIgnoreRules(root);
   }
 
   start(): void {
@@ -62,7 +65,7 @@ export class FileWatcher {
   }
 
   private handle(rel: string): void {
-    if (isIgnoredPath(rel)) return;
+    if (isIgnoredPath(rel, this.ignoreRules)) return;
     let stat: fs.Stats | undefined;
     try {
       stat = fs.statSync(path.join(this.root, rel));

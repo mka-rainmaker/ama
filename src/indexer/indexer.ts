@@ -18,7 +18,7 @@ import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
 import type { FileMeta, Store } from "../store/types.js";
-import { MAX_FILE_SIZE_BYTES, isIgnoredSegment } from "./ignore.js";
+import { MAX_FILE_SIZE_BYTES, isIgnoredSegment, loadIgnoreRules } from "./ignore.js";
 
 export interface LanguageCoverage {
   language: string;
@@ -320,10 +320,11 @@ function isStale(root: string, rel: string, meta: FileMeta): boolean {
 
 /** Repo-relative paths of every file under `root`, skipping ignored trees. */
 function discoverFiles(root: string): string[] {
+  const rules = loadIgnoreRules(root); // dotfiles + IGNORED_DIRS + the root .gitignore
   const out: string[] = [];
   const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (isIgnoredSegment(entry.name)) continue; // dotfiles + ignored dirs
+      if (isIgnoredSegment(entry.name, rules)) continue; // dotfiles + ignored dirs/globs
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(abs);
       else if (entry.isFile()) {
