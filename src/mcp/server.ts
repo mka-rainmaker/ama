@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { NODE_KINDS } from "../graph/index.js";
 import type { NodeKind } from "../graph/index.js";
+import { ensureBaselineWasmTier } from "../runtime/wasm-tier.js";
 import { AmaSession } from "./session.js";
 
 /** JSON tool result helper. `value ?? null` so an `undefined` result (e.g. a
@@ -575,8 +576,12 @@ export async function main(): Promise<void> {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+  // Pin grammar WASM to the baseline compiler before anything loads it, or a
+  // long-running index OOMs (ama-rgx). Re-execs once; the supervisor skips main.
+  if (!ensureBaselineWasmTier()) {
+    main().catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
+  }
 }

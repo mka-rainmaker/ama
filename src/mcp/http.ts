@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createDefaultIndexer } from "../indexer/indexer.js";
+import { ensureBaselineWasmTier } from "../runtime/wasm-tier.js";
 import { SqliteStore } from "../store/sqlite.js";
 import { createServer as createMcpServer } from "./server.js";
 import { AmaSession } from "./session.js";
@@ -132,8 +133,12 @@ export async function main(): Promise<void> {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+  // Pin grammar WASM to the baseline compiler before anything loads it, or the
+  // long-running index OOMs (ama-rgx). Re-execs once; the supervisor skips main.
+  if (!ensureBaselineWasmTier()) {
+    main().catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
+  }
 }
