@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { affectedCommand } from "../../src/cli/commands/impact.js";
+import { affectedCommand, globToRegExp } from "../../src/cli/commands/impact.js";
 import { indexCommand } from "../../src/cli/commands/lifecycle.js";
 import type { GraphNode } from "../../src/graph/types.js";
 
@@ -55,5 +55,40 @@ describe("affected --tests CLI command (ama-5gs.9)", () => {
     expect(code).toBe(0);
     const files = (JSON.parse(out.text()) as GraphNode[]).map((n) => n.file);
     expect(files).toEqual(["core.test.ts"]);
+  });
+
+  it("filters affected results by a --filter glob (ama-dx1)", async () => {
+    await indexFixture();
+    const out = capture();
+    await affectedCommand.run(["--filter", "*.test.ts", "core.ts"], {
+      json: true,
+      write: out.write,
+    });
+    const files = (JSON.parse(out.text()) as GraphNode[]).map((n) => n.file);
+    expect(files).toEqual(["core.test.ts"]);
+  });
+
+  it("reads changed paths from stdin when no file args are given (ama-dx1)", async () => {
+    await indexFixture();
+    const out = capture();
+    await affectedCommand.run([], {
+      json: true,
+      write: out.write,
+      stdin: () => "core.ts\n",
+    });
+    const files = (JSON.parse(out.text()) as GraphNode[]).map((n) => n.file).sort();
+    expect(files).toEqual(["core.test.ts", "user.ts"]);
+  });
+});
+
+describe("globToRegExp (ama-dx1)", () => {
+  it("matches * within a path segment but not across separators", () => {
+    expect(globToRegExp("*.test.ts").test("core.test.ts")).toBe(true);
+    expect(globToRegExp("*.test.ts").test("src/core.test.ts")).toBe(false);
+  });
+
+  it("matches ** across path segments", () => {
+    expect(globToRegExp("src/**").test("src/query/service.ts")).toBe(true);
+    expect(globToRegExp("src/query/**").test("src/store/x.ts")).toBe(false);
   });
 });

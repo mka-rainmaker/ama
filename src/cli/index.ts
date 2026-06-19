@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import * as fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { serverStamp } from "../mcp/build-info.js";
 import { cyclesCommand } from "./commands/cycles.js";
@@ -41,6 +42,9 @@ export interface CliContext {
    * call may omit it — use {@link emitError} so diagnostics fall back to stdout.
    */
   error?(line: string): void;
+  /** Read all of piped stdin (for `git diff … | ama affected`); returns "" when
+   *  stdin is a TTY or empty. Injectable so commands stay unit-testable. (ama-dx1) */
+  stdin?(): string;
 }
 
 /** A subcommand of the `ama` CLI. */
@@ -99,7 +103,18 @@ export async function run(
     if (command.usage) out(command.usage);
     return 0;
   }
-  return command.run(rest, { json, write: out, error: err });
+  return command.run(rest, { json, write: out, error: err, stdin: readPipedStdin });
+}
+
+/** Read all of piped stdin synchronously; "" when stdin is a TTY (no pipe) so an
+ *  interactive `ama affected` doesn't block waiting for input. (ama-dx1) */
+function readPipedStdin(): string {
+  if (process.stdin.isTTY) return "";
+  try {
+    return fs.readFileSync(0, "utf8");
+  } catch {
+    return "";
+  }
 }
 
 /** Registered commands. More domain commands (search/sync/…) are added here
