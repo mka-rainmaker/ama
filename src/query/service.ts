@@ -171,6 +171,7 @@ const LANGUAGE_BY_EXT: Record<string, string> = {
   ".rs": "rust",
   ".java": "java",
   ".cs": "csharp",
+  ".php": "php",
 };
 
 function languageForFile(file: string): string | undefined {

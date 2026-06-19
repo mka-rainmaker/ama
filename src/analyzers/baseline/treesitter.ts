@@ -20,6 +20,7 @@ const GRAMMARS: Record<string, string> = {
   csharp: "tree-sitter-c_sharp.wasm",
   go: "tree-sitter-go.wasm",
   rust: "tree-sitter-rust.wasm",
+  php: "tree-sitter-php.wasm",
 };
 
 /** Runtime init is one-shot; each grammar is loaded once and cached. */
