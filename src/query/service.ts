@@ -181,6 +181,7 @@ const LANGUAGE_BY_EXT: Record<string, string> = {
   ".h": "cpp",
   ".kt": "kotlin",
   ".kts": "kotlin",
+  ".swift": "swift",
 };
 
 function languageForFile(file: string): string | undefined {

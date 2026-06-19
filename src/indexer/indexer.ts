@@ -12,6 +12,7 @@ import { kotlinSpec } from "../analyzers/baseline/kotlin.js";
 import { phpSpec } from "../analyzers/baseline/php.js";
 import { pythonSpec } from "../analyzers/baseline/python.js";
 import { rustSpec } from "../analyzers/baseline/rust.js";
+import { swiftSpec } from "../analyzers/baseline/swift.js";
 import { AnalyzerRegistry } from "../analyzers/registry.js";
 import type { AnalysisResult, Analyzer, ResolutionStats } from "../analyzers/types.js";
 import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
@@ -293,6 +294,7 @@ export function createDefaultIndexer(createStore?: () => Store): Indexer {
   registry.register(new BaselineAnalyzer(cSpec));
   registry.register(new BaselineAnalyzer(cppSpec));
   registry.register(new BaselineAnalyzer(kotlinSpec));
+  registry.register(new BaselineAnalyzer(swiftSpec));
   return new Indexer(registry, createStore);
 }
 

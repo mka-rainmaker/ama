@@ -24,6 +24,7 @@ const GRAMMARS: Record<string, string> = {
   c: "tree-sitter-c.wasm",
   cpp: "tree-sitter-cpp.wasm",
   kotlin: "tree-sitter-kotlin.wasm",
+  swift: "tree-sitter-swift.wasm",
 };
 
 /** Runtime init is one-shot; each grammar is loaded once and cached. */
