@@ -69,6 +69,8 @@ export class TypeScriptAnalyzer implements Analyzer {
         // Routes first: it registers inline-handler arrows in declToId, so the
         // following collectCalls attributes each handler's body to its node.
         this.collectRoutes(sf, rel, declToId, checker, nodes, edges, root, mountPrefixes);
+        // File-based routes: the URL comes from the file path, not a call. (ama-rme.7)
+        this.collectFileRoutes(sf, rel, declToId, nodes, edges);
         // Then callback-argument handlers (tap("name", () => …)) — same trick:
         // register the arrow before collectCalls so its body attributes to it.
         this.collectCallbackHandlers(sf, undefined, rel, sf, declToId, nodes, edges);
@@ -900,6 +902,57 @@ export class TypeScriptAnalyzer implements Analyzer {
   }
 
   /**
+   * File-based routing: a route file at a framework convention path exports HTTP
+   * method handlers and the URL comes from the *path* (not a call). Next.js App
+   * Router (`app/**​/route.ts`) and SvelteKit (`src/routes/**​/+server.ts`) — each
+   * exported `GET`/`POST`/… function becomes a `<METHOD> <path>` Route referencing
+   * it. Heuristic: the route is inferred from filesystem convention. (ama-rme.7)
+   */
+  private collectFileRoutes(
+    sf: ts.SourceFile,
+    rel: string,
+    declToId: Map<ts.Node, string>,
+    nodes: GraphNode[],
+    edges: GraphEdge[],
+  ): void {
+    const routePath = fileRoutePath(rel);
+    if (routePath === undefined) return;
+    const emit = (methodName: string, decl: ts.Node): void => {
+      if (!ROUTE_METHODS.has(methodName.toLowerCase())) return;
+      const handlerId = declToId.get(decl);
+      if (!handlerId) return;
+      const name = `${methodName} ${routePath}`;
+      const routeId = symbolId({ file: rel, qualifiedName: name });
+      nodes.push({
+        id: routeId,
+        kind: "Route",
+        name,
+        file: rel,
+        qualifiedName: name,
+        tier: "deep",
+        range: rangeOf(decl, sf),
+      });
+      edges.push({ from: routeId, to: handlerId, kind: "References", provenance: "heuristic" });
+    };
+    for (const stmt of sf.statements) {
+      if (!isExported(stmt)) continue;
+      if (ts.isFunctionDeclaration(stmt) && stmt.name) {
+        emit(stmt.name.text, stmt);
+      } else if (ts.isVariableStatement(stmt)) {
+        for (const d of stmt.declarationList.declarations) {
+          if (
+            ts.isIdentifier(d.name) &&
+            d.initializer &&
+            (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))
+          ) {
+            emit(d.name.text, d);
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * Synthesize call edges for the EventEmitter pattern: an `emitter.emit("ch")`
    * invokes every handler registered with `.on("ch", h)` (or once/addListener)
    * for the same channel string. Heuristic — matched by channel name, not proven
@@ -1270,6 +1323,42 @@ function isHandlerExpr(expr: ts.Expression): boolean {
     ts.isFunctionExpression(expr) ||
     ts.isIdentifier(expr) ||
     ts.isPropertyAccessExpression(expr)
+  );
+}
+
+/** Convert a file-route directory segment to a URL segment: `[id]` → `:id`,
+ *  `[...slug]` → `*`, `[[opt]]` → `:opt`; a `(group)` is dropped (no URL effect);
+ *  else verbatim. (ama-rme.7) */
+function routeSegment(seg: string): string | undefined {
+  if (seg.startsWith("(") && seg.endsWith(")")) return undefined;
+  if (seg.startsWith("[...") && seg.endsWith("]")) return "*";
+  if (seg.startsWith("[[") && seg.endsWith("]]")) return `:${seg.slice(2, -2)}`;
+  if (seg.startsWith("[") && seg.endsWith("]")) return `:${seg.slice(1, -1)}`;
+  return seg;
+}
+
+/** The URL path a file-based route file maps to, or undefined if it isn't one:
+ *  Next.js App Router `app/**​/route.ts` and SvelteKit `src/routes/**​/+server.ts`
+ *  — the path is the directories between the routes root and the marker file. (ama-rme.7) */
+function fileRoutePath(rel: string): string | undefined {
+  const parts = rel.split("/");
+  const file = parts[parts.length - 1] ?? "";
+  let rootIdx = -1;
+  if (file.startsWith("route.")) rootIdx = parts.lastIndexOf("app");
+  else if (file.startsWith("+server.")) rootIdx = parts.lastIndexOf("routes");
+  if (rootIdx < 0) return undefined;
+  const segs = parts
+    .slice(rootIdx + 1, parts.length - 1)
+    .map(routeSegment)
+    .filter((s): s is string => s !== undefined);
+  return `/${segs.join("/")}`;
+}
+
+/** Whether a top-level statement carries an `export` modifier. (ama-rme.7) */
+function isExported(node: ts.Node): boolean {
+  return (
+    ts.canHaveModifiers(node) &&
+    (ts.getModifiers(node) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
   );
 }
 
