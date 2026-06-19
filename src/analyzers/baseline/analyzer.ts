@@ -69,22 +69,29 @@ export class BaselineAnalyzer implements Analyzer {
       try {
         const code = fs.readFileSync(path.join(root, rel), "utf8");
         const tree = await parse(this.spec.grammar, code);
-        const id = fileId(rel);
-        const fileNodes: GraphNode[] = [
-          {
-            id,
-            kind: "File",
-            name: path.basename(rel),
-            file: rel,
-            qualifiedName: "",
-            tier: "baseline",
-            range: { startLine: 1, endLine: tree.rootNode.endPosition.row + 1 },
-          },
-        ];
-        const fileEdges: GraphEdge[] = [];
-        this.walk(tree.rootNode, "", id, rel, fileNodes, fileEdges);
-        nodes.push(...fileNodes);
-        edges.push(...fileEdges);
+        // A web-tree-sitter Tree holds WASM memory; free it once walked so a large
+        // index doesn't accumulate one tree per file. `finally` covers a throw in
+        // walk. The extracted GraphNodes are plain copies, valid after delete. (ama-5o1)
+        try {
+          const id = fileId(rel);
+          const fileNodes: GraphNode[] = [
+            {
+              id,
+              kind: "File",
+              name: path.basename(rel),
+              file: rel,
+              qualifiedName: "",
+              tier: "baseline",
+              range: { startLine: 1, endLine: tree.rootNode.endPosition.row + 1 },
+            },
+          ];
+          const fileEdges: GraphEdge[] = [];
+          this.walk(tree.rootNode, "", id, rel, fileNodes, fileEdges);
+          nodes.push(...fileNodes);
+          edges.push(...fileEdges);
+        } finally {
+          tree.delete();
+        }
       } catch (err) {
         console.error(
           `[ama] ${this.spec.language} analyzer failed on ${rel}; skipping it. ` +

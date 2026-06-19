@@ -31,6 +31,22 @@ const GRAMMARS: Record<string, string> = {
 let runtime: Promise<void> | undefined;
 const grammars = new Map<string, Promise<Parser.Language>>();
 
+/**
+ * One reused parser. A web-tree-sitter `Parser` holds WASM linear memory and
+ * must be freed with `.delete()`; allocating a fresh one per file (and never
+ * deleting it) leaks ~a parser per source file, which across a large
+ * multi-language index exhausts process memory and crashes V8 with a fatal
+ * WASM-compilation OOM. Reusing one is safe because `setLanguage` + `parse` is a
+ * synchronous block — concurrent `parse()` calls can't interleave it. (ama-5o1)
+ */
+let parser: Parser | undefined;
+let parserAllocCount = 0;
+
+/** How many parsers have been allocated (test hook for the no-leak guarantee). */
+export function parsersAllocated(): number {
+  return parserAllocCount;
+}
+
 /** Absolute path to a file bundled inside an installed package. */
 function packageFile(pkg: string, ...rel: string[]): string {
   return path.join(path.dirname(require.resolve(`${pkg}/package.json`)), ...rel);
@@ -65,7 +81,10 @@ function loadLanguage(language: string): Promise<Parser.Language> {
  */
 export async function parse(language: string, code: string): Promise<Parser.Tree> {
   const lang = await loadLanguage(language);
-  const parser = new Parser();
+  if (!parser) {
+    parser = new Parser();
+    parserAllocCount++;
+  }
   parser.setLanguage(lang);
   return parser.parse(code);
 }
