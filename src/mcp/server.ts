@@ -51,17 +51,27 @@ function argsHint(args: unknown): string {
   return pairs.length ? ` ${pairs.join(", ")}` : "";
 }
 
-/** A one-glance summary of a tool result — list length, index counts, etc. */
-function resultHint(result: unknown): string {
+/** A one-glance summary of a tool result — list length, index counts, etc.
+ *  Exported for unit testing of its banner/hint handling. */
+export function resultHint(result: unknown): string {
   const content = (result as { content?: Array<{ text?: string }> } | undefined)?.content;
   if (!content?.length) return "ok";
-  const stale = content.length > 1 ? "stale, " : "";
-  const text = content[content.length - 1]?.text ?? "";
+  // reply() prepends a staleness banner and/or appends an advisory hint around
+  // the JSON data block. Locate the data by which block parses as JSON, and read
+  // staleness from a banner *before* it (dataIdx > 0) — not the block count,
+  // which a trailing low-confidence hint also inflates. (ama-zk6)
   let data: unknown;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    return `${stale}${text.slice(0, 60)}`;
+  let dataIdx = -1;
+  for (let i = 0; i < content.length; i++) {
+    try {
+      data = JSON.parse(content[i]?.text ?? "");
+      dataIdx = i;
+      break;
+    } catch {}
+  }
+  const stale = dataIdx > 0 ? "stale, " : "";
+  if (dataIdx === -1) {
+    return content[0]?.text?.slice(0, 60) || "none";
   }
   if (Array.isArray(data)) {
     return `${stale}${data.length} result${data.length === 1 ? "" : "s"}`;
