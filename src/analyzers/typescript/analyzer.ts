@@ -647,6 +647,90 @@ export class TypeScriptAnalyzer implements Analyzer {
           }
         }
       }
+      // tRPC: a router property `name: <chain>.query/mutation/subscription(handler)`.
+      // The property key is the procedure name; the call's first arg is the
+      // handler. (ama-rme.11)
+      if (
+        ts.isPropertyAssignment(n) &&
+        ts.isIdentifier(n.name) &&
+        ts.isCallExpression(n.initializer) &&
+        ts.isPropertyAccessExpression(n.initializer.expression) &&
+        PROCEDURE_TYPES.has(n.initializer.expression.name.text)
+      ) {
+        const handler = n.initializer.arguments[0];
+        if (handler && isHandlerExpr(handler)) {
+          const name = `${n.initializer.expression.name.text} ${n.name.text}`;
+          const routeId = symbolId({ file: rel, qualifiedName: name });
+          nodes.push({
+            id: routeId,
+            kind: "Route",
+            name,
+            file: rel,
+            qualifiedName: name,
+            tier: "deep",
+            range: rangeOf(n, sf),
+          });
+          this.emitRouteHandlers(
+            routeId,
+            name,
+            [handler],
+            rel,
+            sf,
+            declToId,
+            checker,
+            nodes,
+            edges,
+            root,
+          );
+        }
+      }
+      // GraphQL: a resolver map `{ Query: { field: resolver }, Mutation: {…} }` —
+      // each field under a Query/Mutation/Subscription root is a `Type.field`
+      // route referencing its resolver. (ama-rme.11)
+      if (ts.isObjectLiteralExpression(n)) {
+        for (const typeProp of n.properties) {
+          if (
+            !ts.isPropertyAssignment(typeProp) ||
+            !ts.isIdentifier(typeProp.name) ||
+            !GRAPHQL_ROOTS.has(typeProp.name.text) ||
+            !ts.isObjectLiteralExpression(typeProp.initializer)
+          ) {
+            continue;
+          }
+          for (const field of typeProp.initializer.properties) {
+            if (
+              !ts.isPropertyAssignment(field) ||
+              !ts.isIdentifier(field.name) ||
+              !isHandlerExpr(field.initializer)
+            ) {
+              continue;
+            }
+            const name = `${typeProp.name.text}.${field.name.text}`;
+            const routeId = symbolId({ file: rel, qualifiedName: name });
+            nodes.push({
+              id: routeId,
+              kind: "Route",
+              name,
+              file: rel,
+              qualifiedName: name,
+              tier: "deep",
+              range: rangeOf(field, sf),
+            });
+            this.emitRouteHandlers(
+              routeId,
+              name,
+              [field.initializer],
+              rel,
+              sf,
+              declToId,
+              checker,
+              nodes,
+              edges,
+              root,
+            );
+          }
+        }
+      }
       // NestJS: @Controller("prefix") class whose methods carry @Get/@Post/...
       // decorators. The decorated method IS the handler (already a Method node);
       // the route path is the controller prefix joined with the method's path.
@@ -1169,6 +1253,24 @@ function routeMethods(expr: ts.Expression | undefined): string[] {
     return expr.elements.filter(ts.isStringLiteralLike).map((e) => e.text);
   }
   return [];
+}
+
+/** tRPC procedure builders — a router property `key: proc.query(handler)`. (ama-rme.11) */
+const PROCEDURE_TYPES = new Set(["query", "mutation", "subscription"]);
+
+/** GraphQL root types in a resolver map. (ama-rme.11) */
+const GRAPHQL_ROOTS = new Set(["Query", "Mutation", "Subscription"]);
+
+/** Whether an expression looks like a route/resolver handler — an inline
+ *  function or a reference to one. Excludes string/config args so `db.query(sql)`
+ *  isn't mistaken for a tRPC procedure. (ama-rme.11) */
+function isHandlerExpr(expr: ts.Expression): boolean {
+  return (
+    ts.isArrowFunction(expr) ||
+    ts.isFunctionExpression(expr) ||
+    ts.isIdentifier(expr) ||
+    ts.isPropertyAccessExpression(expr)
+  );
 }
 
 /** The leftmost identifier of a call's callee — `ts` for `ts.isCallExpression(x)`,
