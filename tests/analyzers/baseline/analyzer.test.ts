@@ -46,6 +46,17 @@ describe("BaselineAnalyzer", () => {
     expect(result.nodes.find((n) => n.qualifiedName === "Greeter")?.kind).toBe("Class");
   });
 
+  it("isolates a per-file failure: an unreadable file doesn't lose the rest of the batch", async () => {
+    // The missing file makes readFileSync throw; without per-file isolation the
+    // whole batch (and so the whole language) is lost. (ama-eww)
+    const out = await new BaselineAnalyzer(PYTHON).analyze(root, [
+      "does-not-exist.py",
+      "sample.py",
+    ]);
+    expect(out.nodes.some((n) => n.file === "sample.py")).toBe(true);
+    expect(out.nodes.some((n) => n.file === "does-not-exist.py")).toBe(false);
+  });
+
   it("qualifies nested symbols and links them with Defines edges", () => {
     // A method `def hello` inside `class Greeter` is qualified under the class.
     expect(result.nodes.find((n) => n.qualifiedName === "Greeter.hello")?.kind).toBe("Function");

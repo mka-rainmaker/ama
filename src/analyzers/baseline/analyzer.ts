@@ -62,19 +62,35 @@ export class BaselineAnalyzer implements Analyzer {
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
     for (const rel of files) {
-      const code = fs.readFileSync(path.join(root, rel), "utf8");
-      const tree = await parse(this.spec.grammar, code);
-      const id = fileId(rel);
-      nodes.push({
-        id,
-        kind: "File",
-        name: path.basename(rel),
-        file: rel,
-        qualifiedName: "",
-        tier: "baseline",
-        range: { startLine: 1, endLine: tree.rootNode.endPosition.row + 1 },
-      });
-      this.walk(tree.rootNode, "", id, rel, nodes, edges);
+      // Per-file isolation: a single unreadable or unparseable file must not lose
+      // the whole language's batch — finer than the indexer's per-analyzer catch
+      // (ama-m8k.9). Build into local arrays and merge only on success, so a
+      // mid-walk throw leaves no partial nodes behind. (ama-eww)
+      try {
+        const code = fs.readFileSync(path.join(root, rel), "utf8");
+        const tree = await parse(this.spec.grammar, code);
+        const id = fileId(rel);
+        const fileNodes: GraphNode[] = [
+          {
+            id,
+            kind: "File",
+            name: path.basename(rel),
+            file: rel,
+            qualifiedName: "",
+            tier: "baseline",
+            range: { startLine: 1, endLine: tree.rootNode.endPosition.row + 1 },
+          },
+        ];
+        const fileEdges: GraphEdge[] = [];
+        this.walk(tree.rootNode, "", id, rel, fileNodes, fileEdges);
+        nodes.push(...fileNodes);
+        edges.push(...fileEdges);
+      } catch (err) {
+        console.error(
+          `[ama] ${this.spec.language} analyzer failed on ${rel}; skipping it. ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
     return { nodes, edges };
   }
