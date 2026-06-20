@@ -222,6 +222,20 @@ export class SqliteStore implements Store {
     }
   }
 
+  allEdges(): GraphEdge[] {
+    return this.db
+      .prepare("SELECT * FROM edges ORDER BY rowid")
+      .all()
+      .map((r) => rowToEdge(r as unknown as EdgeRow));
+  }
+
+  replaceEdgesByProvenance(provenance: GraphEdge["provenance"], edges: GraphEdge[]): void {
+    if (provenance === undefined)
+      this.db.prepare("DELETE FROM edges WHERE provenance IS NULL").run();
+    else this.db.prepare("DELETE FROM edges WHERE provenance = ?").run(provenance);
+    for (const e of edges) this.addEdge(e);
+  }
+
   get nodeCount(): number {
     return count(this.db, "nodes");
   }

@@ -36,6 +36,16 @@ export interface Store {
 
   /** Every node — for stats and full scans. */
   allNodes(): IterableIterator<GraphNode>;
+  /** Every edge — for whole-graph derivations (e.g. dispatch re-derivation). */
+  allEdges(): GraphEdge[];
+
+  /**
+   * Replace every edge with the given provenance by `edges` (drop the old, add the
+   * new). Used to re-derive a whole-graph edge class — dispatch fan-out / Overrides
+   * (provenance "dispatch") — after an incremental reindex, which a single-file
+   * analyze can't reproduce on its own. (ama-tr1)
+   */
+  replaceEdgesByProvenance(provenance: GraphEdge["provenance"], edges: GraphEdge[]): void;
 
   readonly nodeCount: number;
   readonly edgeCount: number;

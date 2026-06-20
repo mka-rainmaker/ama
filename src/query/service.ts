@@ -78,9 +78,10 @@ export interface GraphSchema {
   nodes: Record<string, number>;
   /** Count of edges per kind (e.g. Defines, Calls, Imports, Implements, UsesType). */
   edges: Record<string, number>;
-  /** How many edges are checker-`resolved` vs `heuristic` (route/synthesized) —
-   *  edge-level tier honesty (ama-m8k.1). */
-  edgeProvenance: { resolved: number; heuristic: number };
+  /** How many edges are checker-`resolved` vs `heuristic` (route/synthesized) vs
+   *  `dispatch` (interface/override fan-out) — edge-level tier honesty (ama-m8k.1,
+   *  ama-tr1). */
+  edgeProvenance: { resolved: number; heuristic: number; dispatch: number };
 }
 
 /** A one-call overview of a question: matching symbols grouped by file, their
@@ -673,7 +674,7 @@ export class QueryService {
   getGraphSchema(): GraphSchema {
     const nodes: Record<string, number> = {};
     const edges: Record<string, number> = {};
-    const edgeProvenance = { resolved: 0, heuristic: 0 };
+    const edgeProvenance = { resolved: 0, heuristic: 0, dispatch: 0 };
     for (const node of this.store.allNodes()) {
       nodes[node.kind] = (nodes[node.kind] ?? 0) + 1;
       for (const edge of this.store.edgesFrom(node.id)) {

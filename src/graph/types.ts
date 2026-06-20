@@ -78,10 +78,14 @@ export interface GraphNode {
 /**
  * How an edge was derived. `resolved` (the default when absent) means a
  * type-checker- or symbol-backed fact; `heuristic` means a pattern/string match
- * that isn't checker-verified (route detection, callback-handler synthesis). Lets
- * query results label edge trust — the node-level tier honesty rule, at edge level.
+ * that isn't checker-verified (route detection, callback-handler synthesis);
+ * `dispatch` means a whole-graph inference from interface/inheritance fan-out (an
+ * interface-method call reaching each implementation, and Overrides edges) — a
+ * "may-reach", not a proven direct call. Lets query results label edge trust — the
+ * node-level tier honesty rule, at edge level. `dispatch` also marks the edges the
+ * indexer re-derives after an incremental reindex (ama-tr1).
  */
-export type EdgeProvenance = "resolved" | "heuristic";
+export type EdgeProvenance = "resolved" | "heuristic" | "dispatch";
 
 export interface GraphEdge {
   /** Source node id. */

@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import ts from "typescript";
-import { fileId, symbolId } from "../../graph/index.js";
+import { deriveDispatchEdges, fileId, symbolId } from "../../graph/index.js";
 import type { GraphEdge, GraphNode, NodeKind, SourceRange } from "../../graph/index.js";
 import type { AnalysisResult, Analyzer, ResolutionStats } from "../types.js";
 
@@ -131,77 +131,12 @@ export class TypeScriptAnalyzer implements Analyzer {
       }
     }
 
-    this.resolveDispatch(nodes, edges);
+    // Dispatch fan-out (interface/override) is a whole-graph derivation now shared
+    // with the indexer's incremental re-derivation — see graph/dispatch.ts and
+    // ama-tr1. Over the full batch (a full index) it's exact; the derived edges are
+    // tagged provenance:"dispatch" so the indexer can re-derive them on reindex.
+    edges.push(...deriveDispatchEdges(nodes, edges));
     return { nodes, edges: accumulateCallSites(edges), resolution };
-  }
-
-  /**
-   * Virtual dispatch: a call resolved to a supertype's method should also reach
-   * each subtype's method of the same name — interface implementations (via
-   * `Implements`) and subclass overrides (via `Inherits`). Runs after all edges
-   * exist and appends extra `Calls` edges from the caller to each subtype
-   * method; duplicates are collapsed by the store. One level deep (direct
-   * subtypes), and only the original `Calls` edges are fanned (not the new
-   * ones), so a fan-out never cascades.
-   */
-  private resolveDispatch(nodes: GraphNode[], edges: GraphEdge[]): void {
-    const byId = new Map(nodes.map((n) => [n.id, n] as [string, GraphNode]));
-    const definerOf = new Map<string, string>(); // member id -> container id
-    // Subtypes of each supertype: classes that `implements` an interface and
-    // subclasses that `extends` a base class — both let a call to the super's
-    // method dispatch to the subtype's implementation or override.
-    const subtypes = new Map<string, string[]>();
-    const methodsByContainer = new Map<string, Map<string, string>>(); // container -> name -> method id
-    for (const edge of edges) {
-      if (edge.kind === "Defines") {
-        definerOf.set(edge.to, edge.from);
-        const member = byId.get(edge.to);
-        if (member?.kind === "Method") {
-          const byName = methodsByContainer.get(edge.from) ?? new Map<string, string>();
-          byName.set(member.name, edge.to);
-          methodsByContainer.set(edge.from, byName);
-        }
-      } else if (edge.kind === "Implements" || edge.kind === "Inherits") {
-        const list = subtypes.get(edge.to) ?? [];
-        list.push(edge.from);
-        subtypes.set(edge.to, list);
-      }
-    }
-    // Overrides: a subtype method of the same name as a supertype method
-    // overrides/implements it. Independent of any call — emitted for every such
-    // pair, using the same subtype/method maps. (ama-hft.11)
-    for (const [superId, subIds] of subtypes) {
-      const superMethods = methodsByContainer.get(superId);
-      if (!superMethods) continue;
-      for (const subId of subIds) {
-        const subMethods = methodsByContainer.get(subId);
-        if (!subMethods) continue;
-        for (const [name, subMethodId] of subMethods) {
-          const superMethodId = superMethods.get(name);
-          if (superMethodId && superMethodId !== subMethodId) {
-            edges.push({ from: subMethodId, to: superMethodId, kind: "Overrides" });
-          }
-        }
-      }
-    }
-
-    const fanned: GraphEdge[] = [];
-    for (const edge of edges) {
-      if (edge.kind !== "Calls") continue;
-      const target = byId.get(edge.to);
-      if (target?.kind !== "Method") continue;
-      const container = definerOf.get(edge.to);
-      if (!container) continue;
-      const containerKind = byId.get(container)?.kind;
-      if (containerKind !== "Interface" && containerKind !== "Class") continue;
-      for (const subId of subtypes.get(container) ?? []) {
-        const override = methodsByContainer.get(subId)?.get(target.name);
-        if (override && override !== edge.to) {
-          fanned.push({ from: edge.from, to: override, kind: "Calls" });
-        }
-      }
-    }
-    edges.push(...fanned);
   }
 
   private walkFile(

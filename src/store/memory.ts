@@ -93,6 +93,18 @@ export class InMemoryStore implements Store {
     return this.nodes.values();
   }
 
+  /** Every edge — for whole-graph derivations. */
+  allEdges(): GraphEdge[] {
+    return this.edges.slice();
+  }
+
+  /** Replace every edge of `provenance` with `edges`: rebuild without the old
+   *  ones, then add the new (addEdge dedupes against surviving edges). (ama-tr1) */
+  replaceEdgesByProvenance(provenance: GraphEdge["provenance"], edges: GraphEdge[]): void {
+    this.resetEdges(this.edges.filter((e) => e.provenance !== provenance));
+    for (const e of edges) this.addEdge(e);
+  }
+
   get nodeCount(): number {
     return this.nodes.size;
   }

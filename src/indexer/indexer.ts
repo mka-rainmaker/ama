@@ -16,6 +16,7 @@ import { swiftSpec } from "../analyzers/baseline/swift.js";
 import { AnalyzerRegistry } from "../analyzers/registry.js";
 import type { AnalysisResult, Analyzer, ResolutionStats } from "../analyzers/types.js";
 import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
+import { deriveDispatchEdges } from "../graph/index.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
 import type { FileMeta, Store } from "../store/types.js";
@@ -240,11 +241,16 @@ export class Indexer {
     const analyzer = this.registry.forFile(rel);
     if (!analyzer || !fs.existsSync(abs)) {
       store.removeFile(rel);
-      return;
+    } else {
+      const { nodes, edges } = await analyzer.analyze(root, [rel]);
+      store.reconcileFile(rel, nodes, edges);
+      store.recordFile(fingerprint(root, rel));
     }
-    const { nodes, edges } = await analyzer.analyze(root, [rel]);
-    store.reconcileFile(rel, nodes, edges);
-    store.recordFile(fingerprint(root, rel));
+    // Dispatch fan-out (interface/override) is a whole-graph inference: a single-file
+    // analyze can't see other files' implementers, so reconcileFile would drop this
+    // file's cross-file dispatch edges. Re-derive them over the full store after the
+    // structural change, restoring full-index parity. (ama-tr1)
+    redispatch(store);
   }
 
   /**
@@ -296,6 +302,19 @@ export function createDefaultIndexer(createStore?: () => Store): Indexer {
   registry.register(new BaselineAnalyzer(kotlinSpec));
   registry.register(new BaselineAnalyzer(swiftSpec));
   return new Indexer(registry, createStore);
+}
+
+/**
+ * Re-derive the whole-graph dispatch edges (interface/override fan-out) over the
+ * full store, replacing the prior ones. A full index gets these from the analyzer's
+ * per-batch pass, but a single-file reindex can't (it lacks other files' subtypes),
+ * so we recompute them store-wide after every reindex — clearing the stale tagged
+ * set and re-adding the fresh derivation keeps incremental sync at full-index
+ * parity. (ama-tr1) */
+function redispatch(store: Store): void {
+  const nodes = [...store.allNodes()];
+  const base = store.allEdges().filter((e) => e.provenance !== "dispatch");
+  store.replaceEdgesByProvenance("dispatch", deriveDispatchEdges(nodes, base));
 }
 
 /** Fingerprint a file for staleness tracking: size, mtime, and content hash. */

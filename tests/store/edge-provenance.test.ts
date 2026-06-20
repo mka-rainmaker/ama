@@ -32,9 +32,9 @@ describe("edge provenance round-trips through both stores (ama-m8k.1)", () => {
     check(seed(new SqliteStore()));
   });
 
-  it("getGraphSchema reports a resolved/heuristic breakdown", () => {
+  it("getGraphSchema reports a resolved/heuristic/dispatch breakdown", () => {
     const store = seed(new InMemoryStore());
     const schema = new QueryService(store, "/repo").getGraphSchema();
-    expect(schema.edgeProvenance).toEqual({ resolved: 1, heuristic: 1 });
+    expect(schema.edgeProvenance).toEqual({ resolved: 1, heuristic: 1, dispatch: 0 });
   });
 });
