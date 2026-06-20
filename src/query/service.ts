@@ -294,6 +294,54 @@ const EXPLORE_MATCH_LIMIT = 15;
 const EXPLORE_SCAN_LIMIT = 200;
 const EXPLORE_BLAST_LIMIT = 40;
 
+/** Question words and glue dropped before tokenizing an `explore` question, so its
+ *  search terms are the content words (`baseline`, `import`), not `how`/`are`. */
+const EXPLORE_STOPWORDS = new Set([
+  "how",
+  "what",
+  "where",
+  "why",
+  "when",
+  "who",
+  "which",
+  "the",
+  "are",
+  "was",
+  "were",
+  "does",
+  "did",
+  "and",
+  "for",
+  "with",
+  "this",
+  "that",
+  "its",
+  "into",
+  "from",
+  "use",
+  "used",
+  "uses",
+  "work",
+  "works",
+  "get",
+  "set",
+  "via",
+  "between",
+  "about",
+  "you",
+]);
+
+/** Content tokens of an `explore` question: lowercased words ≥ 3 chars that aren't
+ *  stopwords, de-duplicated. A verbose NL question rarely matches a symbol name as
+ *  one string, so explore searches these terms and unions the hits. (ama-30q) */
+function exploreTerms(question: string): string[] {
+  const terms = question
+    .toLowerCase()
+    .split(/[^a-z0-9_]+/)
+    .filter((t) => t.length >= 3 && !EXPLORE_STOPWORDS.has(t));
+  return [...new Set(terms)];
+}
+
 /** Pair a neighbour node with the metadata of the edge it was reached by. */
 function neighbor(symbol: GraphNode, edge: GraphEdge): EdgeNeighbor {
   const n: EdgeNeighbor = { symbol, via: edge.kind };
@@ -843,7 +891,15 @@ export class QueryService {
     // Rank generously to count how many matched, but only deep-dive the top
     // `limit` — relationships and the blast radius are O(matches) and explode on
     // broad terms (e.g. "node" matched hundreds, 134k chars of output). (ama-m8k.4)
-    const ranked = this.searchSymbol(question, { limit: EXPLORE_SCAN_LIMIT });
+    // Tokenize the question and union per-term hits so a verbose NL question
+    // ("how are baseline import edges resolved") matches, not just a bare symbol
+    // name. An empty token set (all stopwords, or a filters-only query) falls back
+    // to the raw search so `path:`/`kind:` filters still work. (ama-30q)
+    const terms = exploreTerms(question);
+    const ranked =
+      terms.length > 0
+        ? this.searchByTerms(terms, EXPLORE_SCAN_LIMIT)
+        : this.searchSymbol(question, { limit: EXPLORE_SCAN_LIMIT });
     const matches = ranked.slice(0, limit);
     const byFile: Record<string, GraphNode[]> = {};
     for (const match of matches) {
@@ -869,6 +925,28 @@ export class QueryService {
       totalMatches: ranked.length,
       totalBlastRadius: blastRanked.length,
     };
+  }
+
+  /** Search each term and union the hits, ranked by how many distinct terms a
+   *  symbol matches (a symbol hitting several is more on-topic), then by its best
+   *  per-term relevance position. Each per-term `searchSymbol` keeps its own
+   *  relevance order, so a single-term question behaves exactly as before. (ama-30q) */
+  private searchByTerms(terms: string[], limit: number): GraphNode[] {
+    const byId = new Map<string, { node: GraphNode; hits: number; best: number }>();
+    for (const term of terms) {
+      this.searchSymbol(term, { limit }).forEach((node, i) => {
+        const entry = byId.get(node.id);
+        if (entry) {
+          entry.hits++;
+          entry.best = Math.min(entry.best, i);
+        } else {
+          byId.set(node.id, { node, hits: 1, best: i });
+        }
+      });
+    }
+    return [...byId.values()]
+      .sort((a, b) => b.hits - a.hits || a.best - b.best)
+      .map((entry) => entry.node);
   }
 
   /** Verbatim source for a symbol, or undefined if it has no known location. */
