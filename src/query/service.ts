@@ -438,6 +438,7 @@ export class QueryService {
    */
   searchCode(query: string, opts: { limit?: number } = {}): GraphNode[] {
     const needle = query.toLowerCase();
+    const terms = exploreTerms(query); // for the fallback when the literal phrase misses
     const limit = opts.limit ?? 50;
     const byFile = new Map<string, GraphNode[]>();
     for (const node of this.store.allNodes()) {
@@ -446,7 +447,8 @@ export class QueryService {
       group.push(node);
       byFile.set(node.file, group);
     }
-    const matches: GraphNode[] = [];
+    const phrase: GraphNode[] = [];
+    const byTerms: { node: GraphNode; hits: number }[] = [];
     for (const [file, nodes] of byFile) {
       let lines: string[];
       try {
@@ -456,14 +458,27 @@ export class QueryService {
       }
       for (const node of nodes) {
         if (!node.range) continue;
-        const body = lines.slice(node.range.startLine - 1, node.range.endLine).join("\n");
-        if (body.toLowerCase().includes(needle)) {
-          matches.push(node);
-          if (matches.length >= limit) return matches;
+        const body = lines
+          .slice(node.range.startLine - 1, node.range.endLine)
+          .join("\n")
+          .toLowerCase();
+        if (body.includes(needle)) {
+          phrase.push(node);
+          if (phrase.length >= limit) return phrase;
+        } else if (terms.length >= 2) {
+          const hits = terms.reduce((n, t) => (body.includes(t) ? n + 1 : n), 0);
+          if (hits > 0) byTerms.push({ node, hits });
         }
       }
     }
-    return matches;
+    // Prefer a literal contiguous-phrase match (grep semantics, no regression). Only
+    // when there's none fall back to the symbols whose bodies mention the most query
+    // terms, so a conceptual multi-word query isn't a dead end. (ama-ejh)
+    if (phrase.length > 0) return phrase;
+    return byTerms
+      .sort((a, b) => b.hits - a.hits || a.node.qualifiedName.localeCompare(b.node.qualifiedName))
+      .slice(0, limit)
+      .map((m) => m.node);
   }
 
   /** Symbols that call or construct the referenced symbol, each labelled by the
