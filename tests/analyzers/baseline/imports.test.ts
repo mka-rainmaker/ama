@@ -2,11 +2,13 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { BaselineAnalyzer } from "../../../src/analyzers/baseline/analyzer.js";
+import { javascriptSpec } from "../../../src/analyzers/baseline/javascript.js";
 import { pythonSpec } from "../../../src/analyzers/baseline/python.js";
 import { fileId } from "../../../src/graph/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../../fixtures/py-imports");
+const jsRoot = path.resolve(here, "../../fixtures/js-imports");
 
 /**
  * Baseline analyzers emit only File/symbol nodes today, so the import graph is
@@ -31,5 +33,25 @@ describe("baseline Python import edges (ama-8nr)", () => {
     expect(imports.some((e) => e.to === fileId("pkg/__init__.py"))).toBe(true);
     // `import os` is absolute/external — no edge to a node we can't back
     expect(imports.length).toBe(2);
+  });
+});
+
+describe("baseline JavaScript import edges (ama-2dn)", () => {
+  it("resolves relative import/export/require specifiers, skipping packages", async () => {
+    const result = await new BaselineAnalyzer(javascriptSpec).analyze(jsRoot, [
+      "main.js",
+      "helper.js",
+      "util.js",
+      "cjs.cjs",
+    ]);
+    const imports = result.edges.filter(
+      (e) => e.kind === "Imports" && e.from === fileId("main.js"),
+    );
+    // explicit extension, extensionless (try .js), and a require() call
+    expect(imports.some((e) => e.to === fileId("helper.js"))).toBe(true);
+    expect(imports.some((e) => e.to === fileId("util.js"))).toBe(true);
+    expect(imports.some((e) => e.to === fileId("cjs.cjs"))).toBe(true);
+    // `left-pad` is a bare package specifier — external, no edge
+    expect(imports.length).toBe(3);
   });
 });
