@@ -250,6 +250,31 @@ export class TypeScriptAnalyzer implements Analyzer {
         this.visit(node.body, sf, rel, id, qualifiedName, nodes, edges, declToId);
       }
     }
+
+    // A constructor's parameter properties (`constructor(private readonly x: T)`)
+    // are real class members, but they're declared on the parameter rather than in
+    // the class body — emit a Property for each, under the class (`containerId`),
+    // so it's queryable like a declared field. The declToId entry lets references
+    // and the parameter's type annotation resolve to it. (ama-259)
+    if (ts.isConstructorDeclaration(node)) {
+      for (const param of node.parameters) {
+        if (!ts.isIdentifier(param.name) || !isParameterProperty(param)) continue;
+        const propName = param.name.text;
+        const propQn = prefix ? `${prefix}.${propName}` : propName;
+        const propId = symbolId({ file: rel, qualifiedName: propQn });
+        nodes.push({
+          id: propId,
+          kind: "Property",
+          name: propName,
+          file: rel,
+          qualifiedName: propQn,
+          tier: "deep",
+          range: rangeOf(param, sf),
+        });
+        edges.push({ from: containerId, to: propId, kind: "Defines" });
+        declToId.set(param, propId);
+      }
+    }
   }
 
   /** Walk a subtree, attributing each call to the nearest enclosing symbol — or,
@@ -1785,6 +1810,22 @@ function rangeOf(node: ts.Node, sf: ts.SourceFile): SourceRange {
   const start = sf.getLineAndCharacterOfPosition(node.getStart(sf));
   const end = sf.getLineAndCharacterOfPosition(node.getEnd());
   return { startLine: start.line + 1, endLine: end.line + 1 };
+}
+
+/** Whether a constructor parameter is a *parameter property* — it carries an
+ *  accessibility (`public`/`private`/`protected`) or `readonly` modifier, which
+ *  makes it a real class member, not just an argument. (ama-259) */
+function isParameterProperty(param: ts.ParameterDeclaration): boolean {
+  const mods = ts.canHaveModifiers(param) ? ts.getModifiers(param) : undefined;
+  return (
+    mods?.some(
+      (m) =>
+        m.kind === ts.SyntaxKind.PublicKeyword ||
+        m.kind === ts.SyntaxKind.PrivateKeyword ||
+        m.kind === ts.SyntaxKind.ProtectedKeyword ||
+        m.kind === ts.SyntaxKind.ReadonlyKeyword,
+    ) ?? false
+  );
 }
 
 /** A node's 1-based (line, column) start — for tagging an edge with its source
