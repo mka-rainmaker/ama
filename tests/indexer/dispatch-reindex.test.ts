@@ -1,7 +1,8 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { symbolId } from "../../src/graph/index.js";
+import { fileId, symbolId } from "../../src/graph/index.js";
+import type { EdgeKind } from "../../src/graph/index.js";
 import { createDefaultIndexer } from "../../src/indexer/indexer.js";
 import type { Store } from "../../src/store/types.js";
 
@@ -11,8 +12,11 @@ const root = path.resolve(here, "../fixtures/ts-dispatch-reindex");
 const useId = symbolId({ file: "caller.ts", qualifiedName: "use" });
 const aRun = symbolId({ file: "impl-a.ts", qualifiedName: "A.run" });
 const bRun = symbolId({ file: "impl-b.ts", qualifiedName: "B.run" });
-const calls = (store: Store, from: string, to: string) =>
-  store.edgesFrom(from).some((e) => e.to === to && e.kind === "Calls");
+const tokenId = symbolId({ file: "iface.ts", qualifiedName: "TOKEN" });
+const callerFile = fileId("caller.ts");
+const has = (store: Store, from: string, to: string, kind: EdgeKind) =>
+  store.edgesFrom(from).some((e) => e.to === to && e.kind === kind);
+const calls = (store: Store, from: string, to: string) => has(store, from, to, "Calls");
 
 /**
  * Dispatch fan-out (a call through an interface reaches every implementer) is a
@@ -35,5 +39,20 @@ describe("dispatch edges survive a single-file reindex (ama-tr1)", () => {
     await indexer.reindexFile(store, root, "caller.ts");
     expect(calls(store, useId, aRun)).toBe(true);
     expect(calls(store, useId, bRun)).toBe(true);
+  });
+
+  it("re-resolves cross-file edges to a top-level const after reindex (ama-l6k)", async () => {
+    const indexer = createDefaultIndexer();
+    const { store } = await indexer.index(root);
+
+    // caller.ts imports TOKEN, and use() reads it — both cross-file to a const.
+    expect(has(store, callerFile, tokenId, "Imports")).toBe(true);
+    expect(has(store, useId, tokenId, "References")).toBe(true);
+
+    // A single-file reindex can't see iface.ts's batch, but nodeIdForDecl ids a
+    // top-level VariableDeclaration by location, so neither edge is dropped.
+    await indexer.reindexFile(store, root, "caller.ts");
+    expect(has(store, callerFile, tokenId, "Imports")).toBe(true);
+    expect(has(store, useId, tokenId, "References")).toBe(true);
   });
 });

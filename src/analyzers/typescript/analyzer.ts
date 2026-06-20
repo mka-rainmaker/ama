@@ -85,10 +85,6 @@ export class TypeScriptAnalyzer implements Analyzer {
       }
     }
 
-    // The Variable nodes (ama-hft.12), so collectVarReferences can emit a
-    // References edge only when an identifier read resolves to one of them.
-    const variableIds = new Set(nodes.filter((n) => n.kind === "Variable").map((n) => n.id));
-
     for (const [abs, rel] of relByAbs) {
       const sf = program.getSourceFile(abs);
       if (!sf) continue;
@@ -122,7 +118,7 @@ export class TypeScriptAnalyzer implements Analyzer {
           fileId(rel),
           true,
         );
-        this.collectVarReferences(sf, undefined, declToId, variableIds, checker, edges, root);
+        this.collectVarReferences(sf, undefined, declToId, checker, edges, root);
         this.collectHeritage(sf, declToId, checker, edges, root);
         this.collectTypeUsages(sf, undefined, declToId, checker, edges, root);
         this.collectImports(sf, fileId(rel), declToId, checker, edges, root);
@@ -346,18 +342,18 @@ export class TypeScriptAnalyzer implements Analyzer {
    * node (ama-hft.12) each time its value is read — so `find_callers("MAX_RETRIES")`
    * answers "who reads this constant". Mirrors `collectCalls`' enclosing-tracking.
    *
-   * Targets are restricted to `variableIds`, so reads of functions/classes (which
-   * are Calls/UsesType, or out of scope) don't become References. Most false
-   * positives filter themselves out: a property-access member name resolves to a
-   * library member (not in `declToId`), an import specifier sits at top level
-   * (no enclosing), and a declaration's own name resolves to the very symbol that
-   * encloses it — caught by the `to !== enclosingId` guard. (ama-6k0)
+   * `resolveModuleVarRef` restricts targets to top-level const/let/var
+   * declarations (by *decl kind*, not a batch-local id set), so reads of
+   * functions/classes don't become References — and a cross-file const still
+   * resolves in a single-file reindex, where the batch holds no other file's
+   * Variable nodes (ama-l6k). Most false positives filter themselves out: a
+   * property-access member name and an import specifier resolve away, and a
+   * declaration's own name is caught by the `to !== enclosingId` guard. (ama-6k0)
    */
   private collectVarReferences(
     node: ts.Node,
     enclosingId: string | undefined,
     declToId: Map<ts.Node, string>,
-    variableIds: Set<string>,
     checker: ts.TypeChecker,
     edges: GraphEdge[],
     root: string,
@@ -369,8 +365,8 @@ export class TypeScriptAnalyzer implements Analyzer {
         // The member side of `obj.foo` is not an independent value read.
         !(ts.isPropertyAccessExpression(child.parent) && child.parent.name === child)
       ) {
-        const to = resolveValueRef(child, checker, declToId, root);
-        if (to && to !== enclosingId && variableIds.has(to)) {
+        const to = resolveModuleVarRef(child, checker, declToId, root);
+        if (to && to !== enclosingId) {
           edges.push({ from: enclosingId, to, kind: "References" });
         }
       }
@@ -386,7 +382,7 @@ export class TypeScriptAnalyzer implements Analyzer {
           ts.isFunctionExpression(child))
           ? childId
           : enclosingId;
-      this.collectVarReferences(child, nextEnclosing, declToId, variableIds, checker, edges, root);
+      this.collectVarReferences(child, nextEnclosing, declToId, checker, edges, root);
     });
   }
 
@@ -1617,6 +1613,28 @@ function resolveValueRef(
   return decl ? (declToId.get(decl) ?? nodeIdForDecl(decl, root)) : undefined;
 }
 
+/** Resolve an identifier read to the node id of the module-level variable it
+ *  names, or undefined if it doesn't resolve to a top-level const/let/var. Unlike
+ *  the old batch-local variableIds gate, this checks the *decl kind*, so a
+ *  cross-file const still resolves in a single-file reindex (where the batch holds
+ *  no other file's Variable nodes) — via declToId or, failing that, by location.
+ *  (ama-l6k) */
+function resolveModuleVarRef(
+  expr: ts.Expression,
+  checker: ts.TypeChecker,
+  declToId: Map<ts.Node, string>,
+  root: string,
+): string | undefined {
+  let symbol = checker.getSymbolAtLocation(expr);
+  if (!symbol) return undefined;
+  if (symbol.flags & ts.SymbolFlags.Alias) {
+    symbol = checker.getAliasedSymbol(symbol);
+  }
+  const decl = symbol.valueDeclaration ?? symbol.declarations?.[0];
+  if (!decl || !isModuleVariableDecl(decl)) return undefined;
+  return declToId.get(decl) ?? nodeIdForDecl(decl, root);
+}
+
 /** Resolve a heritage type reference (e.g. the `I` in `implements I`) to a node id. */
 function resolveHeritage(
   expr: ts.Expression,
@@ -1702,7 +1720,25 @@ function nodeIdForDecl(node: ts.Node, root: string): string | undefined {
   ) {
     return symbolId({ file: rel, qualifiedName: `${parent.name.text}.${self.name}` });
   }
+  // A top-level `const X = …`: VariableDeclaration -> VariableDeclarationList ->
+  // VariableStatement -> SourceFile. Its node id is the module-scoped name, so a
+  // cross-file const resolves in a single-file reindex too. (ama-l6k)
+  if (isModuleVariableDecl(node)) {
+    return symbolId({ file: rel, qualifiedName: self.name });
+  }
   return undefined;
+}
+
+/** Whether `node` is a top-level `const`/`let`/`var` declaration (module scope):
+ *  VariableDeclaration -> VariableDeclarationList -> VariableStatement ->
+ *  SourceFile. (ama-l6k) */
+function isModuleVariableDecl(node: ts.Node): boolean {
+  return (
+    ts.isVariableDeclaration(node) &&
+    ts.isVariableDeclarationList(node.parent) &&
+    ts.isVariableStatement(node.parent.parent) &&
+    ts.isSourceFile(node.parent.parent.parent)
+  );
 }
 
 /** Repo-relative path of an absolute file, or undefined if it falls outside the
