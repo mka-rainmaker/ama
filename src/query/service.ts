@@ -984,7 +984,12 @@ export class QueryService {
   getCodeSnippet(ref: string): Snippet | undefined {
     const node = this.resolve(ref).find((n) => n.range);
     if (!node || !node.range) return undefined;
-    const source = fs.readFileSync(path.resolve(this.root, node.file), "utf8");
+    let source: string;
+    try {
+      source = fs.readFileSync(path.resolve(this.root, node.file), "utf8");
+    } catch {
+      return undefined; // the file vanished since indexing — no snippet, but no throw
+    }
     const lines = source.split("\n");
     const text = lines.slice(node.range.startLine - 1, node.range.endLine).join("\n");
     return {
