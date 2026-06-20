@@ -2,6 +2,7 @@
 import * as fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { serverStamp } from "../mcp/build-info.js";
+import { ensureBaselineWasmTier } from "../runtime/wasm-tier.js";
 import { cyclesCommand } from "./commands/cycles.js";
 import { filesCommand } from "./commands/files.js";
 import { affectedCommand, impactCommand } from "./commands/impact.js";
@@ -155,8 +156,12 @@ export async function main(): Promise<void> {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+  // Pin grammar WASM to the baseline compiler before any command can load it, or
+  // an indexing command OOMs (ama-rgx). Re-execs once; the supervisor skips main.
+  if (!ensureBaselineWasmTier()) {
+    main().catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
+  }
 }
