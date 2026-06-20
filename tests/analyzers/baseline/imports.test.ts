@@ -2,6 +2,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { BaselineAnalyzer } from "../../../src/analyzers/baseline/analyzer.js";
+import { javaSpec } from "../../../src/analyzers/baseline/java.js";
 import { javascriptSpec } from "../../../src/analyzers/baseline/javascript.js";
 import { pythonSpec } from "../../../src/analyzers/baseline/python.js";
 import { rustSpec } from "../../../src/analyzers/baseline/rust.js";
@@ -11,6 +12,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../../fixtures/py-imports");
 const jsRoot = path.resolve(here, "../../fixtures/js-imports");
 const rsRoot = path.resolve(here, "../../fixtures/rs-imports");
+const javaRoot = path.resolve(here, "../../fixtures/java-imports");
 
 /**
  * Baseline analyzers emit only File/symbol nodes today, so the import graph is
@@ -75,5 +77,35 @@ describe("baseline Rust `mod` import edges (ama-90x)", () => {
     expect(from("sub.rs").some((e) => e.to === fileId("sub/deep.rs"))).toBe(true);
     // `use std::fmt;` is external — no edge (only `mod` declarations wire files)
     expect(from("lib.rs").length).toBe(2);
+  });
+});
+
+describe("baseline Java import edges (ama-bsj)", () => {
+  it("resolves a package import to its file under the source root", async () => {
+    const result = await new BaselineAnalyzer(javaSpec).analyze(javaRoot, [
+      "src/main/java/com/app/Main.java",
+      "src/main/java/com/example/Foo.java",
+      "src/main/java/com/util/Helper.java",
+    ]);
+    const main = fileId("src/main/java/com/app/Main.java");
+    const imports = result.edges.filter((e) => e.kind === "Imports" && e.from === main);
+    // `import com.example.Foo;` → the source root (src/main/java) is found by scan
+    expect(imports.some((e) => e.to === fileId("src/main/java/com/example/Foo.java"))).toBe(true);
+    // `import static com.util.Helper.doIt;` → the class file (member dropped)
+    expect(imports.some((e) => e.to === fileId("src/main/java/com/util/Helper.java"))).toBe(true);
+    // `import java.util.List;` is the JDK — no file in the repo, no edge
+    expect(imports.length).toBe(2);
+  });
+
+  it("resolves on a single-file batch (incremental reindex is drift-free)", async () => {
+    // reindexFile analyzes one file at a time, so the import targets are NOT in the
+    // batch. The ancestor scan reads disk (existsSync), not the batch, so the edges
+    // still resolve — where file-set suffix-matching would have dropped them.
+    const result = await new BaselineAnalyzer(javaSpec).analyze(javaRoot, [
+      "src/main/java/com/app/Main.java",
+    ]);
+    const imports = result.edges.filter((e) => e.kind === "Imports");
+    expect(imports.some((e) => e.to === fileId("src/main/java/com/example/Foo.java"))).toBe(true);
+    expect(imports.some((e) => e.to === fileId("src/main/java/com/util/Helper.java"))).toBe(true);
   });
 });
