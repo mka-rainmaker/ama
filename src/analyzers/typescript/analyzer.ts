@@ -192,6 +192,25 @@ export class TypeScriptAnalyzer implements Analyzer {
         ts.isIdentifier(node.name)
       ) {
         const objPrefix = prefix ? `${prefix}.${node.name.text}` : node.name.text;
+        // A *typed* object const (`const spec: LanguageSpec = {…}`) is a named,
+        // typed symbol worth a node — so it's queryable and its `: T` annotation
+        // has an owner to hang the UsesType edge on (collectTypeUsages keys off
+        // declToId). An *untyped* object literal stays node-less, so we don't emit
+        // a node per anonymous config/dispatch table. (ama-g73)
+        if (node.type) {
+          const id = symbolId({ file: rel, qualifiedName: objPrefix });
+          nodes.push({
+            id,
+            kind: "Variable",
+            name: node.name.text,
+            file: rel,
+            qualifiedName: objPrefix,
+            tier: "deep",
+            range: rangeOf(node, sf),
+          });
+          edges.push({ from: containerId, to: id, kind: "Defines" });
+          declToId.set(node, id);
+        }
         for (const member of node.initializer.properties) {
           this.visit(member, sf, rel, containerId, objPrefix, nodes, edges, declToId);
         }
