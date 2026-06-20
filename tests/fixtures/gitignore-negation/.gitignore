@@ -1,0 +1,4 @@
+*.gen.ts
+!keep.gen.ts
+sub/*.tmp.ts
+!sub/important.tmp.ts

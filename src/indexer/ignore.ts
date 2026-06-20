@@ -25,10 +25,20 @@ export interface IgnoreRules {
   /** Root-anchored patterns (a leading or embedded slash, e.g. `/build`,
    *  `pkg/internal`), matched against the full repo-relative path. (ama-yhu) */
   anchored: RegExp[];
+  /** `!` negation patterns (full-path regexes): a path matched by an ignore rule
+   *  is re-included if it also matches one of these. A negation always wins (so a
+   *  rare re-ignore-after-negation over-includes rather than over-excludes —
+   *  fail-toward-inclusion); nested .gitignore is a follow-up. (ama-d28) */
+  negations: RegExp[];
 }
 
 /** The built-in ignores, used when no `.gitignore` has been loaded. */
-export const BASE_IGNORE_RULES: IgnoreRules = { names: IGNORED_DIRS, globs: [], anchored: [] };
+export const BASE_IGNORE_RULES: IgnoreRules = {
+  names: IGNORED_DIRS,
+  globs: [],
+  anchored: [],
+  negations: [],
+};
 
 /** A gitignore name glob (`*.ext`, `build-*`) as a whole-segment regex. (ama-2eu) */
 function globToSegmentRegExp(glob: string): RegExp {
@@ -62,29 +72,42 @@ function anchoredToRegExp(pattern: string): RegExp {
   return new RegExp(`^${body}(?:/|$)`);
 }
 
+/** A `!` negation pattern (the `!` already stripped) as a full-path regex: a bare
+ *  name / segment glob matches that segment at any depth (like `**​/name`); a
+ *  pattern with a slash or `**` is root-anchored. (ama-d28) */
+function negationToRegExp(pattern: string): RegExp {
+  const anchored = pattern.includes("/") || pattern.includes("**");
+  return anchoredToRegExp(anchored ? pattern.replace(/^\/+/, "") : `**/${pattern}`);
+}
+
 /**
  * Read `<root>/.gitignore` and fold a *safe subset* of its patterns into the
- * built-in ignores. Blank lines and `#` comments are skipped; so are `!`
- * negations (deferred — skipping a negation can over-exclude, so it's a known
- * gap) and nested `.gitignore` files. A bare `name`/`name/` ignores that segment
- * at any depth; a glob like `*.ext` matches a segment; a pattern with a slash or
- * `**` is anchored to the root and matched against the full path. (ama-2eu,
- * ama-yhu, ama-dd9)
+ * built-in ignores. Blank lines and `#` comments are skipped; nested `.gitignore`
+ * files are a follow-up (ama-d28). A bare `name`/`name/` ignores that segment at
+ * any depth; a glob like `*.ext` matches a segment; a pattern with a slash or `**`
+ * is anchored to the root and matched against the full path; a `!` line re-includes
+ * a path an earlier ignore excluded. (ama-2eu, ama-yhu, ama-dd9, ama-d28)
  */
 export function loadIgnoreRules(root: string): IgnoreRules {
   const names = new Set(IGNORED_DIRS);
   const globs: RegExp[] = [];
   const anchored: RegExp[] = [];
+  const negations: RegExp[] = [];
   let text: string;
   try {
     text = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
   } catch {
-    return { names, globs, anchored };
+    return { names, globs, anchored, negations };
   }
   for (const raw of text.split("\n")) {
     const line = raw.trim();
-    // Skip blanks, comments, and `!` negations (deferred — see the doc above).
-    if (!line || line.startsWith("#") || line.startsWith("!")) continue;
+    if (!line || line.startsWith("#")) continue;
+    if (line.startsWith("!")) {
+      // A negation re-includes a path an earlier rule excluded. (ama-d28)
+      const neg = line.slice(1).replace(/\/+$/, "");
+      if (neg) negations.push(negationToRegExp(neg));
+      continue;
+    }
     const body = line.replace(/\/+$/, ""); // a trailing slash only marks dir-only
     if (!body) continue;
     if (body.includes("/") || body.includes("**")) {
@@ -98,7 +121,7 @@ export function loadIgnoreRules(root: string): IgnoreRules {
       names.add(body);
     }
   }
-  return { names, globs, anchored };
+  return { names, globs, anchored, negations };
 }
 
 /** Whether a single path segment (a file or directory name) is ignored. */
@@ -107,11 +130,13 @@ export function isIgnoredSegment(name: string, rules: IgnoreRules = BASE_IGNORE_
 }
 
 /** Whether a repo-relative path is ignored: any segment matches an any-depth
- *  name/glob, or the full path matches a root-anchored pattern. (ama-yhu) */
+ *  name/glob, or the full path matches a root-anchored pattern — unless a `!`
+ *  negation re-includes it. (ama-yhu, ama-d28) */
 export function isIgnoredPath(rel: string, rules: IgnoreRules = BASE_IGNORE_RULES): boolean {
   const segments = rel.split(path.sep);
-  if (segments.some((seg) => isIgnoredSegment(seg, rules))) return true;
-  if (rules.anchored.length === 0) return false;
   const posix = segments.join("/");
-  return rules.anchored.some((re) => re.test(posix));
+  const ignored =
+    segments.some((seg) => isIgnoredSegment(seg, rules)) ||
+    rules.anchored.some((re) => re.test(posix));
+  return ignored && !rules.negations.some((re) => re.test(posix));
 }

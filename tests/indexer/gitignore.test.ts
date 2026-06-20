@@ -9,6 +9,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../fixtures/gitignore-proj");
 const anchoredRoot = path.resolve(here, "../fixtures/gitignore-anchored");
 const globstarRoot = path.resolve(here, "../fixtures/gitignore-globstar");
+const negationRoot = path.resolve(here, "../fixtures/gitignore-negation");
 
 describe("gitignore-aware file discovery (ama-2eu)", () => {
   it("folds .gitignore bare names and globs into the ignore rules", () => {
@@ -91,5 +92,29 @@ describe("`**` deep globs in .gitignore (ama-dd9)", () => {
     expect(store.getNode(fileId("pkg/b.ts"))).toBeUndefined();
     expect(store.getNode(fileId("pkg/sub/c.ts"))).toBeUndefined();
     expect(store.getNode(fileId("a/p/z/inside.ts"))).toBeUndefined();
+  });
+});
+
+describe("`!` negations re-include an excluded file (ama-d28)", () => {
+  const rules = loadIgnoreRules(negationRoot);
+
+  it("re-includes a file a later `!` rescues from an earlier ignore", () => {
+    // `*.gen.ts` excludes, `!keep.gen.ts` rescues
+    expect(isIgnoredPath("a.gen.ts", rules)).toBe(true);
+    expect(isIgnoredPath("keep.gen.ts", rules)).toBe(false);
+    // an anchored ignore + anchored negation
+    expect(isIgnoredPath("sub/x.tmp.ts", rules)).toBe(true);
+    expect(isIgnoredPath("sub/important.tmp.ts", rules)).toBe(false);
+  });
+
+  it("keeps the negated files in the index, drops the rest", async () => {
+    const { store } = await createDefaultIndexer().index(negationRoot);
+    // kept: the negated files and the control
+    expect(store.getNode(fileId("keep.gen.ts"))).toBeDefined();
+    expect(store.getNode(fileId("sub/important.tmp.ts"))).toBeDefined();
+    expect(store.getNode(fileId("normal.ts"))).toBeDefined();
+    // dropped: the un-negated ignores
+    expect(store.getNode(fileId("a.gen.ts"))).toBeUndefined();
+    expect(store.getNode(fileId("sub/x.tmp.ts"))).toBeUndefined();
   });
 });
