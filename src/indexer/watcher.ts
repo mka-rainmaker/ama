@@ -1,6 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { type IgnoreRules, MAX_FILE_SIZE_BYTES, isIgnoredPath, loadIgnoreRules } from "./ignore.js";
+import {
+  type IgnoreRules,
+  MAX_FILE_SIZE_BYTES,
+  isIgnoredPath,
+  loadIgnoreRules,
+  withNestedIgnore,
+} from "./ignore.js";
 
 /**
  * How a {@link FileWatcher} receives raw change events: given the root and a
@@ -43,6 +49,9 @@ export class FileWatcher {
   private readonly source: WatchSource;
   /** Loaded once so the watched set matches what the index built (incl .gitignore). */
   private readonly ignoreRules: IgnoreRules;
+  /** Per-directory accumulated rules (root + each ancestor's nested .gitignore),
+   *  memoized so a burst of events in one directory reads each .gitignore once. */
+  private readonly rulesByDir = new Map<string, IgnoreRules>();
 
   constructor(
     private readonly root: string,
@@ -64,8 +73,28 @@ export class FileWatcher {
     this.subscription = undefined;
   }
 
+  /** Ignore rules in effect inside `dirRel`: the root rules plus every ancestor
+   *  directory's nested .gitignore, each rebased to its directory, so a changed
+   *  file is judged exactly as the discovery walk would (ama-pyk). Memoized per
+   *  directory; like the root rules, a .gitignore edited after start isn't
+   *  reloaded — restart the watcher for that. (ama-ezf) */
+  private rulesForDir(dirRel: string): IgnoreRules {
+    if (dirRel === "" || dirRel === ".") return this.ignoreRules;
+    const cached = this.rulesByDir.get(dirRel);
+    if (cached) return cached;
+    const parent = path.dirname(dirRel);
+    const rules = withNestedIgnore(
+      path.join(this.root, dirRel),
+      dirRel,
+      this.rulesForDir(parent === "." ? "" : parent),
+    );
+    this.rulesByDir.set(dirRel, rules);
+    return rules;
+  }
+
   private handle(rel: string): void {
-    if (isIgnoredPath(rel, this.ignoreRules)) return;
+    const dir = path.dirname(rel);
+    if (isIgnoredPath(rel, this.rulesForDir(dir === "." ? "" : dir))) return;
     let stat: fs.Stats | undefined;
     try {
       stat = fs.statSync(path.join(this.root, rel));
