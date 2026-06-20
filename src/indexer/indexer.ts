@@ -20,7 +20,13 @@ import { deriveDispatchEdges } from "../graph/index.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
 import type { FileMeta, Store } from "../store/types.js";
-import { MAX_FILE_SIZE_BYTES, isIgnoredPath, loadIgnoreRules } from "./ignore.js";
+import {
+  type IgnoreRules,
+  MAX_FILE_SIZE_BYTES,
+  isIgnoredPath,
+  loadIgnoreRules,
+  withNestedIgnore,
+} from "./ignore.js";
 
 export interface LanguageCoverage {
   language: string;
@@ -351,16 +357,19 @@ function isStale(root: string, rel: string, meta: FileMeta): boolean {
 
 /** Repo-relative paths of every file under `root`, skipping ignored trees. */
 function discoverFiles(root: string): string[] {
-  const rules = loadIgnoreRules(root); // dotfiles + IGNORED_DIRS + the root .gitignore
+  const rootRules = loadIgnoreRules(root); // dotfiles + IGNORED_DIRS + the root .gitignore
   const out: string[] = [];
-  const walk = (dir: string): void => {
+  const walk = (dir: string, dirRel: string, parent: IgnoreRules): void => {
+    // A directory's own .gitignore augments the rules for its subtree, dir-relative
+    // (the root's is already folded into `rootRules`). (ama-pyk)
+    const rules = dirRel === "" ? parent : withNestedIgnore(dir, dirRel, parent);
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const abs = path.join(dir, entry.name);
       const rel = path.relative(root, abs);
       // Path-aware so anchored .gitignore patterns (/build, pkg/internal) match
       // root-relatively, not at any depth; covers dotfiles + names/globs too. (ama-yhu)
       if (isIgnoredPath(rel, rules)) continue;
-      if (entry.isDirectory()) walk(abs);
+      if (entry.isDirectory()) walk(abs, rel, rules);
       else if (entry.isFile()) {
         // Skip oversized files (minified bundles, data blobs) — the same cap the
         // watcher enforces, so the initial index and re-index agree. A vanished
@@ -376,6 +385,6 @@ function discoverFiles(root: string): string[] {
       }
     }
   };
-  walk(root);
+  walk(root, "", rootRules);
   return out;
 }

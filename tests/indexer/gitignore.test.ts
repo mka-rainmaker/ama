@@ -10,6 +10,7 @@ const root = path.resolve(here, "../fixtures/gitignore-proj");
 const anchoredRoot = path.resolve(here, "../fixtures/gitignore-anchored");
 const globstarRoot = path.resolve(here, "../fixtures/gitignore-globstar");
 const negationRoot = path.resolve(here, "../fixtures/gitignore-negation");
+const nestedRoot = path.resolve(here, "../fixtures/gitignore-nested");
 
 describe("gitignore-aware file discovery (ama-2eu)", () => {
   it("folds .gitignore bare names and globs into the ignore rules", () => {
@@ -116,5 +117,24 @@ describe("`!` negations re-include an excluded file (ama-d28)", () => {
     // dropped: the un-negated ignores
     expect(store.getNode(fileId("a.gen.ts"))).toBeUndefined();
     expect(store.getNode(fileId("sub/x.tmp.ts"))).toBeUndefined();
+  });
+});
+
+describe("nested .gitignore files apply per-directory (ama-pyk)", () => {
+  it("excludes only the files a directory's own .gitignore covers, dir-relative", async () => {
+    const { store } = await createDefaultIndexer().index(nestedRoot);
+    // kept: controls + the root .gitignore still works
+    expect(store.getNode(fileId("keep.ts"))).toBeDefined();
+    expect(store.getNode(fileId("pkg/keep.ts"))).toBeDefined();
+    expect(store.getNode(fileId("root-only.ts"))).toBeUndefined();
+    // pkg/.gitignore: a bare name ignores at any depth under pkg…
+    expect(store.getNode(fileId("pkg/secret.ts"))).toBeUndefined();
+    expect(store.getNode(fileId("pkg/sub/secret.ts"))).toBeUndefined();
+    // …a glob too…
+    expect(store.getNode(fileId("pkg/data.tmp.ts"))).toBeUndefined();
+    // …and an anchored `/anchored.ts` is relative to pkg, so it hits pkg/anchored.ts
+    expect(store.getNode(fileId("pkg/anchored.ts"))).toBeUndefined();
+    // …but NOT pkg/sub/anchored.ts (anchored = pkg root only, not any depth)
+    expect(store.getNode(fileId("pkg/sub/anchored.ts"))).toBeDefined();
   });
 });

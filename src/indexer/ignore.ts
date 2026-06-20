@@ -124,6 +124,48 @@ export function loadIgnoreRules(root: string): IgnoreRules {
   return { names, globs, anchored, negations };
 }
 
+/** A nested-`.gitignore` line as a full-path regex relative to its own directory
+ *  (`baseRel`): a bare name/glob matches at any depth under it (`baseRel/**​/name`);
+ *  a slash/`**` pattern is anchored to it (`baseRel/pattern`). Reuses the root
+ *  matcher's compiler, just rooted one directory deeper. (ama-pyk) */
+function scopedToRegExp(pattern: string, baseRel: string): RegExp {
+  const rel =
+    pattern.includes("/") || pattern.includes("**") ? pattern.replace(/^\/+/, "") : `**/${pattern}`;
+  return anchoredToRegExp(`${baseRel}/${rel}`);
+}
+
+/**
+ * Augment ignore rules with a subdirectory's own `.gitignore`, rebased so its
+ * patterns match the subtree relative to that directory — git applies a nested
+ * `.gitignore` to its own subtree, dir-relative (so `/build` means `<dir>/build`,
+ * not the repo root). Returns the parent rules unchanged when the directory has
+ * none. The root `.gitignore` is folded in by {@link loadIgnoreRules}; this is for
+ * the nested directories the discovery walk descends into. (ama-pyk)
+ */
+export function withNestedIgnore(dir: string, dirRel: string, parent: IgnoreRules): IgnoreRules {
+  let text: string;
+  try {
+    text = fs.readFileSync(path.join(dir, ".gitignore"), "utf8");
+  } catch {
+    return parent;
+  }
+  const base = dirRel.split(path.sep).join("/"); // repo-relative, posix
+  const anchored = [...parent.anchored];
+  const negations = [...parent.negations];
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line.startsWith("!")) {
+      const neg = line.slice(1).replace(/\/+$/, "");
+      if (neg) negations.push(scopedToRegExp(neg, base));
+      continue;
+    }
+    const body = line.replace(/\/+$/, "");
+    if (body) anchored.push(scopedToRegExp(body, base));
+  }
+  return { ...parent, anchored, negations };
+}
+
 /** Whether a single path segment (a file or directory name) is ignored. */
 export function isIgnoredSegment(name: string, rules: IgnoreRules = BASE_IGNORE_RULES): boolean {
   return name.startsWith(".") || rules.names.has(name) || rules.globs.some((re) => re.test(name));
