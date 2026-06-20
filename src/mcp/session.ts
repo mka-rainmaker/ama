@@ -201,18 +201,36 @@ export class AmaSession {
 
   indexStatus(): IndexStatus {
     if (!this.stats) return { indexed: false, server: serverStamp };
-    const { root, nodeCount, edgeCount, fileCount, languages, resolution } = this.stats;
+    const { root, nodeCount, edgeCount, fileCount, resolution } = this.stats;
     return {
       indexed: true,
       root,
       nodeCount,
       edgeCount,
       fileCount,
-      languages,
+      // Recompute coverage live from the current files: a full index writes the
+      // cached `ama:coverage` metadata, but an incremental sync/reindex doesn't, so
+      // the cached per-language census drifts. Deriving it from the store each call
+      // keeps it correct on every path. (resolution still reflects the last full
+      // index — it's analysis metadata, not derivable from the store.) (ama-okg)
+      languages: this.coverage(),
       ...(resolution ? { resolution } : {}),
       pendingSync: this.debouncer?.pendingCount ?? 0,
       server: serverStamp,
     };
+  }
+
+  /** Live per-language file coverage from the current store, in first-seen order. */
+  private coverage(): LanguageCoverage[] {
+    const counts = new Map<string, { tier: LanguageCoverage["tier"]; files: number }>();
+    for (const meta of this.store?.allFiles() ?? []) {
+      const lang = this.indexer.languageOf(meta.path);
+      if (!lang) continue;
+      const entry = counts.get(lang.language);
+      if (entry) entry.files++;
+      else counts.set(lang.language, { tier: lang.tier, files: 1 });
+    }
+    return [...counts].map(([language, { tier, files }]) => ({ language, tier, files }));
   }
 
   searchSymbol(query: string, opts?: SearchOptions): GraphNode[] {

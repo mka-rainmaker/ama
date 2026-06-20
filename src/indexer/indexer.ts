@@ -100,6 +100,16 @@ export class Indexer {
     private readonly createStore: () => Store = () => new InMemoryStore(),
   ) {}
 
+  /** The (language, tier) that owns a file, or undefined if no analyzer claims it.
+   *  Lets a caller recompute per-language coverage live from the current file set,
+   *  so index_status's census stays correct after incremental syncs — not only
+   *  after a full index, which is the only thing that writes the cached coverage
+   *  metadata. (ama-okg) */
+  languageOf(rel: string): { language: string; tier: Tier } | undefined {
+    const analyzer = this.registry.forFile(rel);
+    return analyzer ? { language: analyzer.language, tier: analyzer.tier } : undefined;
+  }
+
   async index(root: string): Promise<{ store: Store; stats: IndexStats }> {
     // Refuse dangerously broad roots before touching the filesystem.
     assertSafeRoot(root);
