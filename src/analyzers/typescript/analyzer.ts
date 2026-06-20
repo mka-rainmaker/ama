@@ -403,15 +403,27 @@ export class TypeScriptAnalyzer implements Analyzer {
     root: string,
   ): void {
     node.forEachChild((child) => {
-      if (
-        ts.isIdentifier(child) &&
-        enclosingId &&
-        // The member side of `obj.foo` is not an independent value read.
-        !(ts.isPropertyAccessExpression(child.parent) && child.parent.name === child)
-      ) {
-        const to = resolveModuleVarRef(child, checker, declToId, root);
-        if (to && to !== enclosingId) {
-          edges.push({ from: enclosingId, to, kind: "References" });
+      if (ts.isIdentifier(child) && enclosingId) {
+        const parent = child.parent;
+        if (ts.isPropertyAccessExpression(parent) && parent.name === child) {
+          // The member side of `X.prop`. A method *call* (`this.m()`) is already a
+          // Calls edge, but a non-call read of `this.<prop>` — a field, a parameter
+          // property, or a method used as a value — is a References to that member,
+          // so find_referrers on a property shows where its class uses it. (ama-qo3)
+          if (
+            parent.expression.kind === ts.SyntaxKind.ThisKeyword &&
+            !(ts.isCallExpression(parent.parent) && parent.parent.expression === parent)
+          ) {
+            const to = resolveValueRef(child, checker, declToId, root);
+            if (to && to !== enclosingId) {
+              edges.push({ from: enclosingId, to, kind: "References" });
+            }
+          }
+        } else {
+          const to = resolveModuleVarRef(child, checker, declToId, root);
+          if (to && to !== enclosingId) {
+            edges.push({ from: enclosingId, to, kind: "References" });
+          }
         }
       }
       const childId = declToId.get(child);
