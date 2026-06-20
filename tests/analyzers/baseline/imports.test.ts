@@ -4,11 +4,13 @@ import { describe, expect, it } from "vitest";
 import { BaselineAnalyzer } from "../../../src/analyzers/baseline/analyzer.js";
 import { javascriptSpec } from "../../../src/analyzers/baseline/javascript.js";
 import { pythonSpec } from "../../../src/analyzers/baseline/python.js";
+import { rustSpec } from "../../../src/analyzers/baseline/rust.js";
 import { fileId } from "../../../src/graph/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../../fixtures/py-imports");
 const jsRoot = path.resolve(here, "../../fixtures/js-imports");
+const rsRoot = path.resolve(here, "../../fixtures/rs-imports");
 
 /**
  * Baseline analyzers emit only File/symbol nodes today, so the import graph is
@@ -53,5 +55,25 @@ describe("baseline JavaScript import edges (ama-2dn)", () => {
     expect(imports.some((e) => e.to === fileId("cjs.cjs"))).toBe(true);
     // `left-pad` is a bare package specifier — external, no edge
     expect(imports.length).toBe(3);
+  });
+});
+
+describe("baseline Rust `mod` import edges (ama-90x)", () => {
+  it("wires a file module to its file, honoring the foo.rs-owns-foo/ rule", async () => {
+    const result = await new BaselineAnalyzer(rustSpec).analyze(rsRoot, [
+      "lib.rs",
+      "helper.rs",
+      "sub.rs",
+      "sub/deep.rs",
+    ]);
+    const from = (f: string) =>
+      result.edges.filter((e) => e.kind === "Imports" && e.from === fileId(f));
+    // crate root: `mod helper;` → helper.rs, `pub mod sub;` → sub.rs (same dir)
+    expect(from("lib.rs").some((e) => e.to === fileId("helper.rs"))).toBe(true);
+    expect(from("lib.rs").some((e) => e.to === fileId("sub.rs"))).toBe(true);
+    // a non-mod.rs file owns a subdir: sub.rs's `mod deep;` → sub/deep.rs
+    expect(from("sub.rs").some((e) => e.to === fileId("sub/deep.rs"))).toBe(true);
+    // `use std::fmt;` is external — no edge (only `mod` declarations wire files)
+    expect(from("lib.rs").length).toBe(2);
   });
 });
