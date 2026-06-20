@@ -7,6 +7,7 @@ import { createDefaultIndexer } from "../../src/indexer/indexer.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../fixtures/gitignore-proj");
+const anchoredRoot = path.resolve(here, "../fixtures/gitignore-anchored");
 
 describe("gitignore-aware file discovery (ama-2eu)", () => {
   it("folds .gitignore bare names and globs into the ignore rules", () => {
@@ -27,5 +28,38 @@ describe("gitignore-aware file discovery (ama-2eu)", () => {
     expect(store.getNode(fileId("src/keep.ts"))).toBeDefined();
     expect(store.getNode(fileId("generated/skip.ts"))).toBeUndefined();
     expect(store.getNode(fileId("src/thing.gen.ts"))).toBeUndefined();
+  });
+});
+
+describe("anchored & mid-path .gitignore patterns (ama-yhu)", () => {
+  const rules = loadIgnoreRules(anchoredRoot);
+
+  it("anchors a leading-slash pattern to the root, not any depth", () => {
+    // `/cache` and `/root-only.ts` ignore the root entry only…
+    expect(isIgnoredPath("cache/c.ts", rules)).toBe(true);
+    expect(isIgnoredPath("root-only.ts", rules)).toBe(true);
+    // …NOT a same-named entry nested deeper (the over-ignoring a stripped leading
+    // slash used to cause — index more, never less).
+    expect(isIgnoredPath("sub/cache/d.ts", rules)).toBe(false);
+    expect(isIgnoredPath("sub/root-only.ts", rules)).toBe(false);
+  });
+
+  it("matches an embedded-path pattern relative to the root", () => {
+    // `pkg/internal` is anchored by its embedded slash — root-relative only.
+    expect(isIgnoredPath("pkg/internal/e.ts", rules)).toBe(true);
+    expect(isIgnoredPath("other/pkg/internal/f.ts", rules)).toBe(false);
+  });
+
+  it("excludes only the anchored matches from the index", async () => {
+    const { store } = await createDefaultIndexer().index(anchoredRoot);
+    // kept: the control, and every same-named entry that isn't at the anchor
+    expect(store.getNode(fileId("keep.ts"))).toBeDefined();
+    expect(store.getNode(fileId("sub/cache/d.ts"))).toBeDefined();
+    expect(store.getNode(fileId("sub/root-only.ts"))).toBeDefined();
+    expect(store.getNode(fileId("other/pkg/internal/f.ts"))).toBeDefined();
+    // dropped: the root-anchored and embedded-path matches
+    expect(store.getNode(fileId("cache/c.ts"))).toBeUndefined();
+    expect(store.getNode(fileId("root-only.ts"))).toBeUndefined();
+    expect(store.getNode(fileId("pkg/internal/e.ts"))).toBeUndefined();
   });
 });

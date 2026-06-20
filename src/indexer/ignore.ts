@@ -22,10 +22,13 @@ export interface IgnoreRules {
   names: Set<string>;
   /** Name globs from .gitignore (e.g. `*.gen.ts`), each anchored to a full segment. */
   globs: RegExp[];
+  /** Root-anchored patterns (a leading or embedded slash, e.g. `/build`,
+   *  `pkg/internal`), matched against the full repo-relative path. (ama-yhu) */
+  anchored: RegExp[];
 }
 
 /** The built-in ignores, used when no `.gitignore` has been loaded. */
-export const BASE_IGNORE_RULES: IgnoreRules = { names: IGNORED_DIRS, globs: [] };
+export const BASE_IGNORE_RULES: IgnoreRules = { names: IGNORED_DIRS, globs: [], anchored: [] };
 
 /** A gitignore name glob (`*.ext`, `build-*`) as a whole-segment regex. (ama-2eu) */
 function globToSegmentRegExp(glob: string): RegExp {
@@ -34,6 +37,19 @@ function globToSegmentRegExp(glob: string): RegExp {
     .replace(/\*/g, "[^/]*")
     .replace(/\?/g, "[^/]");
   return new RegExp(`^${body}$`);
+}
+
+/** A root-anchored gitignore pattern (`build`, `pkg/internal`, `src/*.gen.ts` —
+ *  with any leading/trailing slash already stripped) as a regex over the full
+ *  repo-relative (posix) path, matching the entry and everything under it. `*`/`?`
+ *  stay within a path segment; `**` is not modelled (those lines are skipped at
+ *  load). (ama-yhu) */
+function anchoredToRegExp(pattern: string): RegExp {
+  const body = pattern
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, "[^/]*")
+    .replace(/\?/g, "[^/]");
+  return new RegExp(`^${body}(?:/|$)`);
 }
 
 /**
@@ -47,21 +63,32 @@ function globToSegmentRegExp(glob: string): RegExp {
 export function loadIgnoreRules(root: string): IgnoreRules {
   const names = new Set(IGNORED_DIRS);
   const globs: RegExp[] = [];
+  const anchored: RegExp[] = [];
   let text: string;
   try {
     text = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
   } catch {
-    return { names, globs };
+    return { names, globs, anchored };
   }
   for (const raw of text.split("\n")) {
     const line = raw.trim();
-    if (!line || line.startsWith("#") || line.startsWith("!")) continue;
-    const pat = line.replace(/\/+$/, "").replace(/^\/+/, "");
-    if (!pat || pat.includes("/")) continue; // embedded path — unsupported, skip
-    if (/[*?]/.test(pat)) globs.push(globToSegmentRegExp(pat));
-    else names.add(pat);
+    // Skip blanks, comments, `!` negations, and `**` deep globs — none modelled.
+    // Skipping a pattern only ever indexes *more*, never less, so a file is never
+    // wrongly dropped; negations and nested .gitignore remain a follow-up. (ama-yhu)
+    if (!line || line.startsWith("#") || line.startsWith("!") || line.includes("**")) continue;
+    const body = line.replace(/\/+$/, ""); // a trailing slash only marks dir-only
+    if (!body) continue;
+    if (body.includes("/")) {
+      // A leading or embedded slash anchors the pattern to this .gitignore's
+      // directory (the root) — match it root-relatively, not at any depth. (ama-yhu)
+      anchored.push(anchoredToRegExp(body.replace(/^\/+/, "")));
+    } else if (/[*?]/.test(body)) {
+      globs.push(globToSegmentRegExp(body));
+    } else {
+      names.add(body);
+    }
   }
-  return { names, globs };
+  return { names, globs, anchored };
 }
 
 /** Whether a single path segment (a file or directory name) is ignored. */
@@ -69,7 +96,12 @@ export function isIgnoredSegment(name: string, rules: IgnoreRules = BASE_IGNORE_
   return name.startsWith(".") || rules.names.has(name) || rules.globs.some((re) => re.test(name));
 }
 
-/** Whether any segment of a repo-relative path is ignored. */
+/** Whether a repo-relative path is ignored: any segment matches an any-depth
+ *  name/glob, or the full path matches a root-anchored pattern. (ama-yhu) */
 export function isIgnoredPath(rel: string, rules: IgnoreRules = BASE_IGNORE_RULES): boolean {
-  return rel.split(path.sep).some((seg) => isIgnoredSegment(seg, rules));
+  const segments = rel.split(path.sep);
+  if (segments.some((seg) => isIgnoredSegment(seg, rules))) return true;
+  if (rules.anchored.length === 0) return false;
+  const posix = segments.join("/");
+  return rules.anchored.some((re) => re.test(posix));
 }

@@ -19,7 +19,7 @@ import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
 import type { FileMeta, Store } from "../store/types.js";
-import { MAX_FILE_SIZE_BYTES, isIgnoredSegment, loadIgnoreRules } from "./ignore.js";
+import { MAX_FILE_SIZE_BYTES, isIgnoredPath, loadIgnoreRules } from "./ignore.js";
 
 export interface LanguageCoverage {
   language: string;
@@ -326,8 +326,11 @@ function discoverFiles(root: string): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (isIgnoredSegment(entry.name, rules)) continue; // dotfiles + ignored dirs/globs
       const abs = path.join(dir, entry.name);
+      const rel = path.relative(root, abs);
+      // Path-aware so anchored .gitignore patterns (/build, pkg/internal) match
+      // root-relatively, not at any depth; covers dotfiles + names/globs too. (ama-yhu)
+      if (isIgnoredPath(rel, rules)) continue;
       if (entry.isDirectory()) walk(abs);
       else if (entry.isFile()) {
         // Skip oversized files (minified bundles, data blobs) — the same cap the
@@ -340,7 +343,7 @@ function discoverFiles(root: string): string[] {
           continue;
         }
         if (size > MAX_FILE_SIZE_BYTES) continue;
-        out.push(path.relative(root, abs));
+        out.push(rel);
       }
     }
   };
