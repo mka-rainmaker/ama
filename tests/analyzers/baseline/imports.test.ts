@@ -2,6 +2,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { BaselineAnalyzer } from "../../../src/analyzers/baseline/analyzer.js";
+import { goSpec } from "../../../src/analyzers/baseline/go.js";
 import { javaSpec } from "../../../src/analyzers/baseline/java.js";
 import { javascriptSpec } from "../../../src/analyzers/baseline/javascript.js";
 import { pythonSpec } from "../../../src/analyzers/baseline/python.js";
@@ -13,6 +14,7 @@ const root = path.resolve(here, "../../fixtures/py-imports");
 const jsRoot = path.resolve(here, "../../fixtures/js-imports");
 const rsRoot = path.resolve(here, "../../fixtures/rs-imports");
 const javaRoot = path.resolve(here, "../../fixtures/java-imports");
+const goRoot = path.resolve(here, "../../fixtures/go-imports");
 
 /**
  * Baseline analyzers emit only File/symbol nodes today, so the import graph is
@@ -107,5 +109,24 @@ describe("baseline Java import edges (ama-bsj)", () => {
     const imports = result.edges.filter((e) => e.kind === "Imports");
     expect(imports.some((e) => e.to === fileId("src/main/java/com/example/Foo.java"))).toBe(true);
     expect(imports.some((e) => e.to === fileId("src/main/java/com/util/Helper.java"))).toBe(true);
+  });
+});
+
+describe("baseline Go import edges (ama-9yu)", () => {
+  it("links a local package import to every .go file in its directory", async () => {
+    const result = await new BaselineAnalyzer(goSpec).analyze(goRoot, [
+      "main.go",
+      "internal/store/store.go",
+      "internal/store/helper.go",
+    ]);
+    const imports = result.edges.filter(
+      (e) => e.kind === "Imports" && e.from === fileId("main.go"),
+    );
+    // `import "example.com/app/internal/store"` → the package's directory, so every
+    // (non-test) .go file in it. The go.mod module prefix is stripped to find the dir.
+    expect(imports.some((e) => e.to === fileId("internal/store/store.go"))).toBe(true);
+    expect(imports.some((e) => e.to === fileId("internal/store/helper.go"))).toBe(true);
+    // `import "fmt"` is stdlib — doesn't match the module, so no edge
+    expect(imports.length).toBe(2);
   });
 });

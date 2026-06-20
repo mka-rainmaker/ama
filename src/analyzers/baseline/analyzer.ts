@@ -40,17 +40,18 @@ export interface LanguageSpec {
   /** CST node type → how to emit a symbol for it. */
   readonly symbols: Readonly<Record<string, SymbolRule>>;
   /**
-   * Optional import resolver: given an import CST node and the importing file's
-   * repo-relative path, return each imported module as an ordered list of
-   * candidate repo-relative file paths — the analyzer emits a File→File `Imports`
-   * edge to the first candidate that exists on disk. Returns `undefined` for a
-   * non-import node, `[]` for an unresolvable (absolute/package) import. Only
-   * relative imports resolve by path alone, so deep cross-file analysis isn't
-   * needed. (ama-8nr)
+   * Optional import resolver: given an import CST node, the importing file's
+   * repo-relative path, and the index root, return each imported module as an
+   * ordered list of candidate repo-relative file paths — the analyzer emits a
+   * File→File `Imports` edge to the first candidate that exists on disk. Returns
+   * `undefined` for a non-import node, `[]` for an unresolvable (stdlib/third-party)
+   * import. `root` lets a config-aware language (Go's `go.mod`) resolve a
+   * module-qualified path; path-based languages can ignore it. (ama-8nr, ama-9yu)
    */
   readonly resolveImports?: (
     node: Parser.SyntaxNode,
     importerRel: string,
+    root: string,
   ) => string[][] | undefined;
 }
 
@@ -160,7 +161,7 @@ export class BaselineAnalyzer implements Analyzer {
     fileNodeId: string,
     edges: GraphEdge[],
   ): void {
-    const groups = this.spec.resolveImports?.(node, importerRel);
+    const groups = this.spec.resolveImports?.(node, importerRel, root);
     if (groups) {
       for (const candidates of groups) {
         const target = candidates.find((c) => fs.existsSync(path.join(root, c)));
