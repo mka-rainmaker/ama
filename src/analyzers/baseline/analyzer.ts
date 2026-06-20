@@ -39,6 +39,19 @@ export interface LanguageSpec {
   readonly grammar: string;
   /** CST node type → how to emit a symbol for it. */
   readonly symbols: Readonly<Record<string, SymbolRule>>;
+  /**
+   * Optional import resolver: given an import CST node and the importing file's
+   * repo-relative path, return each imported module as an ordered list of
+   * candidate repo-relative file paths — the analyzer emits a File→File `Imports`
+   * edge to the first candidate that exists on disk. Returns `undefined` for a
+   * non-import node, `[]` for an unresolvable (absolute/package) import. Only
+   * relative imports resolve by path alone, so deep cross-file analysis isn't
+   * needed. (ama-8nr)
+   */
+  readonly resolveImports?: (
+    node: Parser.SyntaxNode,
+    importerRel: string,
+  ) => string[][] | undefined;
 }
 
 /**
@@ -87,6 +100,8 @@ export class BaselineAnalyzer implements Analyzer {
           ];
           const fileEdges: GraphEdge[] = [];
           this.walk(tree.rootNode, "", id, rel, fileNodes, fileEdges);
+          if (this.spec.resolveImports)
+            this.collectImports(tree.rootNode, rel, root, id, fileEdges);
           nodes.push(...fileNodes);
           edges.push(...fileEdges);
         } finally {
@@ -133,6 +148,27 @@ export class BaselineAnalyzer implements Analyzer {
         // Not a symbol (or anonymous) — keep looking for symbols inside it.
         this.walk(child, prefix, containerId, rel, nodes, edges);
       }
+    }
+  }
+
+  /** Walk the CST for import statements and emit a File→File `Imports` edge to
+   *  each imported module that resolves (by path) to a file on disk. (ama-8nr) */
+  private collectImports(
+    node: Parser.SyntaxNode,
+    importerRel: string,
+    root: string,
+    fileNodeId: string,
+    edges: GraphEdge[],
+  ): void {
+    const groups = this.spec.resolveImports?.(node, importerRel);
+    if (groups) {
+      for (const candidates of groups) {
+        const target = candidates.find((c) => fs.existsSync(path.join(root, c)));
+        if (target) edges.push({ from: fileNodeId, to: fileId(target), kind: "Imports" });
+      }
+    }
+    for (const child of node.namedChildren) {
+      this.collectImports(child, importerRel, root, fileNodeId, edges);
     }
   }
 }
