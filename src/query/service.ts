@@ -3,6 +3,23 @@ import * as path from "node:path";
 import type { EdgeKind, EdgeProvenance, GraphEdge, GraphNode, NodeKind } from "../graph/index.js";
 import type { FileMeta, Store } from "../store/types.js";
 
+/**
+ * Reverse-traversed by {@link QueryService.impactAnalysis}: every edge kind whose
+ * *source* depends on its *target*, so a change to the target can break the source.
+ * Excludes structural `Defines` and the file-level `Imports`/`ImportsType` (those are
+ * file-granularity — covered by {@link QueryService.affected}). (ama-8sw)
+ */
+const IMPACT_EDGE_KINDS: readonly EdgeKind[] = [
+  "Calls",
+  "References",
+  "UsesType",
+  "Returns",
+  "Instantiates",
+  "Implements",
+  "Inherits",
+  "Overrides",
+];
+
 export interface SearchOptions {
   /** Maximum number of hits to return (default 50). */
   limit?: number;
@@ -640,10 +657,12 @@ export class QueryService {
 
   /**
    * The transitive blast radius of a symbol: everything affected by changing it,
-   * found by walking the reverse "Calls" edges breadth-first (callers, then
-   * callers of callers, …). `maxDepth` bounds the traversal (default unbounded);
-   * a visited set makes cycles and recursion safe. The seed symbol(s) the ref
-   * resolves to are excluded from the result.
+   * found by walking the reverse dependency edges breadth-first (callers, type
+   * users, referrers, implementers, subclasses, …). `maxDepth` bounds the traversal
+   * (default unbounded); a visited set makes cycles and recursion safe. The seed
+   * symbol(s) the ref resolves to are excluded. Following every {@link
+   * IMPACT_EDGE_KINDS} edge — not just `Calls` — is what lets the blast radius of a
+   * type/interface/constant surface, since those are referenced, not called. (ama-8sw)
    */
   impactAnalysis(ref: string, maxDepth = Number.POSITIVE_INFINITY): GraphNode[] {
     const seen = new Set(this.resolve(ref).map((n) => n.id));
@@ -652,13 +671,15 @@ export class QueryService {
     for (let depth = 0; depth < maxDepth && frontier.length > 0; depth++) {
       const next: string[] = [];
       for (const id of frontier) {
-        for (const edge of this.store.edgesTo(id, "Calls")) {
-          if (seen.has(edge.from)) continue;
-          seen.add(edge.from);
-          const caller = this.store.getNode(edge.from);
-          if (caller) {
-            affected.set(caller.id, caller);
-            next.push(caller.id);
+        for (const kind of IMPACT_EDGE_KINDS) {
+          for (const edge of this.store.edgesTo(id, kind)) {
+            if (seen.has(edge.from)) continue;
+            seen.add(edge.from);
+            const dependent = this.store.getNode(edge.from);
+            if (dependent) {
+              affected.set(dependent.id, dependent);
+              next.push(dependent.id);
+            }
           }
         }
       }
