@@ -39,26 +39,37 @@ function globToSegmentRegExp(glob: string): RegExp {
   return new RegExp(`^${body}$`);
 }
 
-/** A root-anchored gitignore pattern (`build`, `pkg/internal`, `src/*.gen.ts` —
- *  with any leading/trailing slash already stripped) as a regex over the full
- *  repo-relative (posix) path, matching the entry and everything under it. `*`/`?`
- *  stay within a path segment; `**` is not modelled (those lines are skipped at
- *  load). (ama-yhu) */
+/** A root-anchored gitignore pattern (`build`, `pkg/internal`, `src/*.gen.ts`,
+ *  `**​/*.log`, `a/**​/b` — with any leading/trailing slash already stripped) as a
+ *  regex over the full repo-relative (posix) path, matching the entry and
+ *  everything under it. `*`/`?` stay within a path segment; `**` spans segments —
+ *  a leading or mid `**​/` matches zero or more directories, a trailing `/**`
+ *  matches everything under the prefix. (ama-yhu, ama-dd9) */
 function anchoredToRegExp(pattern: string): RegExp {
-  const body = pattern
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*/g, "[^/]*")
-    .replace(/\?/g, "[^/]");
+  // A trailing `/**` matches everything under the prefix — the `(?:/|$)` suffix
+  // already does, so drop it.
+  const trimmed = pattern.replace(/\/\*\*$/, "");
+  // Expand glob tokens and escape regex specials in one pass — the alternation
+  // tries `**/` and `**` before a single `*`, so a deep glob isn't mis-expanded,
+  // and the expansions' own regex syntax is never re-escaped.
+  const body = trimmed.replace(/\*\*\/|\*\*|\*|\?|[.+^${}()|[\]\\]/g, (m) => {
+    if (m === "**/") return "(?:.*/)?"; // zero or more directories
+    if (m === "**") return ".*"; // any run, across path segments
+    if (m === "*") return "[^/]*"; // within one segment
+    if (m === "?") return "[^/]";
+    return `\\${m}`; // a regex special — escape it
+  });
   return new RegExp(`^${body}(?:/|$)`);
 }
 
 /**
  * Read `<root>/.gitignore` and fold a *safe subset* of its patterns into the
- * built-in ignores. Blank lines and `#` comments are skipped; so are patterns we
- * don't fully model — `!` negations, embedded-`/` paths, and `**`. Skipping an
- * unsupported pattern only ever indexes *more*, never less, so a misread can
- * never silently drop a file. A bare `name`/`name/` ignores that segment at any
- * depth; a glob like `*.ext` matches a segment. (ama-2eu)
+ * built-in ignores. Blank lines and `#` comments are skipped; so are `!`
+ * negations (deferred — skipping a negation can over-exclude, so it's a known
+ * gap) and nested `.gitignore` files. A bare `name`/`name/` ignores that segment
+ * at any depth; a glob like `*.ext` matches a segment; a pattern with a slash or
+ * `**` is anchored to the root and matched against the full path. (ama-2eu,
+ * ama-yhu, ama-dd9)
  */
 export function loadIgnoreRules(root: string): IgnoreRules {
   const names = new Set(IGNORED_DIRS);
@@ -72,15 +83,14 @@ export function loadIgnoreRules(root: string): IgnoreRules {
   }
   for (const raw of text.split("\n")) {
     const line = raw.trim();
-    // Skip blanks, comments, `!` negations, and `**` deep globs — none modelled.
-    // Skipping a pattern only ever indexes *more*, never less, so a file is never
-    // wrongly dropped; negations and nested .gitignore remain a follow-up. (ama-yhu)
-    if (!line || line.startsWith("#") || line.startsWith("!") || line.includes("**")) continue;
+    // Skip blanks, comments, and `!` negations (deferred — see the doc above).
+    if (!line || line.startsWith("#") || line.startsWith("!")) continue;
     const body = line.replace(/\/+$/, ""); // a trailing slash only marks dir-only
     if (!body) continue;
-    if (body.includes("/")) {
-      // A leading or embedded slash anchors the pattern to this .gitignore's
-      // directory (the root) — match it root-relatively, not at any depth. (ama-yhu)
+    if (body.includes("/") || body.includes("**")) {
+      // A leading/embedded slash or a `**` deep glob anchors the pattern to this
+      // .gitignore's directory (the root) — match it root-relatively, against the
+      // full path, not at any depth. (ama-yhu, ama-dd9)
       anchored.push(anchoredToRegExp(body.replace(/^\/+/, "")));
     } else if (/[*?]/.test(body)) {
       globs.push(globToSegmentRegExp(body));

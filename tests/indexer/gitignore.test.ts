@@ -8,6 +8,7 @@ import { createDefaultIndexer } from "../../src/indexer/indexer.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../fixtures/gitignore-proj");
 const anchoredRoot = path.resolve(here, "../fixtures/gitignore-anchored");
+const globstarRoot = path.resolve(here, "../fixtures/gitignore-globstar");
 
 describe("gitignore-aware file discovery (ama-2eu)", () => {
   it("folds .gitignore bare names and globs into the ignore rules", () => {
@@ -61,5 +62,34 @@ describe("anchored & mid-path .gitignore patterns (ama-yhu)", () => {
     expect(store.getNode(fileId("cache/c.ts"))).toBeUndefined();
     expect(store.getNode(fileId("root-only.ts"))).toBeUndefined();
     expect(store.getNode(fileId("pkg/internal/e.ts"))).toBeUndefined();
+  });
+});
+
+describe("`**` deep globs in .gitignore (ama-dd9)", () => {
+  const rules = loadIgnoreRules(globstarRoot);
+
+  it("matches `**/x` at any depth, `dir/**` everything under, and `a/**/b` across dirs", () => {
+    // `**/*.gen.ts` — any depth, including the root
+    expect(isIgnoredPath("root.gen.ts", rules)).toBe(true);
+    expect(isIgnoredPath("deep/thing.gen.ts", rules)).toBe(true);
+    expect(isIgnoredPath("deep/keep.ts", rules)).toBe(false);
+    // `pkg/**` — everything under pkg, at any depth
+    expect(isIgnoredPath("pkg/b.ts", rules)).toBe(true);
+    expect(isIgnoredPath("pkg/sub/c.ts", rules)).toBe(true);
+    // `a/**/z` — a `z` segment under `a` across zero+ directories
+    expect(isIgnoredPath("a/p/z/inside.ts", rules)).toBe(true);
+    expect(isIgnoredPath("a/p/keep.ts", rules)).toBe(false);
+  });
+
+  it("excludes only the `**`-matched files from the index", async () => {
+    const { store } = await createDefaultIndexer().index(globstarRoot);
+    expect(store.getNode(fileId("keep.ts"))).toBeDefined();
+    expect(store.getNode(fileId("deep/keep.ts"))).toBeDefined();
+    expect(store.getNode(fileId("a/p/keep.ts"))).toBeDefined();
+    expect(store.getNode(fileId("root.gen.ts"))).toBeUndefined();
+    expect(store.getNode(fileId("deep/thing.gen.ts"))).toBeUndefined();
+    expect(store.getNode(fileId("pkg/b.ts"))).toBeUndefined();
+    expect(store.getNode(fileId("pkg/sub/c.ts"))).toBeUndefined();
+    expect(store.getNode(fileId("a/p/z/inside.ts"))).toBeUndefined();
   });
 });
