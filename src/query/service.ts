@@ -67,6 +67,10 @@ export interface NodeView {
   node: GraphNode;
   /** Verbatim source, when the node has a known location. */
   snippet?: Snippet;
+  /** Symbols this node defines, in source order — a class's methods/properties, an
+   *  interface's members, a namespace's or file's symbols. Empty for a leaf, so a
+   *  class is a complete structured outline without re-reading the snippet. (ama-as5) */
+  members: GraphNode[];
   /** Symbols that call it. */
   callers: GraphNode[];
   /** Symbols it calls. */
@@ -686,11 +690,23 @@ export class QueryService {
     return {
       node: primary,
       snippet: this.getCodeSnippet(ref),
+      members: this.definedBy(primary.id),
       callers: this.findCallers(ref).map((c) => c.symbol),
       callees: this.findCallees(ref).map((c) => c.symbol),
       referrers: this.findReferrers(ref).map((c) => c.symbol),
       dependents: this.findImporters(ref),
     };
+  }
+
+  /** The symbols a node directly defines — its `Defines` targets (a class's
+   *  methods/properties, an interface's members, …) — in source order. (ama-as5) */
+  private definedBy(id: string): GraphNode[] {
+    const members: GraphNode[] = [];
+    for (const edge of this.store.edgesFrom(id, "Defines")) {
+      const member = this.store.getNode(edge.to);
+      if (member) members.push(member);
+    }
+    return members.sort((a, b) => (a.range?.startLine ?? 0) - (b.range?.startLine ?? 0));
   }
 
   /**
