@@ -5,6 +5,22 @@ import type { GraphEdge, GraphNode, NodeKind, SourceRange } from "../../graph/in
 import type { AnalysisResult, Analyzer, ResolutionStats } from "../types.js";
 
 /**
+ * Log a per-file analyzer failure to stderr and carry on. The deep TypeScript
+ * analyzer shares one ts.Program across the whole batch for cross-file
+ * resolution, so it can't give each file its own program the way the baseline
+ * analyzer isolates per file (ama-eww); instead each per-file *pass* is wrapped so
+ * one pathological file degrades to a skipped file rather than throwing out of
+ * analyze() — which the indexer's per-analyzer catch would turn into every .ts
+ * file vanishing from the graph. (ama-bm2)
+ */
+function reportFileFailure(rel: string, phase: string, err: unknown): void {
+  console.error(
+    `[ama] typescript analyzer failed on ${rel} (${phase}); skipping it. ` +
+      `${err instanceof Error ? err.message : String(err)}`,
+  );
+}
+
+/**
  * Deep TypeScript analyzer built on the TypeScript Compiler API.
  *
  * Two passes over each source file:
@@ -45,7 +61,12 @@ export class TypeScriptAnalyzer implements Analyzer {
 
     for (const [abs, rel] of relByAbs) {
       const sf = program.getSourceFile(abs);
-      if (sf) this.walkFile(sf, rel, nodes, edges, declToId);
+      if (!sf) continue;
+      try {
+        this.walkFile(sf, rel, nodes, edges, declToId);
+      } catch (err) {
+        reportFileFailure(rel, "structure", err);
+      }
     }
 
     const checker = program.getTypeChecker();
@@ -54,9 +75,14 @@ export class TypeScriptAnalyzer implements Analyzer {
     // prefix it's mounted at (app.use("/api", router)), so route detection can
     // prepend it. Cross-file — the checker follows imported router symbols.
     const mountPrefixes = new Map<ts.Node, string>();
-    for (const abs of relByAbs.keys()) {
+    for (const [abs, rel] of relByAbs) {
       const sf = program.getSourceFile(abs);
-      if (sf) this.collectMounts(sf, checker, mountPrefixes);
+      if (!sf) continue;
+      try {
+        this.collectMounts(sf, checker, mountPrefixes);
+      } catch (err) {
+        reportFileFailure(rel, "mounts", err);
+      }
     }
 
     // The Variable nodes (ama-hft.12), so collectVarReferences can emit a
@@ -65,7 +91,8 @@ export class TypeScriptAnalyzer implements Analyzer {
 
     for (const [abs, rel] of relByAbs) {
       const sf = program.getSourceFile(abs);
-      if (sf) {
+      if (!sf) continue;
+      try {
         // Routes first: it registers inline-handler arrows in declToId, so the
         // following collectCalls attributes each handler's body to its node.
         this.collectRoutes(sf, rel, declToId, checker, nodes, edges, root, mountPrefixes);
@@ -82,6 +109,8 @@ export class TypeScriptAnalyzer implements Analyzer {
         this.collectHeritage(sf, declToId, checker, edges, root);
         this.collectTypeUsages(sf, undefined, declToId, checker, edges, root);
         this.collectImports(sf, fileId(rel), declToId, checker, edges, root);
+      } catch (err) {
+        reportFileFailure(rel, "resolution", err);
       }
     }
 
