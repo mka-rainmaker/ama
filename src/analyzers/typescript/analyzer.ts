@@ -104,7 +104,24 @@ export class TypeScriptAnalyzer implements Analyzer {
         // Events after callback-handler synthesis so inline `.on("ch", () => …)`
         // arrows are already handler nodes it can connect an emit to. (ama-hft.14)
         this.collectEvents(sf, declToId, checker, edges, root);
-        this.collectCalls(sf, undefined, declToId, checker, edges, root, resolution);
+        // A call at module top-level (an entry block, a module-init side effect)
+        // attributes to the File node rather than being dropped for lack of an
+        // enclosing symbol, so find_callers surfaces module-level wiring as
+        // Defines/Imports edges already do. The File is the fallback only at true
+        // file scope (atFileScope), NOT inside a transparent callback — else a
+        // top-level `describe(() => it(() => expect()))` would make the file
+        // "call" it/expect. (ama-53q)
+        this.collectCalls(
+          sf,
+          undefined,
+          declToId,
+          checker,
+          edges,
+          root,
+          resolution,
+          fileId(rel),
+          true,
+        );
         this.collectVarReferences(sf, undefined, declToId, variableIds, checker, edges, root);
         this.collectHeritage(sf, declToId, checker, edges, root);
         this.collectTypeUsages(sf, undefined, declToId, checker, edges, root);
@@ -285,7 +302,10 @@ export class TypeScriptAnalyzer implements Analyzer {
     }
   }
 
-  /** Walk a subtree, attributing each call to the nearest enclosing symbol. */
+  /** Walk a subtree, attributing each call to the nearest enclosing symbol — or,
+   *  for a call at true module scope, to the File node so module-level wiring is
+   *  queryable. `atFileScope` is true until the walk enters any function body.
+   *  (ama-53q) */
   private collectCalls(
     node: ts.Node,
     enclosingId: string | undefined,
@@ -294,6 +314,8 @@ export class TypeScriptAnalyzer implements Analyzer {
     edges: GraphEdge[],
     root: string,
     counts: ResolutionStats,
+    fileNodeId: string,
+    atFileScope: boolean,
   ): void {
     node.forEachChild((child) => {
       // Decorators are usage edges, not calls (collectTypeUsages emits a UsesType
@@ -301,18 +323,23 @@ export class TypeScriptAnalyzer implements Analyzer {
       // the decorated symbol calling `log`, and so calls inside decorator arguments
       // (decorator config, not the symbol's behaviour) aren't attributed to it.
       if (ts.isDecorator(child)) return;
+      // The call's owner: the nearest enclosing symbol, or the File when the call
+      // sits at true module scope. A call inside a transparent (unregistered)
+      // callback has neither — it's dropped, so a top-level `describe(() => it(…))`
+      // doesn't make the file appear to call `it`/`expect`. (ama-53q)
+      const from = enclosingId ?? (atFileScope ? fileNodeId : undefined);
       // A `new Foo()` is a construction call site, resolved the same way as a
       // plain call (to Foo's class node), so `find_callers` sees constructions.
-      if ((ts.isCallExpression(child) || ts.isNewExpression(child)) && enclosingId) {
-        // A call site that can be attributed (has an enclosing function) — count
-        // it, and whether it resolved, for the coverage metric. (ama-m8k.12)
+      if ((ts.isCallExpression(child) || ts.isNewExpression(child)) && from) {
+        // A call site that can be attributed (has an owner) — count it, and whether
+        // it resolved, for the coverage metric. (ama-m8k.12)
         counts.callsTotal++;
         const callee = resolveCallee(child, checker, declToId, root);
         if (callee) {
           counts.callsResolved++;
           // `new X()` is a construction — a distinct Instantiates edge, not Calls.
           const kind = ts.isNewExpression(child) ? "Instantiates" : "Calls";
-          edges.push({ from: enclosingId, to: callee, kind, at: locationOf(child) });
+          edges.push({ from, to: callee, kind, at: locationOf(child) });
         } else {
           // Unresolved — record what it called (by root) so coverage is explainable. (ama-qbn)
           const targetRoot = calleeRoot(child);
@@ -328,9 +355,9 @@ export class TypeScriptAnalyzer implements Analyzer {
             for (const arg of child.arguments) {
               if (!ts.isIdentifier(arg) && !ts.isPropertyAccessExpression(arg)) continue;
               const cb = resolveValueRef(arg, checker, declToId, root);
-              if (cb && cb !== enclosingId) {
+              if (cb && cb !== from) {
                 edges.push({
-                  from: enclosingId,
+                  from,
                   to: cb,
                   kind: "Calls",
                   provenance: "heuristic",
@@ -360,7 +387,22 @@ export class TypeScriptAnalyzer implements Analyzer {
           ts.isFunctionExpression(child))
           ? childId
           : enclosingId;
-      this.collectCalls(child, nextEnclosing, declToId, checker, edges, root, counts);
+      // Once the walk enters any function/arrow/accessor body, calls deeper in this
+      // subtree are no longer at module scope, so the File fallback stops applying —
+      // a call in an unregistered callback there is dropped, not attributed to the
+      // file. (ama-53q)
+      const childAtFileScope = atFileScope && !ts.isFunctionLike(child);
+      this.collectCalls(
+        child,
+        nextEnclosing,
+        declToId,
+        checker,
+        edges,
+        root,
+        counts,
+        fileNodeId,
+        childAtFileScope,
+      );
     });
   }
 
