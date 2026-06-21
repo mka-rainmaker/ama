@@ -451,6 +451,9 @@ export class QueryService {
   searchCode(query: string, opts: { limit?: number } = {}): GraphNode[] {
     const needle = query.toLowerCase();
     const terms = exploreTerms(query); // for the fallback when the literal phrase misses
+    // A blank query has nothing to find — `body.includes("")` is true for every body,
+    // so without this guard search_code returns arbitrary symbols. (ama-d36)
+    if (needle.trim() === "") return [];
     const limit = opts.limit ?? DEFAULT_SEARCH_LIMIT;
     const byFile = new Map<string, GraphNode[]>();
     for (const node of this.store.allNodes()) {

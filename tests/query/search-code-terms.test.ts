@@ -30,3 +30,23 @@ describe("search_code falls back to term-matching for multi-word queries (ama-ej
     expect(names).toContain("baselineHandler");
   });
 });
+
+/**
+ * An empty query's phrase ("") is a substring of every body, so without a guard
+ * search_code returns arbitrary symbols up to the limit — the sibling bug to
+ * ama-k3d (search_symbol). A blank query has nothing to find. (ama-d36)
+ */
+describe("search_code empty-query handling (ama-d36)", () => {
+  it("returns nothing for an empty or whitespace query", async () => {
+    const { store } = await createDefaultIndexer().index(root);
+    const q = new QueryService(store, root);
+    expect(q.searchCode("")).toEqual([]);
+    expect(q.searchCode("   ")).toEqual([]);
+  });
+
+  it("still matches a real term", async () => {
+    const { store } = await createDefaultIndexer().index(root);
+    const q = new QueryService(store, root);
+    expect(q.searchCode("baseline").map((n) => n.name)).toContain("baselineHandler");
+  });
+});
