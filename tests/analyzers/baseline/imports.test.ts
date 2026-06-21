@@ -2,6 +2,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { BaselineAnalyzer } from "../../../src/analyzers/baseline/analyzer.js";
+import { cSpec } from "../../../src/analyzers/baseline/c.js";
 import { csharpSpec } from "../../../src/analyzers/baseline/csharp.js";
 import { goSpec } from "../../../src/analyzers/baseline/go.js";
 import { javaSpec } from "../../../src/analyzers/baseline/java.js";
@@ -19,6 +20,7 @@ const javaRoot = path.resolve(here, "../../fixtures/java-imports");
 const goRoot = path.resolve(here, "../../fixtures/go-imports");
 const phpRoot = path.resolve(here, "../../fixtures/php-imports");
 const csharpRoot = path.resolve(here, "../../fixtures/csharp-imports");
+const cRoot = path.resolve(here, "../../fixtures/c-imports");
 
 /**
  * Baseline analyzers emit only File/symbol nodes today, so the import graph is
@@ -164,6 +166,16 @@ describe("baseline C# import edges (ama-7e3)", () => {
     // every .cs file there (here, User.cs). The "App" root segment is rebased away by
     // the ancestor + suffix scan.
     expect(imports.some((e) => e.to === fileId("App/Models/User.cs"))).toBe(true);
+    expect(imports.length).toBe(1);
+  });
+});
+
+describe("baseline C/C++ import edges (ama-ftg)", () => {
+  it("resolves a quoted #include relative to the file, skipping system headers", async () => {
+    const result = await new BaselineAnalyzer(cSpec).analyze(cRoot, ["main.c", "util.h"]);
+    const imports = result.edges.filter((e) => e.kind === "Imports" && e.from === fileId("main.c"));
+    // `#include "util.h"` → util.h; `#include <stdio.h>` is a system header → no edge.
+    expect(imports.some((e) => e.to === fileId("util.h"))).toBe(true);
     expect(imports.length).toBe(1);
   });
 });

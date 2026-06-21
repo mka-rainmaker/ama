@@ -1,4 +1,21 @@
+import * as path from "node:path";
+import type Parser from "web-tree-sitter";
 import type { LanguageSpec } from "./analyzer.js";
+
+/** Resolve a C/C++ `#include "foo.h"` to its header file. The quoted form is
+ *  relative to the including file's directory (and resolved on disk, like JS/Python
+ *  relative imports), so it's single-file-reindex-safe; the angle form `#include <…>`
+ *  is a system/include-path header (external) and resolves to nothing. (ama-ftg) */
+function includeImports(node: Parser.SyntaxNode, importerRel: string): string[][] | undefined {
+  if (node.type !== "preproc_include") return undefined;
+  const lit = node.namedChildren.find((c) => c.type === "string_literal");
+  if (!lit) return []; // `#include <…>` (system_lib_string) — external
+  const content = lit.namedChildren.find((c) => c.type === "string_content");
+  const includePath = (content?.text ?? lit.text.replace(/^"|"$/g, "")).trim();
+  if (!includePath) return [];
+  // join() normalizes `..`, so `#include "../inc/x.h"` from `src/a.c` → `inc/x.h`.
+  return [[path.posix.join(path.posix.dirname(importerRel), includePath)]];
+}
 
 /**
  * Baseline (syntactic) specs for C and C++. Both share a grammar family: structs,
@@ -19,6 +36,7 @@ export const cSpec: LanguageSpec = {
     enum_specifier: { kind: "Enum" },
     type_definition: { kind: "TypeAlias" },
   },
+  resolveImports: includeImports,
 };
 
 export const cppSpec: LanguageSpec = {
@@ -35,4 +53,5 @@ export const cppSpec: LanguageSpec = {
     class_specifier: { kind: "Class" },
     namespace_definition: { kind: "Module" },
   },
+  resolveImports: includeImports,
 };
