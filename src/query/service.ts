@@ -298,6 +298,10 @@ const EXPLORE_MATCH_LIMIT = 15;
 const EXPLORE_SCAN_LIMIT = 200;
 const EXPLORE_BLAST_LIMIT = 40;
 
+/** Default result cap for search_symbol/search_code — shared so the MCP layer can
+ *  request one extra and tell the agent when the result was truncated. (ama-b4q) */
+export const DEFAULT_SEARCH_LIMIT = 50;
+
 /** Question words and glue dropped before tokenizing an `explore` question, so its
  *  search terms are the content words (`baseline`, `import`), not `how`/`are`. */
 const EXPLORE_STOPWORDS = new Set([
@@ -382,7 +386,7 @@ export class QueryService {
    */
   searchSymbol(query: string, opts: SearchOptions = {}): GraphNode[] {
     const { text, path: pathFilter, kind: kindFilter, lang, name } = parseSearchQuery(query);
-    const limit = opts.limit ?? 50;
+    const limit = opts.limit ?? DEFAULT_SEARCH_LIMIT;
     const kind = kindFilter ?? opts.kind;
     // Free text searches the name index (relevance-ordered); a filters-only query
     // (e.g. `path:src/api kind:Class`) scans every node since there's no name term.
@@ -443,7 +447,7 @@ export class QueryService {
   searchCode(query: string, opts: { limit?: number } = {}): GraphNode[] {
     const needle = query.toLowerCase();
     const terms = exploreTerms(query); // for the fallback when the literal phrase misses
-    const limit = opts.limit ?? 50;
+    const limit = opts.limit ?? DEFAULT_SEARCH_LIMIT;
     const byFile = new Map<string, GraphNode[]>();
     for (const node of this.store.allNodes()) {
       if (!node.range || node.kind === "File") continue;

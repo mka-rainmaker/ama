@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { NODE_KINDS } from "../graph/index.js";
 import type { NodeKind } from "../graph/index.js";
+import { DEFAULT_SEARCH_LIMIT } from "../query/service.js";
 import { ensureBaselineWasmTier } from "../runtime/wasm-tier.js";
 import { AmaSession } from "./session.js";
 
@@ -28,6 +29,24 @@ function reply(session: AmaSession, value: unknown, hint?: string) {
   if (banner) content.unshift(text(banner));
   if (hint) content.push(text(hint));
   return { content };
+}
+
+/** Slice search results to `limit` and, when the search returned more than that
+ *  (the handler requests `limit + 1`), append an advisory so a capped list isn't
+ *  mistaken for the whole answer — search_symbol/search_code otherwise truncate
+ *  silently. Composes with an existing hint (e.g. low-confidence). (ama-b4q) */
+export function capped<T>(
+  results: T[],
+  limit: number,
+  baseHint?: string,
+): { shown: T[]; hint?: string } {
+  const truncated = results.length > limit;
+  const shown = truncated ? results.slice(0, limit) : results;
+  const truncHint = truncated
+    ? `⚠️ Ama: showing the first ${limit} matches — more exist. Refine with a more specific query or path:/kind:/lang:/name: filters, or raise \`limit\`.`
+    : undefined;
+  const hint = [baseHint, truncHint].filter(Boolean).join("\n") || undefined;
+  return { shown, hint };
 }
 
 /**
@@ -179,14 +198,16 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
       "search_symbol",
       async ({ query, limit, kind }: { query: string; limit?: number; kind?: NodeKind }) => {
         await session.catchUpIfNeeded();
+        const max = limit ?? DEFAULT_SEARCH_LIMIT;
         const { results, lowConfidence } = session.searchSymbolWithConfidence(query, {
-          limit,
+          limit: max + 1,
           kind,
         });
-        const hint = lowConfidence
+        const lowHint = lowConfidence
           ? `⚠️ Ama: no exact or name-prefix match for "${query}" — these are loose substring hits, so they may not be what you meant. Double-check the name or refine the query.`
           : undefined;
-        return reply(session, results, hint);
+        const { shown, hint } = capped(results, max, lowHint);
+        return reply(session, shown, hint);
       },
     ),
   );
@@ -532,12 +553,12 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         limit: z.number().int().positive().optional().describe("Max results."),
       },
     },
-    tap(
-      "search_code",
-      queryTool(session, ({ query, limit }: { query: string; limit?: number }) =>
-        session.searchCode(query, { limit }),
-      ),
-    ),
+    tap("search_code", async ({ query, limit }: { query: string; limit?: number }) => {
+      await session.catchUpIfNeeded();
+      const max = limit ?? DEFAULT_SEARCH_LIMIT;
+      const { shown, hint } = capped(session.searchCode(query, { limit: max + 1 }), max);
+      return reply(session, shown, hint);
+    }),
   );
 
   server.registerTool(
