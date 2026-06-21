@@ -406,14 +406,15 @@ export class TypeScriptAnalyzer implements Analyzer {
       if (ts.isIdentifier(child) && enclosingId) {
         const parent = child.parent;
         if (ts.isPropertyAccessExpression(parent) && parent.name === child) {
-          // The member side of `X.prop`. A method *call* (`this.m()`) is already a
-          // Calls edge, but a non-call read of `this.<prop>` — a field, a parameter
-          // property, or a method used as a value — is a References to that member,
-          // so find_referrers on a property shows where its class uses it. (ama-qo3)
-          if (
-            parent.expression.kind === ts.SyntaxKind.ThisKeyword &&
-            !(ts.isCallExpression(parent.parent) && parent.parent.expression === parent)
-          ) {
+          // The member side of `X.prop`. A method *call* (`X.m()`) is already a
+          // Calls edge, but a non-call read — a field, a parameter property, or a
+          // method used as a value — is a References to that member, so
+          // find_referrers on a property shows where it's used. Covers both
+          // `this.<prop>` (ama-qo3) and cross-instance `obj.<prop>` reads (ama-emb):
+          // resolveValueRef → nodeIdForDecl already filters targets to in-project
+          // top-level + class/interface members, so external reads (`console.log`)
+          // and locals add no edge — only the `X.m()` call form is excluded here.
+          if (!(ts.isCallExpression(parent.parent) && parent.parent.expression === parent)) {
             const to = resolveValueRef(child, checker, declToId, root);
             if (to && to !== enclosingId) {
               edges.push({ from: enclosingId, to, kind: "References" });
