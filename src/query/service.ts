@@ -80,6 +80,14 @@ export interface NodeView {
   referrers: GraphNode[];
   /** Files that import (or re-export) it. */
   dependents: GraphNode[];
+  /** Inheritance, so the overview is complete for OOP symbols (each empty when N/A):
+   *  for a method, the supertype methods it overrides and the subtype methods that
+   *  override it; for a class, the interfaces it implements; for an interface, the
+   *  classes that implement it. (ama-vtp) */
+  overrides: GraphNode[];
+  overriddenBy: GraphNode[];
+  interfaces: GraphNode[];
+  implementations: GraphNode[];
   /** Other symbols that matched the same ref but weren't chosen as the primary —
    *  so an ambiguous ref (e.g. "analyze" across an interface and its implementations)
    *  surfaces its alternatives instead of silently hiding them. Empty when the ref
@@ -744,6 +752,10 @@ export class QueryService {
       callees: this.findCallees(id).map((c) => c.symbol),
       referrers: this.findReferrers(id).map((c) => c.symbol),
       dependents: this.findImporters(id),
+      overrides: this.findOverrides(id).map((c) => c.symbol),
+      overriddenBy: this.findOverriddenBy(id).map((c) => c.symbol),
+      interfaces: this.findInterfaces(id),
+      implementations: this.findImplementations(id),
       alternatives: matches.slice(1),
     };
   }
