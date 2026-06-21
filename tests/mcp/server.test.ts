@@ -9,6 +9,8 @@ import { createServer } from "../../src/mcp/server.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../fixtures/mini-repo");
+const projA = path.resolve(here, "../fixtures/xproj-a");
+const projB = path.resolve(here, "../fixtures/xproj-b");
 
 async function connectClient(): Promise<Client> {
   const server = createServer();
@@ -537,5 +539,27 @@ describe("MCP UsesType tools", () => {
     );
     const names = types.map((n: { name: string }) => n.name).sort();
     expect(names).toEqual(["Gadget", "Widget"]);
+  });
+
+  it("threads projectPath through the query tools, routing by project (ama-74r)", async () => {
+    const client = await connectClient();
+    await client.callTool({ name: "index_repository", arguments: { path: projA } });
+    await client.callTool({ name: "index_repository", arguments: { path: projB } }); // primary
+    // impact_analysis on the non-primary projA, named by projectPath: alpha's blast
+    // radius is its caller useAlpha (both live in projA, not the projB primary).
+    const impact = JSON.parse(
+      firstText(
+        await client.callTool({
+          name: "impact_analysis",
+          arguments: { symbol: "alpha", projectPath: projA },
+        }),
+      ),
+    );
+    expect(impact.map((n: { name: string }) => n.name)).toContain("useAlpha");
+    // Without projectPath the primary (projB) is queried, where alpha doesn't exist.
+    const primary = JSON.parse(
+      firstText(await client.callTool({ name: "impact_analysis", arguments: { symbol: "alpha" } })),
+    );
+    expect(primary).toEqual([]);
   });
 });

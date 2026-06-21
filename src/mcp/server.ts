@@ -273,11 +273,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
       description: "The handler symbols a framework route maps to.",
       inputSchema: {
         route: z.string().describe('Route id or name, e.g. "GET /users".'),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_handlers",
-      queryTool(session, ({ route }: { route: string }) => session.findHandlers(route)),
+      queryTool(session, ({ route, projectPath }: { route: string; projectPath?: string }) =>
+        session.findHandlers(route, projectPath),
+      ),
     ),
   );
 
@@ -287,11 +290,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
       description: "Every framework route that maps to a symbol (handler).",
       inputSchema: {
         symbol: z.string().describe("Handler symbol id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_routes",
-      queryTool(session, ({ symbol }: { symbol: string }) => session.findRoutes(symbol)),
+      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+        session.findRoutes(symbol, projectPath),
+      ),
     ),
   );
 
@@ -303,11 +309,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         "interface/base method of the same name).",
       inputSchema: {
         symbol: z.string().describe("Method id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_overrides",
-      queryTool(session, ({ symbol }: { symbol: string }) => session.findOverrides(symbol)),
+      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+        session.findOverrides(symbol, projectPath),
+      ),
     ),
   );
 
@@ -319,11 +328,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         "interface/base method.",
       inputSchema: {
         symbol: z.string().describe("Method id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_overridden_by",
-      queryTool(session, ({ symbol }: { symbol: string }) => session.findOverriddenBy(symbol)),
+      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+        session.findOverriddenBy(symbol, projectPath),
+      ),
     ),
   );
 
@@ -337,11 +349,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         "won't see them).",
       inputSchema: {
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_referrers",
-      queryTool(session, ({ symbol }: { symbol: string }) => session.findReferrers(symbol)),
+      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+        session.findReferrers(symbol, projectPath),
+      ),
     ),
   );
 
@@ -351,11 +366,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
       description: "Every class that implements an interface.",
       inputSchema: {
         symbol: z.string().describe("Interface id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_implementations",
-      queryTool(session, ({ symbol }: { symbol: string }) => session.findImplementations(symbol)),
+      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+        session.findImplementations(symbol, projectPath),
+      ),
     ),
   );
 
@@ -365,11 +383,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
       description: "The interfaces a class implements.",
       inputSchema: {
         symbol: z.string().describe("Class id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_interfaces",
-      queryTool(session, ({ symbol }: { symbol: string }) => session.findInterfaces(symbol)),
+      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+        session.findInterfaces(symbol, projectPath),
+      ),
     ),
   );
 
@@ -413,11 +434,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
       description: "Every symbol that uses a type in a parameter, return, or property.",
       inputSchema: {
         type: z.string().describe("Type id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_type_users",
-      queryTool(session, ({ type }: { type: string }) => session.findTypeUsers(type)),
+      queryTool(session, ({ type, projectPath }: { type: string; projectPath?: string }) =>
+        session.findTypeUsers(type, projectPath),
+      ),
     ),
   );
 
@@ -427,11 +451,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
       description: "The named types a symbol uses in its parameters, return, or properties.",
       inputSchema: {
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_types_used",
-      queryTool(session, ({ symbol }: { symbol: string }) => session.findTypesUsed(symbol)),
+      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+        session.findTypesUsed(symbol, projectPath),
+      ),
     ),
   );
 
@@ -442,11 +469,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         "The named type(s) a function or method returns — the return half of find_types_used.",
       inputSchema: {
         symbol: z.string().describe("Function/method id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_returns",
-      queryTool(session, ({ symbol }: { symbol: string }) => session.findReturns(symbol)),
+      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+        session.findReturns(symbol, projectPath),
+      ),
     ),
   );
 
@@ -520,12 +550,19 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
           .positive()
           .optional()
           .describe("Max levels of callers to traverse (default: unbounded)."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "impact_analysis",
-      queryTool(session, ({ symbol, maxDepth }: { symbol: string; maxDepth?: number }) =>
-        session.impactAnalysis(symbol, maxDepth),
+      queryTool(
+        session,
+        ({
+          symbol,
+          maxDepth,
+          projectPath,
+        }: { symbol: string; maxDepth?: number; projectPath?: string }) =>
+          session.impactAnalysis(symbol, maxDepth, projectPath),
       ),
     ),
   );
@@ -535,11 +572,13 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     {
       description:
         "A census of the index: how many nodes of each kind and edges of each kind it holds.",
-      inputSchema: {},
+      inputSchema: { projectPath: projectPathSchema },
     },
     tap(
       "get_graph_schema",
-      queryTool(session, () => session.getGraphSchema()),
+      queryTool(session, ({ projectPath }: { projectPath?: string }) =>
+        session.getGraphSchema(projectPath),
+      ),
     ),
   );
 
@@ -550,11 +589,13 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         "File-level import cycles: groups of two or more files that (transitively) import " +
         "each other. Each group is a strongly-connected component — high-signal for refactoring " +
         "and untangling module graphs. Empty when the import graph is acyclic.",
-      inputSchema: {},
+      inputSchema: { projectPath: projectPathSchema },
     },
     tap(
       "circular_imports",
-      queryTool(session, () => session.circularImports()),
+      queryTool(session, ({ projectPath }: { projectPath?: string }) =>
+        session.circularImports(projectPath),
+      ),
     ),
   );
 
@@ -571,12 +612,19 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
           .boolean()
           .optional()
           .describe("Return only the affected test files (test-impact mode)."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "affected",
-      queryTool(session, ({ files, testsOnly }: { files: string[]; testsOnly?: boolean }) =>
-        session.affected(files, { testsOnly }),
+      queryTool(
+        session,
+        ({
+          files,
+          testsOnly,
+          projectPath,
+        }: { files: string[]; testsOnly?: boolean; projectPath?: string }) =>
+          session.affected(files, { testsOnly }, projectPath),
       ),
     ),
   );
@@ -589,18 +637,30 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
       inputSchema: {
         query: z.string().describe("Text to find inside symbol source (case-insensitive)."),
         limit: z.number().int().positive().optional().describe("Max results."),
+        projectPath: projectPathSchema,
       },
     },
-    tap("search_code", async ({ query, limit }: { query: string; limit?: number }) => {
-      await session.catchUpIfNeeded();
-      const max = limit ?? DEFAULT_SEARCH_LIMIT;
-      const { results, viaTerms } = session.searchCodeWithConfidence(query, { limit: max + 1 });
-      const termHint = viaTerms
-        ? `⚠️ Ama: no symbol body contains the exact phrase "${query}" — these match its words separately and may be unrelated. Search a shorter exact phrase to narrow.`
-        : undefined;
-      const { shown, hint } = capped(results, max, termHint);
-      return reply(session, shown, hint);
-    }),
+    tap(
+      "search_code",
+      async ({
+        query,
+        limit,
+        projectPath,
+      }: { query: string; limit?: number; projectPath?: string }) => {
+        await session.catchUpIfNeeded();
+        const max = limit ?? DEFAULT_SEARCH_LIMIT;
+        const { results, viaTerms } = session.searchCodeWithConfidence(
+          query,
+          { limit: max + 1 },
+          projectPath,
+        );
+        const termHint = viaTerms
+          ? `⚠️ Ama: no symbol body contains the exact phrase "${query}" — these match its words separately and may be unrelated. Search a shorter exact phrase to narrow.`
+          : undefined;
+        const { shown, hint } = capped(results, max, termHint);
+        return reply(session, shown, hint);
+      },
+    ),
   );
 
   server.registerTool(
@@ -618,12 +678,19 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
           .positive()
           .optional()
           .describe("How many top matches to deep-dive (default 15)."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "explore",
-      queryTool(session, ({ question, limit }: { question: string; limit?: number }) =>
-        session.explore(question, { limit }),
+      queryTool(
+        session,
+        ({
+          question,
+          limit,
+          projectPath,
+        }: { question: string; limit?: number; projectPath?: string }) =>
+          session.explore(question, { limit }, projectPath),
       ),
     ),
   );
