@@ -5,6 +5,7 @@ import { BaselineAnalyzer } from "../../../src/analyzers/baseline/analyzer.js";
 import { goSpec } from "../../../src/analyzers/baseline/go.js";
 import { javaSpec } from "../../../src/analyzers/baseline/java.js";
 import { javascriptSpec } from "../../../src/analyzers/baseline/javascript.js";
+import { phpSpec } from "../../../src/analyzers/baseline/php.js";
 import { pythonSpec } from "../../../src/analyzers/baseline/python.js";
 import { rustSpec } from "../../../src/analyzers/baseline/rust.js";
 import { fileId } from "../../../src/graph/index.js";
@@ -15,6 +16,7 @@ const jsRoot = path.resolve(here, "../../fixtures/js-imports");
 const rsRoot = path.resolve(here, "../../fixtures/rs-imports");
 const javaRoot = path.resolve(here, "../../fixtures/java-imports");
 const goRoot = path.resolve(here, "../../fixtures/go-imports");
+const phpRoot = path.resolve(here, "../../fixtures/php-imports");
 
 /**
  * Baseline analyzers emit only File/symbol nodes today, so the import graph is
@@ -128,5 +130,21 @@ describe("baseline Go import edges (ama-9yu)", () => {
     expect(imports.some((e) => e.to === fileId("internal/store/helper.go"))).toBe(true);
     // `import "fmt"` is stdlib — doesn't match the module, so no edge
     expect(imports.length).toBe(2);
+  });
+});
+
+describe("baseline PHP import edges (ama-x96)", () => {
+  it("resolves a PSR-4 `use` to its class file via composer.json", async () => {
+    const result = await new BaselineAnalyzer(phpSpec).analyze(phpRoot, [
+      "src/Main.php",
+      "src/Models/User.php",
+    ]);
+    const imports = result.edges.filter(
+      (e) => e.kind === "Imports" && e.from === fileId("src/Main.php"),
+    );
+    // `use App\Models\User;` — composer maps "App\\" → "src/", so the FQN resolves
+    // to src/Models/User.php (the longest matching PSR-4 prefix is stripped).
+    expect(imports.some((e) => e.to === fileId("src/Models/User.php"))).toBe(true);
+    expect(imports.length).toBe(1);
   });
 });
