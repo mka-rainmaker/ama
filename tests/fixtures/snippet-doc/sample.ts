@@ -1,0 +1,8 @@
+/** Doc comment for foo. */
+export function foo() {
+  return 1;
+}
+
+export function bar() {
+  return 2;
+}

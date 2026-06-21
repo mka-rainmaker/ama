@@ -1072,11 +1072,22 @@ export class QueryService {
       return undefined; // the file vanished since indexing — no snippet, but no throw
     }
     const lines = source.split("\n");
-    const text = lines.slice(node.range.startLine - 1, node.range.endLine).join("\n");
+    // Extend backward over a contiguous leading comment block (a JSDoc `/** … */` or
+    // `//` lines immediately above the declaration, no blank line between) so the
+    // snippet carries the symbol's documentation — usually its most useful part. (ama-43e)
+    let startLine = node.range.startLine;
+    for (let i = startLine - 2; i >= 0; i--) {
+      const t = lines[i]?.trim() ?? "";
+      if (!(t.startsWith("//") || t.startsWith("/*") || t.startsWith("*") || t.endsWith("*/"))) {
+        break;
+      }
+      startLine = i + 1;
+    }
+    const text = lines.slice(startLine - 1, node.range.endLine).join("\n");
     return {
       id: node.id,
       file: node.file,
-      startLine: node.range.startLine,
+      startLine,
       endLine: node.range.endLine,
       text,
     };
