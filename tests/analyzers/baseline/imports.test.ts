@@ -7,6 +7,7 @@ import { csharpSpec } from "../../../src/analyzers/baseline/csharp.js";
 import { goSpec } from "../../../src/analyzers/baseline/go.js";
 import { javaSpec } from "../../../src/analyzers/baseline/java.js";
 import { javascriptSpec } from "../../../src/analyzers/baseline/javascript.js";
+import { kotlinSpec } from "../../../src/analyzers/baseline/kotlin.js";
 import { phpSpec } from "../../../src/analyzers/baseline/php.js";
 import { pythonSpec } from "../../../src/analyzers/baseline/python.js";
 import { rustSpec } from "../../../src/analyzers/baseline/rust.js";
@@ -21,6 +22,7 @@ const goRoot = path.resolve(here, "../../fixtures/go-imports");
 const phpRoot = path.resolve(here, "../../fixtures/php-imports");
 const csharpRoot = path.resolve(here, "../../fixtures/csharp-imports");
 const cRoot = path.resolve(here, "../../fixtures/c-imports");
+const kotlinRoot = path.resolve(here, "../../fixtures/kotlin-imports");
 
 /**
  * Baseline analyzers emit only File/symbol nodes today, so the import graph is
@@ -177,5 +179,25 @@ describe("baseline C/C++ import edges (ama-ftg)", () => {
     // `#include "util.h"` → util.h; `#include <stdio.h>` is a system header → no edge.
     expect(imports.some((e) => e.to === fileId("util.h"))).toBe(true);
     expect(imports.length).toBe(1);
+  });
+});
+
+describe("baseline Kotlin import edges (ama-e23)", () => {
+  it("links an import to every .kt file in the package directory (package = dir)", async () => {
+    const k = (f: string) => `src/main/kotlin/${f}`;
+    const result = await new BaselineAnalyzer(kotlinSpec).analyze(kotlinRoot, [
+      k("com/app/Main.kt"),
+      k("com/example/Foo.kt"),
+      k("com/example/Bar.kt"),
+    ]);
+    const imports = result.edges.filter(
+      (e) => e.kind === "Imports" && e.from === fileId(k("com/app/Main.kt")),
+    );
+    // `import com.example.Foo` → the package dir com/example (under the source root),
+    // so every .kt file there — Foo.kt and its sibling Bar.kt — since the class isn't
+    // tied to a filename. The "Foo" symbol segment is dropped to find the package.
+    expect(imports.some((e) => e.to === fileId(k("com/example/Foo.kt")))).toBe(true);
+    expect(imports.some((e) => e.to === fileId(k("com/example/Bar.kt")))).toBe(true);
+    expect(imports.length).toBe(2);
   });
 });
