@@ -388,6 +388,10 @@ export class QueryService {
     const { text, path: pathFilter, kind: kindFilter, lang, name } = parseSearchQuery(query);
     const limit = opts.limit ?? DEFAULT_SEARCH_LIMIT;
     const kind = kindFilter ?? opts.kind;
+    // A completely empty query (no text and no filters) has nothing to match — don't
+    // fall through to allNodes() and hand back arbitrary symbols. A *filters-only*
+    // query (e.g. `kind:Class`) is still valid: it has a filter. (ama-k3d)
+    if (!text && !pathFilter && !kind && !lang && !name) return [];
     // Free text searches the name index (relevance-ordered); a filters-only query
     // (e.g. `path:src/api kind:Class`) scans every node since there's no name term.
     const candidates = text
