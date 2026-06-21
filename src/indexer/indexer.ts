@@ -102,8 +102,11 @@ export function assertSafeRoot(root: string): void {
 export class Indexer {
   constructor(
     private readonly registry: AnalyzerRegistry,
-    /** How to create the backing store — swap this to persist to SQLite. */
-    private readonly createStore: () => Store = () => new InMemoryStore(),
+    /** How to create the backing store for a (resolved) project root — swap this to
+     *  persist to SQLite. The root is passed so a multi-project session can give each
+     *  project an independent store; a factory that ignores it and returns one shared
+     *  store would alias every project onto the last index. (ama-mnj) */
+    private readonly createStore: (root: string) => Store = () => new InMemoryStore(),
   ) {}
 
   /** The (language, tier) that owns a file, or undefined if no analyzer claims it.
@@ -127,7 +130,7 @@ export class Indexer {
     // persistent store reused across indexes — that corrupts the live index.
     // Walking first keeps a failed re-index a no-op.
     const files = discoverFiles(root);
-    const store = this.createStore();
+    const store = this.createStore(root);
     store.clear(); // a persistent store may hold a previous index; rebuild clean
 
     const byAnalyzer = new Map<Analyzer, string[]>();
@@ -210,7 +213,7 @@ export class Indexer {
    * an incompatible schema), so the caller falls back to a full {@link index}.
    */
   async open(root: string): Promise<{ store: Store; stats: IndexStats } | undefined> {
-    const store = this.createStore();
+    const store = this.createStore(root);
     const coverageRaw = store.getMeta("ama:coverage");
     const usable =
       store.getMeta("ama:schema") === String(SCHEMA_VERSION) &&
@@ -308,7 +311,7 @@ export class Indexer {
  * An indexer wired with the analyzers Ama ships today. Pass a `createStore`
  * factory to persist into SQLite instead of the default in-memory store.
  */
-export function createDefaultIndexer(createStore?: () => Store): Indexer {
+export function createDefaultIndexer(createStore?: (root: string) => Store): Indexer {
   const registry = new AnalyzerRegistry();
   registry.register(new TypeScriptAnalyzer());
   registry.register(new BaselineAnalyzer(pythonSpec));

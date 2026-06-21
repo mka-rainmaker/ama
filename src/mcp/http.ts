@@ -7,7 +7,9 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createDefaultIndexer } from "../indexer/indexer.js";
 import { ensureBaselineWasmTier } from "../runtime/wasm-tier.js";
+import { InMemoryStore } from "../store/memory.js";
 import { SqliteStore } from "../store/sqlite.js";
+import type { Store } from "../store/types.js";
 import { createServer as createMcpServer } from "./server.js";
 import { AmaSession } from "./session.js";
 
@@ -116,11 +118,23 @@ export async function main(): Promise<void> {
   // AMA_ROOT too, reopen that project's index at startup so a restart skips the
   // full re-index and connect-time catch-up reconciles any drift.
   const dbPath = process.env.AMA_DB;
-  if (dbPath) fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
-  const session = dbPath
-    ? new AmaSession(createDefaultIndexer(() => new SqliteStore(dbPath)))
-    : new AmaSession();
   const root = process.env.AMA_ROOT;
+  // Persist exactly one project to AMA_DB — the configured AMA_ROOT, or the first one
+  // indexed — and give every *other* project its own in-memory store, so a multi-project
+  // session never aliases several projects onto one shared db. (ama-mnj)
+  let createStore: ((projectRoot: string) => Store) | undefined;
+  if (dbPath) {
+    fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
+    const db = dbPath;
+    let persisted = root ? path.resolve(root) : undefined;
+    createStore = (projectRoot) => {
+      persisted ??= projectRoot; // the first project indexed claims the persistent db
+      return projectRoot === persisted ? new SqliteStore(db) : new InMemoryStore();
+    };
+  }
+  const session = createStore
+    ? new AmaSession(createDefaultIndexer(createStore))
+    : new AmaSession();
   if (dbPath && root) {
     const stats = await session.open(root);
     console.error(
