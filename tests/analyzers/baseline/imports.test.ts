@@ -2,6 +2,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { BaselineAnalyzer } from "../../../src/analyzers/baseline/analyzer.js";
+import { csharpSpec } from "../../../src/analyzers/baseline/csharp.js";
 import { goSpec } from "../../../src/analyzers/baseline/go.js";
 import { javaSpec } from "../../../src/analyzers/baseline/java.js";
 import { javascriptSpec } from "../../../src/analyzers/baseline/javascript.js";
@@ -17,6 +18,7 @@ const rsRoot = path.resolve(here, "../../fixtures/rs-imports");
 const javaRoot = path.resolve(here, "../../fixtures/java-imports");
 const goRoot = path.resolve(here, "../../fixtures/go-imports");
 const phpRoot = path.resolve(here, "../../fixtures/php-imports");
+const csharpRoot = path.resolve(here, "../../fixtures/csharp-imports");
 
 /**
  * Baseline analyzers emit only File/symbol nodes today, so the import graph is
@@ -145,6 +147,23 @@ describe("baseline PHP import edges (ama-x96)", () => {
     // `use App\Models\User;` — composer maps "App\\" → "src/", so the FQN resolves
     // to src/Models/User.php (the longest matching PSR-4 prefix is stripped).
     expect(imports.some((e) => e.to === fileId("src/Models/User.php"))).toBe(true);
+    expect(imports.length).toBe(1);
+  });
+});
+
+describe("baseline C# import edges (ama-7e3)", () => {
+  it("resolves a `using` to the namespace's source files (package = directory)", async () => {
+    const result = await new BaselineAnalyzer(csharpSpec).analyze(csharpRoot, [
+      "App/Program.cs",
+      "App/Models/User.cs",
+    ]);
+    const imports = result.edges.filter(
+      (e) => e.kind === "Imports" && e.from === fileId("App/Program.cs"),
+    );
+    // `using App.Models;` — the namespace maps to App/Models/, so the using links to
+    // every .cs file there (here, User.cs). The "App" root segment is rebased away by
+    // the ancestor + suffix scan.
+    expect(imports.some((e) => e.to === fileId("App/Models/User.cs"))).toBe(true);
     expect(imports.length).toBe(1);
   });
 });
