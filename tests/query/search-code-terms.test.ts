@@ -50,3 +50,25 @@ describe("search_code empty-query handling (ama-d36)", () => {
     expect(q.searchCode("baseline").map((n) => n.name)).toContain("baselineHandler");
   });
 });
+
+/**
+ * The phrase→term fallback must announce itself: a multi-word query that misses the
+ * literal phrase returns word-matches that can be unrelated, so the MCP layer needs to
+ * know it fell back (to warn the agent). (ama-dve)
+ */
+describe("search_code reports phrase-vs-term confidence (ama-dve)", () => {
+  it("flags viaTerms when the literal phrase is absent", async () => {
+    const { store } = await createDefaultIndexer().index(root);
+    const q = new QueryService(store, root);
+    // "baseline" and "import" both appear in baselineHandler, but never contiguously.
+    expect(q.searchCodeWithConfidence("baseline import").viaTerms).toBe(true);
+  });
+
+  it("does not flag a literal contiguous-phrase match", async () => {
+    const { store } = await createDefaultIndexer().index(root);
+    const q = new QueryService(store, root);
+    const conf = q.searchCodeWithConfidence("resolves an import");
+    expect(conf.results.map((n) => n.name)).toContain("baselineHandler");
+    expect(conf.viaTerms).toBe(false);
+  });
+});

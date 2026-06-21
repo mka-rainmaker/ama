@@ -556,7 +556,11 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     tap("search_code", async ({ query, limit }: { query: string; limit?: number }) => {
       await session.catchUpIfNeeded();
       const max = limit ?? DEFAULT_SEARCH_LIMIT;
-      const { shown, hint } = capped(session.searchCode(query, { limit: max + 1 }), max);
+      const { results, viaTerms } = session.searchCodeWithConfidence(query, { limit: max + 1 });
+      const termHint = viaTerms
+        ? `⚠️ Ama: no symbol body contains the exact phrase "${query}" — these match its words separately and may be unrelated. Search a shorter exact phrase to narrow.`
+        : undefined;
+      const { shown, hint } = capped(results, max, termHint);
       return reply(session, shown, hint);
     }),
   );

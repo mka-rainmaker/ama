@@ -245,6 +245,13 @@ export class AmaSession {
     return this.requireQuery().searchCode(query, opts);
   }
 
+  searchCodeWithConfidence(
+    query: string,
+    opts?: { limit?: number },
+  ): { results: GraphNode[]; viaTerms: boolean } {
+    return this.requireQuery().searchCodeWithConfidence(query, opts);
+  }
+
   findCallers(ref: string): EdgeNeighbor[] {
     return this.requireQuery().findCallers(ref);
   }

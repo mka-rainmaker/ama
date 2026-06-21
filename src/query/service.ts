@@ -463,11 +463,28 @@ export class QueryService {
    * index (the SQLite store can specialize it later).
    */
   searchCode(query: string, opts: { limit?: number } = {}): GraphNode[] {
+    return this.scanCode(query, opts).results;
+  }
+
+  /** search_code that also reports whether it fell back from an exact-phrase match to
+   *  term-matching (the literal phrase wasn't found) — so the MCP layer can warn the
+   *  agent that the hits match the query's words separately, not the phrase. (ama-dve) */
+  searchCodeWithConfidence(
+    query: string,
+    opts: { limit?: number } = {},
+  ): { results: GraphNode[]; viaTerms: boolean } {
+    return this.scanCode(query, opts);
+  }
+
+  private scanCode(
+    query: string,
+    opts: { limit?: number },
+  ): { results: GraphNode[]; viaTerms: boolean } {
     const needle = query.toLowerCase();
     const terms = exploreTerms(query); // for the fallback when the literal phrase misses
     // A blank query has nothing to find — `body.includes("")` is true for every body,
     // so without this guard search_code returns arbitrary symbols. (ama-d36)
-    if (needle.trim() === "") return [];
+    if (needle.trim() === "") return { results: [], viaTerms: false };
     const limit = opts.limit ?? DEFAULT_SEARCH_LIMIT;
     const byFile = new Map<string, GraphNode[]>();
     for (const node of this.store.allNodes()) {
@@ -493,7 +510,7 @@ export class QueryService {
           .toLowerCase();
         if (body.includes(needle)) {
           phrase.push(node);
-          if (phrase.length >= limit) return phrase;
+          if (phrase.length >= limit) return { results: phrase, viaTerms: false };
         } else if (terms.length >= 2) {
           const hits = terms.reduce((n, t) => (body.includes(t) ? n + 1 : n), 0);
           if (hits > 0) byTerms.push({ node, hits });
@@ -503,11 +520,12 @@ export class QueryService {
     // Prefer a literal contiguous-phrase match (grep semantics, no regression). Only
     // when there's none fall back to the symbols whose bodies mention the most query
     // terms, so a conceptual multi-word query isn't a dead end. (ama-ejh)
-    if (phrase.length > 0) return phrase;
-    return byTerms
+    if (phrase.length > 0) return { results: phrase, viaTerms: false };
+    const results = byTerms
       .sort((a, b) => b.hits - a.hits || a.node.qualifiedName.localeCompare(b.node.qualifiedName))
       .slice(0, limit)
       .map((m) => m.node);
+    return { results, viaTerms: results.length > 0 };
   }
 
   /** Symbols that call or construct the referenced symbol, each labelled by the
