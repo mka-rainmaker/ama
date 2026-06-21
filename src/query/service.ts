@@ -698,14 +698,19 @@ export class QueryService {
   node(ref: string): NodeView | undefined {
     const primary = this.resolve(ref)[0];
     if (!primary) return undefined;
+    // Resolve once, then describe *that* node by its id. Querying relationships with
+    // the raw `ref` re-resolves it, and an ambiguous ref (e.g. "analyze") aggregates
+    // callers/callees across every same-named symbol — so the view showed one node
+    // (the interface) with another's callees (the implementations'). (ama-d5o)
+    const id = primary.id;
     return {
       node: primary,
-      snippet: this.getCodeSnippet(ref),
-      members: this.definedBy(primary.id),
-      callers: this.findCallers(ref).map((c) => c.symbol),
-      callees: this.findCallees(ref).map((c) => c.symbol),
-      referrers: this.findReferrers(ref).map((c) => c.symbol),
-      dependents: this.findImporters(ref),
+      snippet: this.getCodeSnippet(id),
+      members: this.definedBy(id),
+      callers: this.findCallers(id).map((c) => c.symbol),
+      callees: this.findCallees(id).map((c) => c.symbol),
+      referrers: this.findReferrers(id).map((c) => c.symbol),
+      dependents: this.findImporters(id),
     };
   }
 
