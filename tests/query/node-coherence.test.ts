@@ -48,4 +48,21 @@ describe("node() coherence for an ambiguous ref (ama-d5o)", () => {
       q.findCallees(view.node.id).map((c) => c.symbol.name),
     );
   });
+
+  it("surfaces the other same-named symbols as alternatives (ama-ceh)", () => {
+    const q = svc();
+    const view = q.node("foo");
+    if (!view) throw new Error("expected a node");
+    // Two `foo` methods exist; one is primary, the other is an alternative.
+    expect(view.alternatives.length).toBe(1);
+    const ids = [view.node.id, ...view.alternatives.map((a) => a.id)].sort();
+    expect(ids).toEqual(["a.ts#I.foo", "b.ts#C.foo"]);
+  });
+
+  it("has no alternatives for a unique ref", () => {
+    const q = svc();
+    const view = q.node("helperA");
+    if (!view) throw new Error("expected a node");
+    expect(view.alternatives).toEqual([]);
+  });
 });

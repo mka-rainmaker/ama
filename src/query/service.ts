@@ -80,6 +80,11 @@ export interface NodeView {
   referrers: GraphNode[];
   /** Files that import (or re-export) it. */
   dependents: GraphNode[];
+  /** Other symbols that matched the same ref but weren't chosen as the primary —
+   *  so an ambiguous ref (e.g. "analyze" across an interface and its implementations)
+   *  surfaces its alternatives instead of silently hiding them. Empty when the ref
+   *  was unique. Pick one by its id/qualifiedName to inspect it directly. (ama-ceh) */
+  alternatives: GraphNode[];
 }
 
 /** A file's structure in one answer: the symbols it defines and what depends on
@@ -696,7 +701,8 @@ export class QueryService {
    * Undefined when the ref resolves to nothing.
    */
   node(ref: string): NodeView | undefined {
-    const primary = this.resolve(ref)[0];
+    const matches = this.resolve(ref);
+    const primary = matches[0];
     if (!primary) return undefined;
     // Resolve once, then describe *that* node by its id. Querying relationships with
     // the raw `ref` re-resolves it, and an ambiguous ref (e.g. "analyze") aggregates
@@ -711,6 +717,7 @@ export class QueryService {
       callees: this.findCallees(id).map((c) => c.symbol),
       referrers: this.findReferrers(id).map((c) => c.symbol),
       dependents: this.findImporters(id),
+      alternatives: matches.slice(1),
     };
   }
 
