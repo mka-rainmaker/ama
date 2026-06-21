@@ -49,6 +49,16 @@ export function capped<T>(
   return { shown, hint };
 }
 
+/** Optional `projectPath` for the cross-project query tools: target another indexed
+ *  project by its root (or a path inside it); omit for the primary. (ama-ont) */
+const projectPathSchema = z
+  .string()
+  .optional()
+  .describe(
+    "Query another indexed project by its root path (or a path inside it); omit for the " +
+      "primary (last-indexed) project. index_status lists the indexed projects.",
+  );
+
 /**
  * Wrap a read handler so it first runs a connect-time catch-up (reconciling any
  * edits made while disconnected) and then replies with a staleness banner if
@@ -192,17 +202,24 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
           .describe("Name or partial name, optionally with path:/kind:/lang:/name: filters."),
         limit: z.number().int().positive().optional().describe("Max results."),
         kind: z.enum(NODE_KINDS).optional().describe("Restrict to a single node kind."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "search_symbol",
-      async ({ query, limit, kind }: { query: string; limit?: number; kind?: NodeKind }) => {
+      async ({
+        query,
+        limit,
+        kind,
+        projectPath,
+      }: { query: string; limit?: number; kind?: NodeKind; projectPath?: string }) => {
         await session.catchUpIfNeeded();
         const max = limit ?? DEFAULT_SEARCH_LIMIT;
-        const { results, lowConfidence } = session.searchSymbolWithConfidence(query, {
-          limit: max + 1,
-          kind,
-        });
+        const { results, lowConfidence } = session.searchSymbolWithConfidence(
+          query,
+          { limit: max + 1, kind },
+          projectPath,
+        );
         const lowHint = lowConfidence
           ? `⚠️ Ama: no exact or name-prefix match for "${query}" — these are loose substring hits, so they may not be what you meant. Double-check the name or refine the query.`
           : undefined;
@@ -443,11 +460,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         "and dependents.",
       inputSchema: {
         ref: z.string().describe("Symbol or file id, simple name, or dotted/path reference."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "node",
-      queryTool(session, ({ ref }: { ref: string }) => session.node(ref)),
+      queryTool(session, ({ ref, projectPath }: { ref: string; projectPath?: string }) =>
+        session.node(ref, projectPath),
+      ),
     ),
   );
 

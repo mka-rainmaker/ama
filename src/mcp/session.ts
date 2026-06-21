@@ -36,9 +36,20 @@ export type IndexStatus =
       resolution?: ResolutionStats;
       /** Edits the auto-syncer has queued but not yet re-indexed (0 if not watching). */
       pendingSync: number;
+      /** Every indexed project (root + counts). The top-level root/counts above are the
+       *  primary (last-indexed) project; this lists all of them for a multi-project
+       *  session, so a caller can see what `projectPath` values are queryable. (ama-ont) */
+      projects: { root: string; nodeCount: number; edgeCount: number; fileCount: number }[];
       /** Running-server build stamp, for detecting a stale server (see build-info). */
       server: ServerStamp;
     };
+
+/** One indexed project in a (possibly multi-project) session. */
+interface ProjectIndex {
+  store: Store;
+  query: QueryService;
+  stats: IndexStats;
+}
 
 /**
  * Stateful core behind the MCP tools. Holds the current index and routes the
@@ -47,6 +58,10 @@ export type IndexStatus =
  * standing up a stdio server.
  */
 export class AmaSession {
+  /** All indexed projects, keyed by resolved root. The watcher/auto-sync and the
+   *  `store`/`query`/`stats` fields track the *primary* (last-indexed) project; other
+   *  projects are queryable snapshots reached via a `projectPath`. (ama-ont) */
+  private readonly projects = new Map<string, ProjectIndex>();
   private store?: Store;
   private query?: QueryService;
   private stats?: IndexStats;
@@ -59,13 +74,20 @@ export class AmaSession {
   async indexRepository(root: string): Promise<IndexStats> {
     const abs = path.resolve(root);
     const { store, stats } = await this.indexer.index(abs);
-    const previous = this.store;
-    this.store = store;
-    this.query = new QueryService(store, abs);
-    this.stats = stats;
+    this.register(abs, { store, query: new QueryService(store, abs), stats });
     this.needsCatchUp = false; // a fresh index is already current
-    previous?.close();
     return stats;
+  }
+
+  /** Add (or replace) a project in the registry and make it the primary. Re-indexing
+   *  the same root closes its old store; a different root is kept alongside, so several
+   *  projects stay queryable at once via `projectPath`. (ama-ont) */
+  private register(abs: string, project: ProjectIndex): void {
+    this.projects.get(abs)?.store.close();
+    this.projects.set(abs, project);
+    this.store = project.store;
+    this.query = project.query;
+    this.stats = project.stats;
   }
 
   /**
@@ -79,20 +101,23 @@ export class AmaSession {
     const abs = path.resolve(root);
     const opened = await this.indexer.open(abs);
     if (!opened) return this.indexRepository(abs);
-    const previous = this.store;
-    this.store = opened.store;
-    this.query = new QueryService(opened.store, abs);
-    this.stats = opened.stats;
+    this.register(abs, {
+      store: opened.store,
+      query: new QueryService(opened.store, abs),
+      stats: opened.stats,
+    });
     this.needsCatchUp = true; // reconcile anything that changed while we were down
-    previous?.close();
     return opened.stats;
   }
 
-  /** Release resources: stop watching and close the store. */
+  /** Release resources: stop watching and close every project's store. */
   close(): void {
     this.unwatch();
-    this.store?.close();
+    for (const project of this.projects.values()) project.store.close();
+    this.projects.clear();
     this.store = undefined;
+    this.query = undefined;
+    this.stats = undefined;
   }
 
   /**
@@ -216,6 +241,12 @@ export class AmaSession {
       languages: this.coverage(),
       ...(resolution ? { resolution } : {}),
       pendingSync: this.debouncer?.pendingCount ?? 0,
+      projects: [...this.projects.entries()].map(([root, p]) => ({
+        root,
+        nodeCount: p.store.nodeCount,
+        edgeCount: p.store.edgeCount,
+        fileCount: p.store.allFiles().length,
+      })),
       server: serverStamp,
     };
   }
@@ -233,12 +264,16 @@ export class AmaSession {
     return [...counts].map(([language, { tier, files }]) => ({ language, tier, files }));
   }
 
-  searchSymbol(query: string, opts?: SearchOptions): GraphNode[] {
-    return this.requireQuery().searchSymbol(query, opts);
+  searchSymbol(query: string, opts?: SearchOptions, projectPath?: string): GraphNode[] {
+    return this.requireQuery(projectPath).searchSymbol(query, opts);
   }
 
-  searchSymbolWithConfidence(query: string, opts?: SearchOptions): SearchResult {
-    return this.requireQuery().searchSymbolWithConfidence(query, opts);
+  searchSymbolWithConfidence(
+    query: string,
+    opts?: SearchOptions,
+    projectPath?: string,
+  ): SearchResult {
+    return this.requireQuery(projectPath).searchSymbolWithConfidence(query, opts);
   }
 
   searchCode(query: string, opts?: { limit?: number }): GraphNode[] {
@@ -316,8 +351,8 @@ export class AmaSession {
     return this.requireQuery().getCodeSnippet(ref);
   }
 
-  node(ref: string): NodeView | undefined {
-    return this.requireQuery().node(ref);
+  node(ref: string, projectPath?: string): NodeView | undefined {
+    return this.requireQuery(projectPath).node(ref);
   }
 
   fileSkeleton(ref: string): FileSkeleton | undefined {
@@ -340,10 +375,31 @@ export class AmaSession {
     return this.requireQuery().explore(question, opts);
   }
 
-  private requireQuery(): QueryService {
+  private requireQuery(projectPath?: string): QueryService {
+    if (projectPath !== undefined) return this.projectFor(projectPath).query;
     if (!this.query) {
       throw new Error("Nothing indexed yet — call index_repository first.");
     }
     return this.query;
+  }
+
+  /** The indexed project a `projectPath` names: the one whose root equals the resolved
+   *  path or contains it (longest root wins, for nested/monorepo layouts). (ama-ont) */
+  private projectFor(projectPath: string): ProjectIndex {
+    const abs = path.resolve(projectPath);
+    let best: ProjectIndex | undefined;
+    let bestLen = -1;
+    for (const [root, project] of this.projects) {
+      if ((abs === root || abs.startsWith(`${root}${path.sep}`)) && root.length > bestLen) {
+        best = project;
+        bestLen = root.length;
+      }
+    }
+    if (!best) {
+      throw new Error(
+        `No indexed project for ${abs}. Run index_repository on its root first (see index_status for the indexed projects).`,
+      );
+    }
+    return best;
   }
 }

@@ -28,6 +28,7 @@ async function loadStatus(root: string, dbPath: string): Promise<IndexStatus> {
     fileCount,
     languages,
     pendingSync: 0,
+    projects: [{ root: r, nodeCount, edgeCount, fileCount }],
     server: serverStamp,
   };
 }
