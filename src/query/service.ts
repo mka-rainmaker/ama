@@ -394,6 +394,24 @@ function rankNeighbors(neighbors: EdgeNeighbor[]): EdgeNeighbor[] {
   );
 }
 
+/** The 1-based start of a contiguous leading comment block immediately above
+ *  `declLine` (a JSDoc block or line comments, no blank line between), or `declLine`
+ *  itself when there's none — so a symbol's view reunites it with its documentation.
+ *  The blank-line stop mirrors how TypeScript binds a doc comment to a declaration.
+ *  Shared by get_code_snippet (to show the docs) and search_code (to search them).
+ *  (ama-43e, ama-jxp) */
+function commentAwareStart(lines: string[], declLine: number): number {
+  let start = declLine;
+  for (let i = declLine - 2; i >= 0; i--) {
+    const t = lines[i]?.trim() ?? "";
+    if (!(t.startsWith("//") || t.startsWith("/*") || t.startsWith("*") || t.endsWith("*/"))) {
+      break;
+    }
+    start = i + 1;
+  }
+  return start;
+}
+
 /**
  * Read-side of the graph: the four MVP questions an agent asks, answered from
  * the store. A "symbol reference" is either an exact node id (e.g.
@@ -516,8 +534,10 @@ export class QueryService {
       }
       for (const node of nodes) {
         if (!node.range) continue;
+        // Include the leading doc comment so a concept search matches what a symbol
+        // documents, not only what its code spells out. (ama-jxp)
         const body = lines
-          .slice(node.range.startLine - 1, node.range.endLine)
+          .slice(commentAwareStart(lines, node.range.startLine) - 1, node.range.endLine)
           .join("\n")
           .toLowerCase();
         if (body.includes(needle)) {
@@ -1072,17 +1092,8 @@ export class QueryService {
       return undefined; // the file vanished since indexing — no snippet, but no throw
     }
     const lines = source.split("\n");
-    // Extend backward over a contiguous leading comment block (a JSDoc `/** … */` or
-    // `//` lines immediately above the declaration, no blank line between) so the
-    // snippet carries the symbol's documentation — usually its most useful part. (ama-43e)
-    let startLine = node.range.startLine;
-    for (let i = startLine - 2; i >= 0; i--) {
-      const t = lines[i]?.trim() ?? "";
-      if (!(t.startsWith("//") || t.startsWith("/*") || t.startsWith("*") || t.endsWith("*/"))) {
-        break;
-      }
-      startLine = i + 1;
-    }
+    // Carry the symbol's leading doc comment, usually its most useful part. (ama-43e)
+    const startLine = commentAwareStart(lines, node.range.startLine);
     const text = lines.slice(startLine - 1, node.range.endLine).join("\n");
     return {
       id: node.id,

@@ -46,3 +46,18 @@ describe("get_code_snippet includes the leading doc comment (ama-43e)", () => {
     expect(snip?.text).not.toContain("Doc comment for foo");
   });
 });
+
+/**
+ * The doc comment lives outside the symbol's range, so a concept search would miss it
+ * unless search_code reads the comment too — the same shared comment-aware walk. (ama-jxp)
+ */
+describe("search_code searches a symbol's doc comment (ama-jxp)", () => {
+  it("matches a word that appears only in the doc comment, not the code", () => {
+    // "Coalesce" is in debounce's JSDoc (line 10); its body (lines 11-13) never says it,
+    // and the function name is "debounce", so only reading the comment can find it.
+    const hits = svc(fn("debounce", 11, 13))
+      .searchCode("coalesce")
+      .map((x) => x.name);
+    expect(hits).toEqual(["debounce"]);
+  });
+});

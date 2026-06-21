@@ -6,3 +6,8 @@ export function foo() {
 export function bar() {
   return 2;
 }
+
+/** Coalesce rapid events. */
+export function debounce() {
+  return 0;
+}
