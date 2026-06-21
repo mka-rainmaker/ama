@@ -94,8 +94,11 @@ export interface FileSkeleton {
   file: GraphNode;
   /** Symbols the file defines, in source order (its outline). */
   symbols: GraphNode[];
-  /** Files that import (or re-export) this file. */
+  /** Files that import (or re-export) this file — capped to keep the skeleton light.
+   *  See `dependentsTotal` for the full count, or use find_importers for the list. */
   dependents: GraphNode[];
+  /** Total number of dependents (`dependents` may be a capped preview). (ama-2by) */
+  dependentsTotal: number;
 }
 
 /** A census of the graph's node and edge kinds — what the index actually contains. */
@@ -306,6 +309,12 @@ const EXPLORE_BLAST_LIMIT = 40;
 /** Default result cap for search_symbol/search_code — shared so the MCP layer can
  *  request one extra and tell the agent when the result was truncated. (ama-b4q) */
 export const DEFAULT_SEARCH_LIMIT = 50;
+
+/** Cap on the secondary `dependents` preview in a file skeleton. The outline
+ *  (symbols) stays complete; dependents is bounded so a foundational file's skeleton
+ *  doesn't dwarf the file it summarizes — `dependentsTotal` carries the full count
+ *  and find_importers gives the complete list. (ama-2by) */
+export const SKELETON_DEPENDENTS_LIMIT = 25;
 
 /** Question words and glue dropped before tokenizing an `explore` question, so its
  *  search terms are the content words (`baseline`, `import`), not `how`/`are`. */
@@ -754,7 +763,13 @@ export class QueryService {
         if (importer && importer.id !== file.id) dependents.set(importer.id, importer);
       }
     }
-    return { file, symbols, dependents: [...dependents.values()] };
+    const allDependents = [...dependents.values()];
+    return {
+      file,
+      symbols,
+      dependents: allDependents.slice(0, SKELETON_DEPENDENTS_LIMIT),
+      dependentsTotal: allDependents.length,
+    };
   }
 
   /**
