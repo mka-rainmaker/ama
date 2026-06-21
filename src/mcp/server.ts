@@ -237,11 +237,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         "{ symbol, at: { line, column } } so you see who calls it and where.",
       inputSchema: {
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_callers",
-      queryTool(session, ({ symbol }: { symbol: string }) => session.findCallers(symbol)),
+      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+        session.findCallers(symbol, projectPath),
+      ),
     ),
   );
 
@@ -253,11 +256,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         "the callee and the call site.",
       inputSchema: {
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_callees",
-      queryTool(session, ({ symbol }: { symbol: string }) => session.findCallees(symbol)),
+      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+        session.findCallees(symbol, projectPath),
+      ),
     ),
   );
 
@@ -373,11 +379,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
       description: "Every file that imports (or re-exports) a symbol.",
       inputSchema: {
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_importers",
-      queryTool(session, ({ symbol }: { symbol: string }) => session.findImporters(symbol)),
+      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+        session.findImporters(symbol, projectPath),
+      ),
     ),
   );
 
@@ -387,11 +396,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
       description: "The symbols a file imports (or re-exports).",
       inputSchema: {
         file: z.string().describe("File node id (repo-relative path) or basename."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "find_imports",
-      queryTool(session, ({ file }: { file: string }) => session.findImports(file)),
+      queryTool(session, ({ file, projectPath }: { file: string; projectPath?: string }) =>
+        session.findImports(file, projectPath),
+      ),
     ),
   );
 
@@ -444,11 +456,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
       description: "A symbol's verbatim source.",
       inputSchema: {
         symbol: z.string().describe("Symbol id, simple name, or dotted qualified name."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "get_code_snippet",
-      queryTool(session, ({ symbol }: { symbol: string }) => session.getCodeSnippet(symbol)),
+      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+        session.getCodeSnippet(symbol, projectPath),
+      ),
     ),
   );
 
@@ -480,11 +495,14 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
         "the whole file.",
       inputSchema: {
         file: z.string().describe("File node id (repo-relative path) or basename."),
+        projectPath: projectPathSchema,
       },
     },
     tap(
       "file_skeleton",
-      queryTool(session, ({ file }: { file: string }) => session.fileSkeleton(file)),
+      queryTool(session, ({ file, projectPath }: { file: string; projectPath?: string }) =>
+        session.fileSkeleton(file, projectPath),
+      ),
     ),
   );
 

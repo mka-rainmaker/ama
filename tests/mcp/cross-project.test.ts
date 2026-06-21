@@ -27,6 +27,14 @@ describe("cross-project queries (ama-ont)", () => {
     expect(session.node("alpha", projA)?.node.name).toBe("alpha");
   });
 
+  it("routes navigation and read tools by projectPath too", () => {
+    // useAlpha() calls alpha(), both in A.
+    expect(session.findCallers("alpha", projA).map((c) => c.symbol.name)).toContain("useAlpha");
+    expect(session.getCodeSnippet("alpha", projA)?.text).toContain("function alpha");
+    // those symbols aren't in the primary (B).
+    expect(session.findCallers("alpha")).toEqual([]);
+  });
+
   it("uses the primary (last-indexed) project when no projectPath is given", () => {
     expect(session.searchSymbol("beta").map((n) => n.name)).toContain("beta");
     // A's symbol is not visible from the primary without naming A.

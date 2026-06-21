@@ -276,103 +276,104 @@ export class AmaSession {
     return this.requireQuery(projectPath).searchSymbolWithConfidence(query, opts);
   }
 
-  searchCode(query: string, opts?: { limit?: number }): GraphNode[] {
-    return this.requireQuery().searchCode(query, opts);
+  searchCode(query: string, opts?: { limit?: number }, projectPath?: string): GraphNode[] {
+    return this.requireQuery(projectPath).searchCode(query, opts);
   }
 
   searchCodeWithConfidence(
     query: string,
     opts?: { limit?: number },
+    projectPath?: string,
   ): { results: GraphNode[]; viaTerms: boolean } {
-    return this.requireQuery().searchCodeWithConfidence(query, opts);
+    return this.requireQuery(projectPath).searchCodeWithConfidence(query, opts);
   }
 
-  findCallers(ref: string): EdgeNeighbor[] {
-    return this.requireQuery().findCallers(ref);
+  findCallers(ref: string, projectPath?: string): EdgeNeighbor[] {
+    return this.requireQuery(projectPath).findCallers(ref);
   }
 
-  findCallees(ref: string): EdgeNeighbor[] {
-    return this.requireQuery().findCallees(ref);
+  findCallees(ref: string, projectPath?: string): EdgeNeighbor[] {
+    return this.requireQuery(projectPath).findCallees(ref);
   }
 
-  findHandlers(ref: string): EdgeNeighbor[] {
-    return this.requireQuery().findHandlers(ref);
+  findHandlers(ref: string, projectPath?: string): EdgeNeighbor[] {
+    return this.requireQuery(projectPath).findHandlers(ref);
   }
 
-  findRoutes(ref: string): EdgeNeighbor[] {
-    return this.requireQuery().findRoutes(ref);
+  findRoutes(ref: string, projectPath?: string): EdgeNeighbor[] {
+    return this.requireQuery(projectPath).findRoutes(ref);
   }
 
-  findReferrers(ref: string): EdgeNeighbor[] {
-    return this.requireQuery().findReferrers(ref);
+  findReferrers(ref: string, projectPath?: string): EdgeNeighbor[] {
+    return this.requireQuery(projectPath).findReferrers(ref);
   }
 
-  findOverrides(ref: string): EdgeNeighbor[] {
-    return this.requireQuery().findOverrides(ref);
+  findOverrides(ref: string, projectPath?: string): EdgeNeighbor[] {
+    return this.requireQuery(projectPath).findOverrides(ref);
   }
 
-  findOverriddenBy(ref: string): EdgeNeighbor[] {
-    return this.requireQuery().findOverriddenBy(ref);
+  findOverriddenBy(ref: string, projectPath?: string): EdgeNeighbor[] {
+    return this.requireQuery(projectPath).findOverriddenBy(ref);
   }
 
-  circularImports(): GraphNode[][] {
-    return this.requireQuery().circularImports();
+  circularImports(projectPath?: string): GraphNode[][] {
+    return this.requireQuery(projectPath).circularImports();
   }
 
-  findImplementations(ref: string): GraphNode[] {
-    return this.requireQuery().findImplementations(ref);
+  findImplementations(ref: string, projectPath?: string): GraphNode[] {
+    return this.requireQuery(projectPath).findImplementations(ref);
   }
 
-  findInterfaces(ref: string): GraphNode[] {
-    return this.requireQuery().findInterfaces(ref);
+  findInterfaces(ref: string, projectPath?: string): GraphNode[] {
+    return this.requireQuery(projectPath).findInterfaces(ref);
   }
 
-  findImporters(ref: string): GraphNode[] {
-    return this.requireQuery().findImporters(ref);
+  findImporters(ref: string, projectPath?: string): GraphNode[] {
+    return this.requireQuery(projectPath).findImporters(ref);
   }
 
-  findImports(ref: string): GraphNode[] {
-    return this.requireQuery().findImports(ref);
+  findImports(ref: string, projectPath?: string): GraphNode[] {
+    return this.requireQuery(projectPath).findImports(ref);
   }
 
-  findTypeUsers(ref: string): GraphNode[] {
-    return this.requireQuery().findTypeUsers(ref);
+  findTypeUsers(ref: string, projectPath?: string): GraphNode[] {
+    return this.requireQuery(projectPath).findTypeUsers(ref);
   }
 
-  findTypesUsed(ref: string): GraphNode[] {
-    return this.requireQuery().findTypesUsed(ref);
+  findTypesUsed(ref: string, projectPath?: string): GraphNode[] {
+    return this.requireQuery(projectPath).findTypesUsed(ref);
   }
 
-  findReturns(ref: string): GraphNode[] {
-    return this.requireQuery().findReturns(ref);
+  findReturns(ref: string, projectPath?: string): GraphNode[] {
+    return this.requireQuery(projectPath).findReturns(ref);
   }
 
-  getCodeSnippet(ref: string): Snippet | undefined {
-    return this.requireQuery().getCodeSnippet(ref);
+  getCodeSnippet(ref: string, projectPath?: string): Snippet | undefined {
+    return this.requireQuery(projectPath).getCodeSnippet(ref);
   }
 
   node(ref: string, projectPath?: string): NodeView | undefined {
     return this.requireQuery(projectPath).node(ref);
   }
 
-  fileSkeleton(ref: string): FileSkeleton | undefined {
-    return this.requireQuery().fileSkeleton(ref);
+  fileSkeleton(ref: string, projectPath?: string): FileSkeleton | undefined {
+    return this.requireQuery(projectPath).fileSkeleton(ref);
   }
 
-  impactAnalysis(ref: string, maxDepth?: number): GraphNode[] {
-    return this.requireQuery().impactAnalysis(ref, maxDepth);
+  impactAnalysis(ref: string, maxDepth?: number, projectPath?: string): GraphNode[] {
+    return this.requireQuery(projectPath).impactAnalysis(ref, maxDepth);
   }
 
-  getGraphSchema(): GraphSchema {
-    return this.requireQuery().getGraphSchema();
+  getGraphSchema(projectPath?: string): GraphSchema {
+    return this.requireQuery(projectPath).getGraphSchema();
   }
 
-  affected(files: string[], opts: { testsOnly?: boolean } = {}): GraphNode[] {
-    return this.requireQuery().affected(files, opts);
+  affected(files: string[], opts: { testsOnly?: boolean } = {}, projectPath?: string): GraphNode[] {
+    return this.requireQuery(projectPath).affected(files, opts);
   }
 
-  explore(question: string, opts: { limit?: number } = {}): Exploration {
-    return this.requireQuery().explore(question, opts);
+  explore(question: string, opts: { limit?: number } = {}, projectPath?: string): Exploration {
+    return this.requireQuery(projectPath).explore(question, opts);
   }
 
   private requireQuery(projectPath?: string): QueryService {
