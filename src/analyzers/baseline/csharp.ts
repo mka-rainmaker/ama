@@ -2,19 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type Parser from "web-tree-sitter";
 import type { LanguageSpec } from "./analyzer.js";
-
-/** Ancestor directories of a repo-relative file, closest first, ending at the repo
- *  root (""). The importer's own directory is first. */
-function ancestorDirs(rel: string): string[] {
-  const dirs: string[] = [];
-  let dir = path.posix.dirname(rel);
-  while (true) {
-    dirs.push(dir === "." ? "" : dir);
-    if (dir === "." || dir === "") break;
-    dir = path.posix.dirname(dir);
-  }
-  return dirs;
-}
+import { ancestorDirs } from "./paths.js";
 
 /** Resolve a C# `using A.B.C;` to the source files of that namespace. C# has no
  *  1:1 namespace→file mapping: a namespace is a *set* of files, conventionally a

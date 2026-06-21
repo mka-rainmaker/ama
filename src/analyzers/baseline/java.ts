@@ -1,6 +1,6 @@
-import * as path from "node:path";
 import type Parser from "web-tree-sitter";
 import type { LanguageSpec } from "./analyzer.js";
+import { ancestorDirs } from "./paths.js";
 
 /** Try a repo-relative file under every ancestor directory of the importer. A
  *  package import gives a *source-root-relative* path (`com/example/Foo.java`)
@@ -8,14 +8,7 @@ import type { LanguageSpec } from "./analyzer.js";
  *  so the correct root is simply whichever ancestor makes the file exist. Disk-
  *  based (via the analyzer's existsSync), so it's single-file-reindex-safe. */
 function ancestorCandidates(importerRel: string, file: string): string[] {
-  const candidates: string[] = [];
-  let dir = path.posix.dirname(importerRel);
-  while (true) {
-    candidates.push(dir === "." ? file : `${dir}/${file}`);
-    if (dir === "." || dir === "") break;
-    dir = path.posix.dirname(dir);
-  }
-  return candidates;
+  return ancestorDirs(importerRel).map((d) => (d ? `${d}/${file}` : file));
 }
 
 /** Resolve a Java `import a.b.C;` to its class file. Java's convention (lowercase

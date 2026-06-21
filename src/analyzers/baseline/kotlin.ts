@@ -2,19 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type Parser from "web-tree-sitter";
 import type { LanguageSpec } from "./analyzer.js";
-
-/** Ancestor directories of a repo-relative file, closest first, ending at the repo
- *  root (""). (Mirrors csharp.ts; extracting a shared helper is filed as ama-mgn.) */
-function ancestorDirs(rel: string): string[] {
-  const dirs: string[] = [];
-  let dir = path.posix.dirname(rel);
-  while (true) {
-    dirs.push(dir === "." ? "" : dir);
-    if (dir === "." || dir === "") break;
-    dir = path.posix.dirname(dir);
-  }
-  return dirs;
-}
+import { ancestorDirs } from "./paths.js";
 
 /** Resolve a Kotlin `import a.b.C` to the source files of its package. Kotlin file
  *  naming is free-form (a file holds any number of declarations and need not be named
