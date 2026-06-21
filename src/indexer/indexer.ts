@@ -160,7 +160,11 @@ export class Indexer {
       }
       for (const n of result.nodes) store.addNode(n);
       for (const e of result.edges) store.addEdge(e);
-      for (const rel of files) store.recordFile(fingerprint(root, rel));
+      for (const rel of files) {
+        const meta = fingerprint(root, rel);
+        if (meta) store.recordFile(meta);
+        else store.removeFile(rel); // vanished mid-index — drop its just-added nodes
+      }
       fileCount += files.length;
       if (result.resolution) {
         resolution.callsTotal += result.resolution.callsTotal;
@@ -255,12 +259,13 @@ export class Indexer {
   async reindexFile(store: Store, root: string, rel: string): Promise<void> {
     const abs = path.resolve(root, rel);
     const analyzer = this.registry.forFile(rel);
-    if (!analyzer || !fs.existsSync(abs)) {
-      store.removeFile(rel);
+    const meta = analyzer && fs.existsSync(abs) ? fingerprint(root, rel) : null;
+    if (!analyzer || !meta) {
+      store.removeFile(rel); // unhandled language, or the file is gone
     } else {
       const { nodes, edges } = await analyzer.analyze(root, [rel]);
       store.reconcileFile(rel, nodes, edges);
-      store.recordFile(fingerprint(root, rel));
+      store.recordFile(meta);
     }
     // Dispatch fan-out (interface/override) is a whole-graph inference: a single-file
     // analyze can't see other files' implementers, so reconcileFile would drop this
@@ -333,26 +338,43 @@ function redispatch(store: Store): void {
   store.replaceEdgesByProvenance("dispatch", deriveDispatchEdges(nodes, base));
 }
 
-/** Fingerprint a file for staleness tracking: size, mtime, and content hash. */
-function fingerprint(root: string, rel: string): FileMeta {
+/** Fingerprint a file for staleness tracking: size, mtime, and content hash.
+ *  Returns null when the file has vanished (gone between discovery and now — an
+ *  editor's atomic save or temp file) so the caller can drop it instead of
+ *  crashing the index. (ama-7r5) */
+export function fingerprint(root: string, rel: string): FileMeta | null {
   const abs = path.resolve(root, rel);
-  const stat = fs.statSync(abs);
-  const hash = crypto.createHash("sha1").update(fs.readFileSync(abs)).digest("hex");
-  return { path: rel, size: stat.size, mtimeMs: stat.mtimeMs, hash };
+  try {
+    const stat = fs.statSync(abs);
+    const hash = crypto.createHash("sha1").update(fs.readFileSync(abs)).digest("hex");
+    return { path: rel, size: stat.size, mtimeMs: stat.mtimeMs, hash };
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Whether a file differs from its recorded fingerprint. Size and mtime are the
  * cheap first check; the content hash is consulted only when they are
  * inconclusive (mtime can change without the bytes changing), so an unchanged
- * file is never re-hashed.
+ * file is never re-hashed. A file that has vanished counts as stale, so the
+ * caller reindexes it and its `existsSync` check reconciles the removal. (ama-7r5)
  */
-function isStale(root: string, rel: string, meta: FileMeta): boolean {
+export function isStale(root: string, rel: string, meta: FileMeta): boolean {
   const abs = path.resolve(root, rel);
-  const stat = fs.statSync(abs);
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(abs);
+  } catch {
+    return true;
+  }
   if (stat.size === meta.size && stat.mtimeMs === meta.mtimeMs) return false;
-  const hash = crypto.createHash("sha1").update(fs.readFileSync(abs)).digest("hex");
-  return hash !== meta.hash;
+  try {
+    const hash = crypto.createHash("sha1").update(fs.readFileSync(abs)).digest("hex");
+    return hash !== meta.hash;
+  } catch {
+    return true;
+  }
 }
 
 /** Repo-relative paths of every file under `root`, skipping ignored trees. */
