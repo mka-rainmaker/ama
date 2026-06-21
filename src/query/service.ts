@@ -102,6 +102,10 @@ export interface FileSkeleton {
   file: GraphNode;
   /** Symbols the file defines, in source order (its outline). */
   symbols: GraphNode[];
+  /** Files this file imports from — its outgoing dependencies, deduped to the file
+   *  level (find_imports has the per-symbol detail). Bounded by the file, so uncapped.
+   *  The symmetric counterpart to `dependents`. (ama-1jv) */
+  imports: GraphNode[];
   /** Files that import (or re-export) this file — capped to keep the skeleton light.
    *  See `dependentsTotal` for the full count, or use find_importers for the list. */
   dependents: GraphNode[];
@@ -794,9 +798,18 @@ export class QueryService {
       }
     }
     const allDependents = [...dependents.values()];
+    // Imports = the files this file depends on (outgoing). The Imports edge runs from
+    // the file to the imported declaration; dedup to that declaration's File node. (ama-1jv)
+    const imports = new Map<string, GraphNode>();
+    for (const edge of this.store.edgesFrom(file.id, "Imports")) {
+      const target = this.store.getNode(edge.to);
+      const targetFile = target && this.store.getNode(target.file);
+      if (targetFile && targetFile.id !== file.id) imports.set(targetFile.id, targetFile);
+    }
     return {
       file,
       symbols,
+      imports: [...imports.values()],
       dependents: allDependents.slice(0, SKELETON_DEPENDENTS_LIMIT),
       dependentsTotal: allDependents.length,
     };

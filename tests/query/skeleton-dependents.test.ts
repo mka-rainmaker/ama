@@ -47,3 +47,31 @@ describe("file_skeleton bounds its dependents preview (ama-2by)", () => {
     expect(skel.dependents.length).toBe(1);
   });
 });
+
+/**
+ * The skeleton should show what a file imports (its outgoing dependencies), deduped to
+ * the file level — the symmetric counterpart to `dependents`. (ama-1jv)
+ */
+describe("file_skeleton lists the file's imports (ama-1jv)", () => {
+  it("dedups imported symbols to their source files", () => {
+    const s = new InMemoryStore();
+    s.addNode(fileNode("a.ts"));
+    s.addNode(fileNode("b.ts"));
+    // a.ts imports two symbols that both live in b.ts -> one imported file.
+    s.addNode({ ...fileNode("b.ts"), id: "b.ts#Thing", kind: "Class", name: "Thing" });
+    s.addNode({ ...fileNode("b.ts"), id: "b.ts#Other", kind: "Function", name: "Other" });
+    s.addEdge({ from: "a.ts", to: "b.ts#Thing", kind: "Imports", provenance: "resolved" });
+    s.addEdge({ from: "a.ts", to: "b.ts#Other", kind: "Imports", provenance: "resolved" });
+    const skel = new QueryService(s, "/repo").fileSkeleton("a.ts");
+    if (!skel) throw new Error("expected a skeleton");
+    expect(skel.imports.map((f) => f.id)).toEqual(["b.ts"]);
+  });
+
+  it("is empty for a file that imports nothing", () => {
+    const s = new InMemoryStore();
+    s.addNode(fileNode("leaf.ts"));
+    const skel = new QueryService(s, "/repo").fileSkeleton("leaf.ts");
+    if (!skel) throw new Error("expected a skeleton");
+    expect(skel.imports).toEqual([]);
+  });
+});
