@@ -1,7 +1,8 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { SfcAnalyzer } from "../../src/analyzers/sfc/analyzer.js";
+import type { AnalysisResult } from "../../src/analyzers/types.js";
 import { fileId, symbolId } from "../../src/graph/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -9,11 +10,15 @@ const root = path.resolve(here, "../fixtures/sfc");
 
 /**
  * A `.vue`/`.svelte` single-file component was indexed by no analyzer at all. The SFC
- * analyzer gives it baseline breadth: a Component node named from the file, and the
- * modules its `<script>` imports wired into the File→File import graph. (ama-krw)
+ * analyzer gives it baseline breadth: a Component node named from the file, the modules
+ * its `<script>` imports wired into the File→File import graph, and the `<script>`'s own
+ * symbols (offset back to file lines). (ama-krw, ama-q1u)
  */
 describe("SfcAnalyzer (.vue/.svelte) (ama-krw)", () => {
-  const result = new SfcAnalyzer("vue", [".vue"]).analyze(root, ["Widget.vue", "Card.vue"]);
+  let result: AnalysisResult;
+  beforeAll(async () => {
+    result = await new SfcAnalyzer("vue", [".vue"]).analyze(root, ["Widget.vue", "Card.vue"]);
+  });
 
   it("emits a Component node named from the filename", () => {
     const widget = result.nodes.find(
@@ -31,6 +36,15 @@ describe("SfcAnalyzer (.vue/.svelte) (ama-krw)", () => {
     expect(imports).toContain(fileId("helper.ts")); // ./helper → helper.ts (extensionless)
     expect(imports).toContain(fileId("Card.vue")); // ./Card.vue → Card.vue (explicit)
   });
+
+  it("emits <script> symbols with file-relative line numbers (offset-mapped)", () => {
+    const greet = result.nodes.find(
+      (n) => n.id === symbolId({ file: "Widget.vue", qualifiedName: "greet" }),
+    );
+    expect(greet?.kind).toBe("Function");
+    // `function greet` is on file line 12 — the parsed <script> row offset back to it.
+    expect(greet?.range.startLine).toBe(12);
+  });
 });
 
 /**
@@ -38,10 +52,13 @@ describe("SfcAnalyzer (.vue/.svelte) (ama-krw)", () => {
  * dynamic `import()` for lazy components/routes — both must be covered. (ama-grb)
  */
 describe("SfcAnalyzer on Svelte + dynamic imports (ama-grb)", () => {
-  const result = new SfcAnalyzer("svelte", [".svelte"]).analyze(root, [
-    "Toggle.svelte",
-    "Panel.svelte",
-  ]);
+  let result: AnalysisResult;
+  beforeAll(async () => {
+    result = await new SfcAnalyzer("svelte", [".svelte"]).analyze(root, [
+      "Toggle.svelte",
+      "Panel.svelte",
+    ]);
+  });
   const importsFrom = (rel: string) =>
     result.edges.filter((e) => e.kind === "Imports" && e.from === fileId(rel)).map((e) => e.to);
 

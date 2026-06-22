@@ -8,6 +8,10 @@ import { helper } from "./helper";
 import Card from "./Card.vue";
 
 const msg = helper();
+
+function greet(): string {
+  return `hi ${msg}`;
+}
 </script>
 
 <style scoped>

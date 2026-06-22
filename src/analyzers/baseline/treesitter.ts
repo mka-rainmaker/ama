@@ -16,6 +16,9 @@ const require = createRequire(import.meta.url);
 const GRAMMARS: Record<string, string> = {
   python: "tree-sitter-python.wasm",
   javascript: "tree-sitter-javascript.wasm",
+  // For SFC `<script lang="ts">` bodies parsed by the SfcAnalyzer (the deep TS
+  // analyzer still owns `.ts`/`.tsx` files themselves). (ama-q1u)
+  typescript: "tree-sitter-typescript.wasm",
   java: "tree-sitter-java.wasm",
   csharp: "tree-sitter-c_sharp.wasm",
   go: "tree-sitter-go.wasm",
