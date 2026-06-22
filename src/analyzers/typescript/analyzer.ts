@@ -1,6 +1,12 @@
 import * as path from "node:path";
 import ts from "typescript";
-import { PRISMA_REF_PREFIX, deriveDispatchEdges, fileId, symbolId } from "../../graph/index.js";
+import {
+  PRISMA_FIELD_REF_PREFIX,
+  PRISMA_REF_PREFIX,
+  deriveDispatchEdges,
+  fileId,
+  symbolId,
+} from "../../graph/index.js";
 import type { GraphEdge, GraphNode, NodeKind, SourceRange } from "../../graph/index.js";
 import type { AnalysisResult, Analyzer, ResolutionStats } from "../types.js";
 
@@ -425,6 +431,7 @@ export class TypeScriptAnalyzer implements Analyzer {
               kind: "References",
               provenance: "prisma-ref",
             });
+            collectPrismaFieldEdges(parent, child.text.toLowerCase(), enclosingId, edges);
           } else if (!(ts.isCallExpression(parent.parent) && parent.parent.expression === parent)) {
             const to = resolveValueRef(child, checker, declToId, root);
             if (to && to !== enclosingId) {
@@ -1512,6 +1519,56 @@ function isPrismaClientExpr(expr: ts.Expression): boolean {
     return PRISMA_CLIENT_NAMES.has(expr.name.text.toLowerCase());
   }
   return false;
+}
+
+/** Prisma query clauses whose nested object keys name model fields. (ama-bgu) */
+const PRISMA_QUERY_CLAUSES = new Set([
+  "where",
+  "data",
+  "select",
+  "orderBy",
+  "include",
+  "having",
+  "create",
+  "update",
+  "cursor",
+  "distinct",
+]);
+/** where-clause logical combinators — keys, but not fields. */
+const PRISMA_WHERE_OPERATORS = new Set(["AND", "OR", "NOT"]);
+
+/** From a `prisma.<model>` access, tag the field keys used in the enclosing query call's first
+ *  arg (the keys of its where/select/data/orderBy/… objects) as `prisma:field:<model>.<field>`
+ *  candidates — the whole-graph pass resolves them to `Model.field` Property nodes. Top-level
+ *  keys only (nested relation filters are a refinement). (ama-bgu) */
+function collectPrismaFieldEdges(
+  modelAccess: ts.PropertyAccessExpression,
+  model: string,
+  enclosingId: string,
+  edges: GraphEdge[],
+): void {
+  const methodAccess = modelAccess.parent;
+  if (!ts.isPropertyAccessExpression(methodAccess) || methodAccess.expression !== modelAccess)
+    return;
+  const call = methodAccess.parent;
+  if (!ts.isCallExpression(call) || call.expression !== methodAccess) return;
+  const arg = call.arguments[0];
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return;
+  for (const clause of arg.properties) {
+    if (!ts.isPropertyAssignment(clause) || !ts.isIdentifier(clause.name)) continue;
+    if (!PRISMA_QUERY_CLAUSES.has(clause.name.text)) continue;
+    if (!ts.isObjectLiteralExpression(clause.initializer)) continue;
+    for (const field of clause.initializer.properties) {
+      const name = field.name && ts.isIdentifier(field.name) ? field.name.text : undefined;
+      if (!name || PRISMA_WHERE_OPERATORS.has(name)) continue;
+      edges.push({
+        from: enclosingId,
+        to: `${PRISMA_FIELD_REF_PREFIX}${model}.${name.toLowerCase()}`,
+        kind: "References",
+        provenance: "prisma-ref",
+      });
+    }
+  }
 }
 
 const FILE_ROUTE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs"]);
