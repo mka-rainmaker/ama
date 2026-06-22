@@ -56,9 +56,6 @@ compound across iterations — it is the point.
   baseline-only coverage look like complete, semantic coverage. When a tool *can't* answer something,
   say so (and file it as a backlog item).
 
-- **Standalone project.** Describe Ama's capabilities on their own terms. Don't position it relative
-  to, or name, other specific tools in docs, code, comments, or commits.
-
 - **Test-first.** Write a failing test, watch it fail for the right reason, then write the minimal code
   to pass. New analyzer behavior especially: construct a fixture where *only* the slice under test can
   produce the expected node/edge, so the test genuinely fails before the change.
