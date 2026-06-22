@@ -8,12 +8,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This file (`CLAUDE.md`) is git-ignored (`.gitignore`: "Local-only Claude instructions") and only
 distills the essentials. When the two disagree, `AGENTS.md` wins.
 
-## Current state: pre-implementation scaffold
+## Current state
 
-The only git-tracked file is `LICENSE`; the rest (configs, `README.md`, `AGENTS.md`) is still
-untracked. **The `src/`, `docs/`, `tests/`, and `.beads/` directories do not exist yet** — `README.md`
-and `AGENTS.md` describe the *target* architecture, not what's on disk. Don't go looking for source
-files the docs reference; you'll likely be creating them.
+Ama is **built and published** (`@mka-rainmaker/ama`, v0.2) — `src/`, `tests/`, `docs/`, and the
+beads tracker all exist, the suite is green, and `README.md`/`AGENTS.md` describe what's actually on
+disk. Deep tier = TypeScript (compiler API); baseline tier = tree-sitter for ~14 more languages,
+plus a heuristic Python call graph and framework-route detection across TS/Python/Go/PHP/Java/Rust.
+
+## Use Ama on Ama (dogfooding)
+
+When working in this repo, **answer structural questions with Ama's own MCP tools, not by reading
+files**: `search_symbol` / `find_callers` / `find_callees` / `get_code_snippet` to locate and read
+code, and `impact_analysis` / `explore` for blast radius. Run `index_repository(".")` first; after
+edits the watcher auto-syncs (or call `sync_index`). Using Ama to change Ama *is* the
+self-improvement loop — it's how regressions surface. If Ama's MCP tools aren't connected, treat
+that as a finding (see [`docs/SELF_IMPROVEMENT_LOOP.md`](docs/SELF_IMPROVEMENT_LOOP.md)).
 
 ## What Ama is
 
@@ -38,7 +47,7 @@ npm run serve         # node dist/mcp/server.js  (requires a prior build)
 Run a single test: `npx vitest run tests/path/to/file.test.ts`, or by name: `npx vitest run -t "<name>"`.
 Tests live in `tests/**/*.test.ts` (see `vitest.config.ts`); `tsconfig.json` excludes `tests/` from the build.
 
-## Architecture (the planned pipeline)
+## Architecture (the pipeline)
 
 ```
 source files ─▶ analyzer (deep | baseline) ─▶ graph (nodes + edges) ─▶ store ─▶ query ─▶ MCP tools
@@ -46,7 +55,7 @@ source files ─▶ analyzer (deep | baseline) ─▶ graph (nodes + edges) ─�
 
 Keep this layering clean and don't leak analyzer- or store-specific types across boundaries:
 `graph/` (language-agnostic model) → `analyzers/` (per-language, each declaring its tier) →
-`store/` (in-memory now, SQLite later) → `query/` → `mcp/` (and later `cli/`). The TypeScript deep
+`store/` (in-memory or SQLite+FTS5) → `query/` → `mcp/` + `cli/`. The TypeScript deep
 analyzer is the reference implementation.
 
 ## Non-obvious rules that shape the code

@@ -1,38 +1,57 @@
 # Ama 🐶
 
-**Ama** is a local-first **code-intelligence server** that speaks the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). It parses a codebase into a queryable knowledge graph of symbols and their relationships, then hands that graph to AI coding agents — so an agent can answer *"who calls this?"*, *"what breaks if I change this?"*, and *"show me this function and its callers"* in a **single tool call** instead of dozens of file reads.
+**Ama** is a local-first **code-intelligence server** that speaks the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). It parses a codebase into a queryable knowledge graph of symbols and their relationships, then hands that graph to AI coding agents — so an agent answers *"who calls this?"*, *"what breaks if I change this?"*, and *"which tests cover this route?"* in a **single tool call** instead of dozens of file reads.
 
 Named after a puppy: small, eager, and a little smarter every day.
 
-> Status: **0.1.** Deep TypeScript analysis plus syntactic baseline coverage for 13 more languages, 27 MCP tools, an `ama` CLI, and persistent incremental indexing — all able to index Ama's own source cleanly as the built-in regression test. Deep-tier .NET/Java analyzers (behind the sidecar protocol) are next.
+> Status: **0.2** — deep TypeScript analysis; a baseline call graph for Python (incl. FastAPI route→handler→test impact); framework-route detection across TypeScript, Python, Go, PHP, Java, and Rust; syntactic breadth for 13 more languages; an embeddable library API; 27 MCP tools; an `ama` CLI; and persistent, auto-syncing incremental indexing — all able to index Ama's own source cleanly as the built-in regression test.
+
+## Get started
+
+> Requires **Node.js 24+**.
+
+```bash
+npm install -g @mka-rainmaker/ama   # 1. install
+ama install                          # 2. wire it into your agent (Claude Code / Cursor / Windsurf / Codex)
+```
+
+3. Point your agent at a repo and ask structural questions — *"who calls `createServer`?"*, *"what breaks if I change `AmaSession`?"* Your agent runs `index_repository` once, then queries the graph; Ama re-indexes automatically as you edit.
+
+No global install? Use `npx -y @mka-rainmaker/ama mcp` as the command — see [Configure your coding agent](#configure-your-coding-agent).
 
 ## Why Ama
 
 Most code-graph tools parse every language the same way: one fast, syntactic pass that sees *shapes* but not *meaning*. Ama takes a different bet — **use each language's real compiler when one exists.**
 
 - **Deep tier — language-specific semantic analysis.** TypeScript via the TypeScript Compiler API today; .NET via Roslyn and Java via its native tooling next. This resolves types, overloads, generics, imports/re-exports, interface dispatch, and cross-file symbol binding that a purely syntactic parser cannot.
-- **Baseline tier — universal syntactic analysis for breadth.** Every other language still gets parsed for structure, so the whole repo is navigable from day one.
+- **Baseline tier — universal syntactic analysis for breadth.** Every other language gets parsed for structure (and, where it pays off, a heuristic call graph), so the whole repo is navigable from day one.
 
-Every answer reports **which tier produced it**, so partial coverage never quietly masquerades as complete.
-
-And because it's built for agents:
+Every answer reports **which tier produced it**, so partial coverage never quietly masquerades as complete. And because it's built for agents:
 
 - **100% local.** No external APIs, no API keys, no telemetry. Your code never leaves your machine.
-- **Cheaper and faster.** Fewer tool calls and fewer tokens per question, because one graph query replaces a pile of file reads — see [benchmarks](docs/benchmarks/README.md) (a focused, single-call answer vs. grep-then-read; methodology + honest caveats there).
+- **Cheaper and faster.** Fewer tool calls and fewer tokens per question — one graph query replaces a pile of file reads.
 
-## Install
+## Benchmarks
 
-> Requires **Node.js 24+**.
+On Ama's own repo (5 representative questions): **~99% fewer tokens and ~96% fewer tool calls** to *obtain* an answer than the grep-then-read an agent falls back to without a graph — one focused, structured result instead of pulling whole files into context. That headline is a **ceiling** (the baseline reads every grep-matching file in full); [`docs/benchmarks`](docs/benchmarks/README.md) has the methodology and honest caveats, and `node scripts/benchmark.mjs` reproduces it.
 
-Ama runs as a local MCP server your coding agent launches over stdio. Install it once, then point your agent at `ama mcp`:
+## How auto-sync works
 
-```bash
-npm install -g @mka-rainmaker/ama
-```
+Ama keeps the graph current while connected, so you never run a manual sync:
 
-(Or skip the global install and use `npx -y @mka-rainmaker/ama mcp` as the command below.)
+- A native **file watcher** debounces bursts of edits, then re-indexes each changed file **in place** (no full rebuild).
+- On reconnect, Ama **reconciles** anything that changed while it was away (size/mtime + content-hash diff).
+- `index_status()` reports what's indexed, per-language coverage + tier, and how many edits are pending.
 
-### Configure your coding agent
+## Framework-aware routes
+
+Ama maps HTTP routes to their handlers across stacks, so *"who handles `POST /reports`?"* is one query:
+
+- **TypeScript** — Express, NestJS, Fastify, Hapi, Koa, Hono, tRPC, GraphQL, plus filename routers (Next.js Pages & App, Nuxt, Astro, SvelteKit).
+- **Python** — Flask, FastAPI, Django (`urls.py`); FastAPI `TestClient` calls link **test → route → handler**, so `impact_analysis` / `affected` reach route tests.
+- **Go** (Gin/chi), **PHP** (Laravel), **Java** (Spring `@GetMapping`), **Rust** (actix attribute macros).
+
+## Configure your coding agent
 
 **Fastest — let Ama wire itself in:**
 
@@ -76,24 +95,28 @@ claude mcp add ama -- ama mcp
 
 ### Fewer tools, lower token cost
 
-Ama exposes 27 tools by default. To trade that for a small high-signal set, set
-`AMA_MCP_TOOLS` on the server — `minimal` (just `explore` + indexing), or a comma-separated
-list of tool names (the indexing tools are always included):
+Ama exposes 27 tools by default. To trade that for a small high-signal set, set `AMA_MCP_TOOLS` on the server — `minimal` (just `explore` + indexing), or a comma-separated list of tool names (the indexing tools are always included):
 
 ```json
 { "mcpServers": { "ama": { "command": "ama", "args": ["mcp"], "env": { "AMA_MCP_TOOLS": "minimal" } } } }
 ```
 
-### Quick start
+## MCP tools
 
-Once connected, point Ama at a repo and start asking graph questions:
+| Tool | What it does |
+|---|---|
+| `index_repository(path)` | Build the graph for a directory or project. Run first. |
+| `index_status()` | What's indexed: node/edge counts, per-language coverage + tier, pending edits. |
+| `search_symbol(query)` / `search_code(query)` | Find symbols by name (add `exact: true` for a precise dotted match), or search snippet text. |
+| `find_callers` / `find_callees` | Who calls a function/method, and what it calls. |
+| `find_referrers` / `find_imports` / `find_importers` | Where a symbol is used / what a file imports / who imports it. |
+| `impact_analysis(symbol)` | Transitive blast radius for change/test selection. |
+| `explore(question)` | Relevant symbols, a relationship map, and blast radius in one call. |
+| `get_code_snippet(symbol)` / `file_skeleton(file)` | A symbol's source, or a file's symbol outline. |
 
-1. **`index_repository("/path/to/your/project")`** — builds the graph (run this first).
-2. **`search_symbol`**, **`find_callers`**, **`find_callees`**, **`get_code_snippet`**, **`impact_analysis`**, … — query it.
+…and more (overrides, interfaces, type users, routes → handlers, circular imports). Call `get_graph_schema()` for the full node/edge model, or `ama --help` for the CLI.
 
-Ama re-indexes changed files automatically while connected. Call `index_status()` to see what's indexed and the per-language coverage + tier.
-
-### CLI
+## CLI
 
 The same package ships an `ama` CLI mirroring the query surface, for one-shot use and scripting (e.g. `git diff --name-only | ama affected`):
 
@@ -102,7 +125,7 @@ ama --help     # list commands
 ama mcp        # run the MCP server over stdio (what coding agents spawn)
 ```
 
-### Programmatic API
+## Programmatic API
 
 Embed Ama as a library — index a repo and query its graph from your own code (the same surface the MCP server and CLI use):
 
@@ -118,46 +141,17 @@ ama.close(); // release resources when done
 
 `index(root)` returns a transport-free `AmaSession` (aliased `Ama`) with the full query surface; `open(root)` reuses a persisted index. See [`src/api.ts`](src/api.ts) for the exported types.
 
-## What's in 0.1
-
-- **Deep TypeScript analysis** via the TypeScript Compiler API — types, overloads, generics, imports/re-exports, inheritance, interface dispatch, cross-file binding, and call graphs.
-- **Baseline breadth** for 13 more languages via tree-sitter: C, C++, C#, Go, Java, JavaScript, Kotlin, PHP, Python, Rust, Swift, and Vue/Svelte single-file components.
-- **27 MCP tools** — search, call graph, references, type usage, inheritance/overrides, imports/importers, routes → handlers, code snippets, plus higher-order `explore`, `impact_analysis`, and `search_code` — each tagging the tier that produced it.
-- **Persistent indexing** (SQLite + full-text search) with **incremental re-indexing**: edits are picked up automatically while connected.
-- **Cross-project queries** — index several repos in one session and target any of them by path.
-- **An `ama` CLI** for one-shot queries and scripting.
-
-## Next
-
-- **Deep-tier .NET (Roslyn) and Java analyzers** behind the sidecar protocol (the protocol + harness ship in 0.1; the analyzers need their language toolchains).
-- More baseline languages and richer framework awareness.
-
 ## How it works
 
 ```
  source files ──▶ analyzer (deep | baseline) ──▶ graph (nodes + edges) ──▶ store ──▶ query ──▶ MCP tools
 ```
 
-- **Graph model** — language-agnostic `nodes` (File, Module, Class, Interface, Enum, Function, Method, …) and `edges` (Defines, Calls, Inherits, Implements, UsesType, Imports, References, …). Each symbol gets a stable, location-independent id.
+- **Graph model** — language-agnostic `nodes` (File, Module, Class, Interface, Enum, Function, Method, Route, …) and `edges` (Defines, Calls, Inherits, Implements, UsesType, Imports, References, …). Each symbol gets a stable, location-independent id.
 - **Analyzers** — pluggable per language, each declaring its tier (`deep` or `baseline`). The TypeScript deep analyzer is the reference implementation.
-- **Store** — in-memory, or SQLite with full-text search for persistence.
+- **Store** — in-memory, or SQLite with full-text search (FTS5) for persistence.
 - **Query service** — search, call-graph traversal, code snippets, and impact analysis.
 - **MCP server** — exposes the query surface over stdio.
-
-## MCP tools
-
-| Tool | What it does |
-|---|---|
-| `index_repository(path)` | Build the graph for a directory or project. Run first. |
-| `index_status()` | What's indexed: node/edge counts, per-language coverage + tier. |
-| `search_symbol(query)` / `search_code(query)` | Find symbols by name, or search snippet text. |
-| `find_callers` / `find_callees` | Who calls a function/method, and what it calls. |
-| `find_referrers` / `find_imports` / `find_importers` | Where a symbol is used / what a file imports / who imports it. |
-| `impact_analysis(symbol)` | Transitive blast radius for change/test selection. |
-| `explore(question)` | Relevant symbols, a relationship map, and blast radius in one call. |
-| `get_code_snippet(symbol)` / `file_skeleton(file)` | A symbol's source, or a file's symbol outline. |
-
-…and more (overrides, interfaces, type users, routes → handlers, circular imports). Call `get_graph_schema()` for the full node/edge model, or `ama --help` for the CLI.
 
 ## How Ama is built
 
