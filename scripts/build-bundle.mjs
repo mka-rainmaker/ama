@@ -94,8 +94,16 @@ async function vendorNode(t, nodeDir) {
     console.log(`[bundle] checksum ok (${want.slice(0, 16)}…)`);
     const archivePath = path.join(tmp, info.archive);
     fs.writeFileSync(archivePath, bytes);
-    if (winTarget) run("unzip", ["-q", archivePath, "-d", tmp]);
-    else run("tar", ["-xzf", archivePath, "-C", tmp]);
+    if (winTarget) {
+      // bsdtar (macOS + Windows runners) extracts .zip; GNU tar (Linux) can't, so fall back.
+      try {
+        run("tar", ["-xf", archivePath, "-C", tmp]);
+      } catch {
+        run("unzip", ["-q", archivePath, "-d", tmp]);
+      }
+    } else {
+      run("tar", ["-xzf", archivePath, "-C", tmp]);
+    }
     fs.copyFileSync(path.join(tmp, info.binPath), dest);
     if (!winTarget) fs.chmodSync(dest, 0o755);
     console.log(`[bundle] vendored Node v${NODE_VERSION} for ${t}`);

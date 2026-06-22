@@ -55,8 +55,11 @@ parsing and `node:sqlite` run entirely on the vendored runtime.
 - **Slice 1 (done):** the `build-bundle` script + launcher, proven on the host target.
 - **Slice 2 (done):** downloads + checksum-verifies the official Node for any target, so all six
   targets build on any OS (verified: a `linux-x64` bundle cross-built on macOS yields an ELF binary).
-- **Slice 3 — release pipeline:** a GitHub Actions workflow that builds all six bundles and attaches
-  them to a GitHub Release.
+- **Slice 3 (done):** `.github/workflows/release.yml` — a matrix builds all six bundles on **native
+  runners** (so each is built *and* run on its own OS/arch), packages them, and attaches them to a
+  GitHub Release on a `v*` tag. `workflow_dispatch` runs the build+smoke matrix *without* releasing,
+  so the matrix can be verified before a tag is cut. (Verified locally per target by `file`-checking
+  the vendored binary; the native run/smoke is verified by the CI matrix.)
 - **Slice 4 — installers:** `curl … | sh` (macOS/Linux) and PowerShell (Windows) one-liners.
 - **Slice 5 — npm shim:** a thin npm package that pulls the right bundle via platform-specific
   `optionalDependencies`, so `npm i -g`/`npx` keep working without requiring a local Node.

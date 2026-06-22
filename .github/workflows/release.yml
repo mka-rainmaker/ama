@@ -1,0 +1,71 @@
+name: release
+
+# Build all six self-contained bundles (ama-py1r) on native runners — so each is built AND run on
+# its own OS/arch — and attach them to a GitHub Release on a `v*` tag. `workflow_dispatch` runs the
+# build+smoke matrix WITHOUT releasing, so the matrix can be verified before cutting a release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+jobs:
+  bundle:
+    name: bundle ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: darwin-arm64, runner: macos-14 }
+          - { target: darwin-x64, runner: macos-13 }
+          - { target: linux-x64, runner: ubuntu-latest }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm }
+          - { target: win32-x64, runner: windows-latest }
+          - { target: win32-arm64, runner: windows-11-arm }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm ci
+      - name: Build bundle
+        run: npm run bundle ${{ matrix.target }}
+      - name: Smoke-test on the native runner
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            "bundle/${{ matrix.target }}/bin/ama.cmd" --version
+          else
+            "bundle/${{ matrix.target }}/bin/ama" --version
+          fi
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        run: tar -czf "ama-${{ matrix.target }}.tar.gz" -C bundle "${{ matrix.target }}"
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "bundle/${{ matrix.target }}" -DestinationPath "ama-${{ matrix.target }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ama-${{ matrix.target }}
+          path: ama-${{ matrix.target }}.*
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: bundle
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Attach bundles to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
