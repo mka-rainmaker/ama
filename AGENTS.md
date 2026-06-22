@@ -19,6 +19,14 @@ A universal **baseline** parser provides breadth for everything else.
 TypeScript is the first supported language, and Ama is itself written in TypeScript — so Ama can
 index its own source. **That self-indexing is the built-in regression test for every change.**
 
+### Non-goals
+
+**Telemetry is a deliberate non-goal.** Ama collects no usage analytics and makes no network calls
+of its own — it reads local source and serves the graph to a locally-connected MCP client; the only
+outbound traffic is whatever that client itself makes. A code-intelligence tool runs over private
+source, so the privacy default is "nothing leaves the machine," and any future feature must preserve
+it. (ama-da3)
+
 ## Insights — required, no exceptions
 
 Whenever you discover an **insight** — a non-obvious technical lesson, gotcha, root cause, or "aha"
