@@ -6,6 +6,7 @@ import { ensureBaselineWasmTier } from "../runtime/wasm-tier.js";
 import { cyclesCommand } from "./commands/cycles.js";
 import { filesCommand } from "./commands/files.js";
 import { affectedCommand, impactCommand } from "./commands/impact.js";
+import { installCommand, uninstallCommand } from "./commands/install.js";
 import { indexCommand, initCommand, uninitCommand } from "./commands/lifecycle.js";
 import {
   calleesCommand,
@@ -138,6 +139,7 @@ export const COMMANDS: readonly CliCommand[] = [
   importsCommand,
   indexCommand,
   initCommand,
+  installCommand,
   interfacesCommand,
   nodeCommand,
   overriddenByCommand,
@@ -153,6 +155,7 @@ export const COMMANDS: readonly CliCommand[] = [
   typeUsersCommand,
   typesUsedCommand,
   uninitCommand,
+  uninstallCommand,
 ];
 
 export async function main(): Promise<void> {

@@ -34,7 +34,15 @@ npm install -g @mka-rainmaker/ama
 
 ### Configure your coding agent
 
-Every MCP client spawns the same stdio command — `ama mcp` — only the config location differs.
+**Fastest — let Ama wire itself in:**
+
+```bash
+ama install        # detects Claude Code / Cursor / Windsurf and writes their MCP config
+ama install --dry-run   # preview what it would change, writing nothing
+ama uninstall      # remove it again
+```
+
+Or configure manually — every MCP client spawns the same stdio command (`ama mcp`), only the config location differs.
 
 **Claude Code** — add it with one command:
 
