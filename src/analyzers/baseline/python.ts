@@ -1,6 +1,12 @@
 import * as path from "node:path";
 import type Parser from "web-tree-sitter";
-import { CALL_REF_PREFIX, type GraphEdge, type GraphNode, symbolId } from "../../graph/index.js";
+import {
+  CALL_REF_PREFIX,
+  type GraphEdge,
+  type GraphNode,
+  ROUTE_REF_PREFIX,
+  symbolId,
+} from "../../graph/index.js";
 import type { LanguageSpec } from "./analyzer.js";
 
 /**
@@ -270,6 +276,24 @@ function pythonCalls(
     const callerQn = qualifiedNameOf(enc);
     if (!callerQn) continue;
     const from = symbolId({ file: rel, qualifiedName: callerQn });
+    // TestClient-style route call: `client.<verb>("/path")` — link the test to the route it
+    // exercises (resolved cross-file by deriveRouteTestEdges via the route's path). (ama-f2c)
+    if (ROUTE_METHOD_ATTRS.has(name.toLowerCase())) {
+      const reqPath = firstStringArg(call.childForFieldName("arguments"));
+      if (reqPath?.startsWith("/")) {
+        const key = `t ${from} ${name} ${reqPath}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          edges.push({
+            from,
+            to: `${ROUTE_REF_PREFIX}${name.toUpperCase()} ${reqPath}`,
+            kind: "References",
+            provenance: "call-ref",
+          });
+        }
+        continue;
+      }
+    }
     const local = byName.get(name);
     if (local === null) continue; // a name defined more than once locally — don't guess
     if (local) {

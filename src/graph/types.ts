@@ -105,7 +105,10 @@ export type EdgeProvenance =
   // Baseline call resolution (ama-bnj): `call-ref` is the analyzer's unresolved candidate; `call`
   // is the whole-graph-resolved cross-file Calls edge.
   | "call-ref"
-  | "call";
+  | "call"
+  // FastAPI TestClient → Route: links a `client.get("/x")` test to the route it exercises, so
+  // impact_analysis(handler) reaches route tests through route→handler. (ama-f2c)
+  | "route-test";
 
 export interface GraphEdge {
   /** Source node id. */

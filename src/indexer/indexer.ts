@@ -18,7 +18,12 @@ import { AnalyzerRegistry } from "../analyzers/registry.js";
 import { SfcAnalyzer } from "../analyzers/sfc/analyzer.js";
 import type { AnalysisResult, Analyzer, ResolutionStats } from "../analyzers/types.js";
 import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
-import { deriveCallEdges, deriveDispatchEdges, derivePrismaReferences } from "../graph/index.js";
+import {
+  deriveCallEdges,
+  deriveDispatchEdges,
+  derivePrismaReferences,
+  deriveRouteTestEdges,
+} from "../graph/index.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
 import type { FileMeta, Store } from "../store/types.js";
@@ -199,6 +204,7 @@ export class Indexer {
     // store — the TS `prisma-ref` candidates and the schema model nodes only meet here. (ama-kvv)
     relinkPrisma(store);
     relinkCalls(store); // and cross-file baseline call edges (ama-bnj)
+    relinkRouteTests(store); // and FastAPI TestClient route→test links (ama-f2c)
 
     // Persist enough to reopen this index next process without re-analyzing:
     // coverage + resolution (for index_status), the root it was built for, and
@@ -294,6 +300,7 @@ export class Indexer {
     redispatch(store);
     relinkPrisma(store); // re-resolve prisma.<model> links whole-graph too (ama-kvv)
     relinkCalls(store); // re-resolve cross-file baseline call edges whole-graph (ama-bnj)
+    relinkRouteTests(store); // re-resolve route→test links whole-graph (ama-f2c)
   }
 
   /**
@@ -382,6 +389,15 @@ function relinkCalls(store: Store): void {
   const nodes = [...store.allNodes()];
   const base = store.allEdges().filter((e) => e.provenance !== "call");
   store.replaceEdgesByProvenance("call", deriveCallEdges(nodes, base));
+}
+
+/** Re-derive FastAPI TestClient route→test links over the full store, replacing the prior ones —
+ *  mirrors {@link relinkCalls}. A `client.get("/x")` test call and the Route node live in
+ *  different files, so resolution happens here, after every analyzer has run. (ama-f2c) */
+function relinkRouteTests(store: Store): void {
+  const nodes = [...store.allNodes()];
+  const base = store.allEdges().filter((e) => e.provenance !== "route-test");
+  store.replaceEdgesByProvenance("route-test", deriveRouteTestEdges(nodes, base));
 }
 
 /** Fingerprint a file for staleness tracking: size, mtime, and content hash.
