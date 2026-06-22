@@ -79,3 +79,35 @@ describe("searchSymbol with filters (ama-m8k.3)", () => {
     expect(setup().searchSymbol("getUser kind:Class")).toEqual([]);
   });
 });
+
+describe("searchSymbol exact mode (ama-8sx)", () => {
+  function exactSetup(): QueryService {
+    const store = new InMemoryStore();
+    store.addNode(
+      node({
+        id: "a#NotificationEmitter.emit",
+        name: "emit",
+        qualifiedName: "NotificationEmitter.emit",
+        kind: "Method",
+        file: "src/a.ts",
+      }),
+    );
+    store.addNode(node({ id: "b#emit", name: "emit", file: "src/b.ts" }));
+    store.addNode(node({ id: "c#Emitter", name: "Emitter", kind: "Class", file: "src/c.ts" }));
+    return new QueryService(store, "/repo");
+  }
+
+  it("matches a dotted qualified name exactly — no word-split", () => {
+    expect(names(exactSetup().searchSymbol("NotificationEmitter.emit", { exact: true }))).toEqual([
+      "a#NotificationEmitter.emit",
+    ]);
+  });
+
+  it("excludes the substring matches that loose search includes", () => {
+    const loose = names(exactSetup().searchSymbol("emit"));
+    const exact = names(exactSetup().searchSymbol("emit", { exact: true }));
+    expect(loose).toContain("c#Emitter"); // "emit" is a substring of "Emitter"
+    expect(exact).not.toContain("c#Emitter");
+    expect(exact).toEqual(["a#NotificationEmitter.emit", "b#emit"]);
+  });
+});

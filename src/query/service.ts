@@ -25,6 +25,9 @@ export interface SearchOptions {
   limit?: number;
   /** Restrict to a single node kind. */
   kind?: NodeKind;
+  /** Match the query as a whole symbol name / qualified-name (exact, case-insensitive) rather
+   *  than the default substring/word search — no word-split noise. (ama-8sx) */
+  exact?: boolean;
 }
 
 /** A search plus a confidence signal (ama-b79). */
@@ -436,13 +439,26 @@ export class QueryService {
     // fall through to allNodes() and hand back arbitrary symbols. A *filters-only*
     // query (e.g. `kind:Class`) is still valid: it has a filter. (ama-k3d)
     if (!text && !pathFilter && !kind && !lang && !name) return [];
+    // Exact mode (ama-8sx): match the whole query against a symbol's name/qualified-name with no
+    // substring/word split; seed candidates from the name index by the last dotted segment.
+    const exact = opts.exact && text ? text.toLowerCase() : undefined;
     // Free text searches the name index (relevance-ordered); a filters-only query
     // (e.g. `path:src/api kind:Class`) scans every node since there's no name term.
     const candidates = text
-      ? this.store.searchByName(text, Number.MAX_SAFE_INTEGER)
+      ? this.store.searchByName(
+          exact ? text.slice(text.lastIndexOf(".") + 1) : text,
+          Number.MAX_SAFE_INTEGER,
+        )
       : this.store.allNodes();
     const hits: GraphNode[] = [];
     for (const node of candidates) {
+      if (
+        exact &&
+        node.name.toLowerCase() !== exact &&
+        node.qualifiedName.toLowerCase() !== exact
+      ) {
+        continue;
+      }
       if (kind && node.kind.toLowerCase() !== kind.toLowerCase()) continue;
       if (pathFilter && !node.file.toLowerCase().includes(pathFilter.toLowerCase())) continue;
       if (lang && languageForFile(node.file) !== lang.toLowerCase()) continue;

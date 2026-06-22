@@ -237,6 +237,13 @@ export function createServer(
           .describe("Name or partial name, optionally with path:/kind:/lang:/name: filters."),
         limit: z.number().int().positive().optional().describe("Max results."),
         kind: z.enum(NODE_KINDS).optional().describe("Restrict to a single node kind."),
+        exact: z
+          .boolean()
+          .optional()
+          .describe(
+            "Match the query as a whole symbol name/qualified-name (exact, case-insensitive) " +
+              "instead of substring/word search — use for a precise lookup like `Foo.bar`.",
+          ),
         projectPath: projectPathSchema,
       },
     },
@@ -246,13 +253,20 @@ export function createServer(
         query,
         limit,
         kind,
+        exact,
         projectPath,
-      }: { query: string; limit?: number; kind?: NodeKind; projectPath?: string }) => {
+      }: {
+        query: string;
+        limit?: number;
+        kind?: NodeKind;
+        exact?: boolean;
+        projectPath?: string;
+      }) => {
         await session.catchUpIfNeeded();
         const max = limit ?? DEFAULT_SEARCH_LIMIT;
         const { results, lowConfidence } = session.searchSymbolWithConfidence(
           query,
-          { limit: max + 1, kind },
+          { limit: max + 1, kind, exact },
           projectPath,
         );
         const lowHint = lowConfidence
