@@ -1496,7 +1496,9 @@ const FILE_ROUTE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs"]);
  *  & Astro live under `pages/`/`src/pages/`; Nuxt under `server/api/` (keeps the
  *  `/api` prefix) or `server/routes/` (stripped). `index` maps to its directory.
  *  `allowDefault` is true only in an API context — a `pages/about.tsx` default
- *  export is a page component, not a route. (ama-w7g) */
+ *  export is a page component, not a route. Next.js App Router `app/**​/page.tsx` maps to
+ *  its directory (the `page` filename drops, like `index`) and its default export is the
+ *  page handler. (ama-w7g, ama-vzq) */
 function filenameRoutePath(rel: string): { path: string; allowDefault: boolean } | undefined {
   const parts = rel.split("/");
   const file = parts[parts.length - 1] ?? "";
@@ -1505,11 +1507,19 @@ function filenameRoutePath(rel: string): { path: string; allowDefault: boolean }
   const base = file.slice(0, dot);
   if (base.startsWith("_")) return undefined; // Next.js specials: _app, _document
 
+  const appIdx = parts.lastIndexOf("app");
   const pagesIdx = parts.lastIndexOf("pages");
   const serverIdx = parts.lastIndexOf("server");
   let rootIdx: number;
   let allowDefault: boolean;
-  if (pagesIdx >= 0) {
+  // Next.js App Router: app/**/page.tsx — the `page` filename is the route for its
+  // directory (it drops like `index`), and its default export is the page handler. (ama-vzq)
+  let dropFilename = false;
+  if (appIdx >= 0 && base === "page") {
+    rootIdx = appIdx;
+    allowDefault = true;
+    dropFilename = true;
+  } else if (pagesIdx >= 0) {
     rootIdx = pagesIdx;
     allowDefault = parts[pagesIdx + 1] === "api"; // Next API routes live under pages/api
   } else if (serverIdx >= 0 && parts[serverIdx + 1] === "routes") {
@@ -1522,7 +1532,7 @@ function filenameRoutePath(rel: string): { path: string; allowDefault: boolean }
     return undefined;
   }
   const dirs = parts.slice(rootIdx + 1, parts.length - 1);
-  const leaf = base === "index" ? [] : [base];
+  const leaf = base === "index" || dropFilename ? [] : [base];
   const segs = [...dirs, ...leaf].map(routeSegment).filter((s): s is string => s !== undefined);
   return { path: `/${segs.join("/")}`, allowDefault };
 }

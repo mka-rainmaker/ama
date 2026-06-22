@@ -12,6 +12,12 @@ const files = [
   "src/pages/posts/[id].ts",
   "server/api/hello.ts",
   "pages/about.ts",
+  // Next.js App Router (ama-vzq): page.tsx is the route for its directory.
+  "app/page.tsx",
+  "app/dashboard/page.tsx",
+  "app/blog/[slug]/page.tsx",
+  "app/(marketing)/pricing/page.tsx",
+  "app/layout.tsx",
 ];
 
 describe("TypeScriptAnalyzer filename-based routing (ama-w7g)", () => {
@@ -53,5 +59,29 @@ describe("TypeScriptAnalyzer filename-based routing (ama-w7g)", () => {
     expect(result.nodes.some((n) => n.kind === "Route" && n.qualifiedName.includes("/about"))).toBe(
       false,
     );
+  });
+
+  it("App Router: a page.tsx is the ALL route for its directory (ama-vzq)", () => {
+    expect(route("ALL /dashboard")).toBeDefined();
+    expect(referencesFrom("ALL /dashboard", "app/dashboard/page.tsx")).toBe(true);
+  });
+
+  it("App Router: the root app/page.tsx is the / route", () => {
+    expect(route("ALL /")).toBeDefined();
+    expect(referencesFrom("ALL /", "app/page.tsx")).toBe(true);
+  });
+
+  it("App Router: a [slug] segment becomes :slug", () => {
+    expect(route("ALL /blog/:slug")).toBeDefined();
+    expect(referencesFrom("ALL /blog/:slug", "app/blog/[slug]/page.tsx")).toBe(true);
+  });
+
+  it("App Router: a (group) directory is elided from the URL", () => {
+    expect(route("ALL /pricing")).toBeDefined();
+    expect(referencesFrom("ALL /pricing", "app/(marketing)/pricing/page.tsx")).toBe(true);
+  });
+
+  it("App Router: layout.tsx (not page/route) is NOT a route", () => {
+    expect(result.nodes.some((n) => n.kind === "Route" && n.file === "app/layout.tsx")).toBe(false);
   });
 });
