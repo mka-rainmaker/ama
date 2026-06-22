@@ -74,6 +74,16 @@ claude mcp add ama -- ama mcp
 { "mcpServers": { "ama": { "command": "npx", "args": ["-y", "@mka-rainmaker/ama", "mcp"] } } }
 ```
 
+### Fewer tools, lower token cost
+
+Ama exposes 27 tools by default. To trade that for a small high-signal set, set
+`AMA_MCP_TOOLS` on the server — `minimal` (just `explore` + indexing), or a comma-separated
+list of tool names (the indexing tools are always included):
+
+```json
+{ "mcpServers": { "ama": { "command": "ama", "args": ["mcp"], "env": { "AMA_MCP_TOOLS": "minimal" } } } }
+```
+
 ### Quick start
 
 Once connected, point Ama at a repo and start asking graph questions:

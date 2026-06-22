@@ -139,19 +139,53 @@ function tap<A, R>(name: string, run: (args: A) => R | Promise<R>): (args: A) =>
   };
 }
 
+/** Tools always exposed (the index bootstrap) even when AMA_MCP_TOOLS filters the rest. */
+const ESSENTIAL_TOOLS = ["index_repository", "index_status"];
+
+/**
+ * Resolve AMA_MCP_TOOLS into the set of tool names to expose, or null for all (the default,
+ * non-breaking). `minimal` → the essentials + `explore`; a comma list → the essentials + those
+ * names. Lets an agent trade the full 27-tool surface for a tiny high-signal set. (ama-tqm)
+ */
+export function selectTools(spec: string | undefined): Set<string> | null {
+  const raw = spec?.trim();
+  if (!raw) return null;
+  if (raw.toLowerCase() === "minimal") return new Set([...ESSENTIAL_TOOLS, "explore"]);
+  const names = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return new Set([...ESSENTIAL_TOOLS, ...names]);
+}
+
 /**
  * Build the MCP server exposing Ama's tools over one {@link AmaSession}. Pure
  * construction — no transport — so it can be driven by an in-memory client in
  * tests or by stdio in production.
  */
-export function createServer(session: AmaSession = new AmaSession()): McpServer {
+export function createServer(
+  session: AmaSession = new AmaSession(),
+  toolsSpec: string | undefined = process.env.AMA_MCP_TOOLS,
+): McpServer {
   const server = new McpServer({ name: "ama", version: serverStamp.version });
+
+  // AMA_MCP_TOOLS minimal-tools mode: register everything, but disable (hide from
+  // tools/list) any tool not in the selected set. Bind first so the `tool` rename below
+  // never recurses into the wrapper. (ama-tqm)
+  const selected = selectTools(toolsSpec);
+  const baseRegister = server.registerTool.bind(server);
+  // biome-ignore lint/suspicious/noExplicitAny: thin pass-through; the public type is the cast.
+  const tool = ((name: string, config: any, cb: any) => {
+    const reg = baseRegister(name, config, cb);
+    if (selected && !selected.has(name)) reg.disable();
+    return reg;
+  }) as typeof server.registerTool;
 
   // Fires on each connection's initialize handshake — i.e. on reconnect. Arm a
   // catch-up so the first query reconciles edits made while disconnected.
   server.server.oninitialized = () => session.markForCatchUp();
 
-  server.registerTool(
+  tool(
     "index_repository",
     {
       description: "Build the code graph for a directory or project. Run this first.",
@@ -164,7 +198,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "index_status",
     {
       description:
@@ -178,7 +212,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     }),
   );
 
-  server.registerTool(
+  tool(
     "sync_index",
     {
       description:
@@ -189,7 +223,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     tap("sync_index", async () => json(await session.sync())),
   );
 
-  server.registerTool(
+  tool(
     "search_symbol",
     {
       description:
@@ -230,7 +264,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_callers",
     {
       description:
@@ -249,7 +283,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_callees",
     {
       description:
@@ -268,7 +302,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_handlers",
     {
       description: "The handler symbols a framework route maps to.",
@@ -285,7 +319,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_routes",
     {
       description: "Every framework route that maps to a symbol (handler).",
@@ -302,7 +336,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_overrides",
     {
       description:
@@ -321,7 +355,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_overridden_by",
     {
       description:
@@ -340,7 +374,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_referrers",
     {
       description:
@@ -361,7 +395,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_implementations",
     {
       description: "Every class that implements an interface.",
@@ -378,7 +412,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_interfaces",
     {
       description: "The interfaces a class implements.",
@@ -395,7 +429,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_importers",
     {
       description: "Every file that imports (or re-exports) a symbol.",
@@ -412,7 +446,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_imports",
     {
       description: "The symbols a file imports (or re-exports).",
@@ -429,7 +463,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_type_users",
     {
       description: "Every symbol that uses a type in a parameter, return, or property.",
@@ -446,7 +480,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_types_used",
     {
       description: "The named types a symbol uses in its parameters, return, or properties.",
@@ -463,7 +497,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "find_returns",
     {
       description:
@@ -481,7 +515,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "get_code_snippet",
     {
       description: "A symbol's verbatim source.",
@@ -498,7 +532,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "node",
     {
       description:
@@ -517,7 +551,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "file_skeleton",
     {
       description:
@@ -537,7 +571,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "impact_analysis",
     {
       description:
@@ -568,7 +602,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "get_graph_schema",
     {
       description:
@@ -583,7 +617,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "circular_imports",
     {
       description:
@@ -600,7 +634,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "affected",
     {
       description:
@@ -630,7 +664,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "search_code",
     {
       description:
@@ -664,7 +698,7 @@ export function createServer(session: AmaSession = new AmaSession()): McpServer 
     ),
   );
 
-  server.registerTool(
+  tool(
     "explore",
     {
       description:
