@@ -1,5 +1,23 @@
 # Ama 🐶
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/@mka-rainmaker/ama"><img alt="npm" src="https://img.shields.io/npm/v/@mka-rainmaker/ama?label=npm&color=007ec6"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-e0a100"></a>
+  <img alt="Node.js 24+" src="https://img.shields.io/badge/Node.js-24%2B-44883e">
+</p>
+<p align="center">
+  <img alt="macOS supported" src="https://img.shields.io/badge/macOS-supported-4c8eda">
+  <img alt="Linux supported" src="https://img.shields.io/badge/Linux-supported-4c8eda">
+  <img alt="Windows supported" src="https://img.shields.io/badge/Windows-supported-4c8eda">
+</p>
+<p align="center">
+  <img alt="Claude Code supported" src="https://img.shields.io/badge/Claude_Code-supported-8a3ffc">
+  <img alt="Cursor supported" src="https://img.shields.io/badge/Cursor-supported-8a3ffc">
+  <img alt="Windsurf supported" src="https://img.shields.io/badge/Windsurf-supported-8a3ffc">
+  <img alt="Codex supported" src="https://img.shields.io/badge/Codex-supported-8a3ffc">
+  <img alt="any MCP client" src="https://img.shields.io/badge/+_any_MCP_client-via_config-9f9f9f">
+</p>
+
 **Ama** is a local-first **code-intelligence server** that speaks the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). It parses a codebase into a queryable knowledge graph of symbols and their relationships, then hands that graph to AI coding agents — so an agent answers *"who calls this?"*, *"what breaks if I change this?"*, and *"which tests cover this route?"* in a **single tool call** instead of dozens of file reads.
 
 Named after a puppy: small, eager, and a little smarter every day.
