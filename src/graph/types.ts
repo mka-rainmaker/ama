@@ -27,28 +27,34 @@ export const NODE_KINDS = [
 
 export type NodeKind = (typeof NODE_KINDS)[number];
 
-export type EdgeKind =
-  | "Defines"
-  | "Calls"
+/** The edge kinds, as a runtime array — the single source of truth (e.g. for
+ * validating an edge over the wire). `EdgeKind` is derived from it, so the two stay
+ * in sync. Mirrors {@link NODE_KINDS}. */
+export const EDGE_KINDS = [
+  "Defines",
+  "Calls",
   /** A `new X()` construction — distinct from a plain Calls so "who instantiates
    *  X" is separable from "who calls X". (ama-hft.11) */
-  | "Instantiates"
+  "Instantiates",
   /** A subtype method that overrides/implements a supertype method of the same
    *  name (subtype.method → supertype.method). (ama-hft.11) */
-  | "Overrides"
-  | "Inherits"
-  | "Implements"
-  | "UsesType"
+  "Overrides",
+  "Inherits",
+  "Implements",
+  "UsesType",
   /** A function/method → its declared return type, distinct from the param/property
    *  type usages of UsesType. (ama-37c) */
-  | "Returns"
-  | "Imports"
+  "Returns",
+  "Imports",
   /** A type-only import (`import type` / `import { type X }`) — a compile-time
    *  dependency erased at runtime. Counted as an import for dependents/affected,
    *  but excluded from runtime analyses like circular_imports. */
-  | "ImportsType"
+  "ImportsType",
   /** A route (or other dispatch) refers to the symbol that handles it. */
-  | "References";
+  "References",
+] as const;
+
+export type EdgeKind = (typeof EDGE_KINDS)[number];
 
 /** Which analysis tier produced a piece of data. */
 export type Tier = "deep" | "baseline";
