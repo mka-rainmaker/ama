@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createDefaultIndexer } from "../indexer/indexer.js";
+import { isEntrypoint } from "../runtime/entrypoint.js";
 import { ensureBaselineWasmTier } from "../runtime/wasm-tier.js";
 import { InMemoryStore } from "../store/memory.js";
 import { SqliteStore } from "../store/sqlite.js";
@@ -146,7 +146,7 @@ export async function main(): Promise<void> {
   console.error(`ama MCP server (HTTP) on http://localhost:${port}${MCP_PATH}`);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isEntrypoint(import.meta.url)) {
   // Pin grammar WASM to the baseline compiler before anything loads it, or the
   // long-running index OOMs (ama-rgx). Re-execs once; the supervisor skips main.
   if (!ensureBaselineWasmTier()) {

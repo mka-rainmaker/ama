@@ -5,6 +5,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# npm pack artifacts (release verification)
+*.tgz
+
 # Ama local index cache (file-backed SqliteStore for the dev HTTP server)
 .ama/
 

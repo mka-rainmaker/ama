@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import * as fs from "node:fs";
-import { fileURLToPath } from "node:url";
 import { serverStamp } from "../mcp/build-info.js";
+import { isEntrypoint } from "../runtime/entrypoint.js";
 import { ensureBaselineWasmTier } from "../runtime/wasm-tier.js";
 import { cyclesCommand } from "./commands/cycles.js";
 import { filesCommand } from "./commands/files.js";
@@ -169,7 +169,7 @@ export async function main(): Promise<void> {
   process.exit(await run(argv, COMMANDS));
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isEntrypoint(import.meta.url)) {
   // Pin grammar WASM to the baseline compiler before any command can load it, or
   // an indexing command OOMs (ama-rgx). Re-execs once; the supervisor skips main.
   if (!ensureBaselineWasmTier()) {

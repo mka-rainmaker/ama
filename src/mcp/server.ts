@@ -1,10 +1,10 @@
-import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { NODE_KINDS } from "../graph/index.js";
 import type { NodeKind } from "../graph/index.js";
 import { DEFAULT_SEARCH_LIMIT } from "../query/service.js";
+import { isEntrypoint } from "../runtime/entrypoint.js";
 import { ensureBaselineWasmTier } from "../runtime/wasm-tier.js";
 import { serverStamp } from "./build-info.js";
 import { AmaSession } from "./session.js";
@@ -706,7 +706,7 @@ export async function main(): Promise<void> {
   console.error("ama MCP server running on stdio");
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isEntrypoint(import.meta.url)) {
   // Pin grammar WASM to the baseline compiler before anything loads it, or a
   // long-running index OOMs (ama-rgx). Re-execs once; the supervisor skips main.
   if (!ensureBaselineWasmTier()) {
