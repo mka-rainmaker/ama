@@ -183,6 +183,61 @@ function pythonRoutesAll(
   };
 }
 
+/** The nearest enclosing `function_definition` of a node, or undefined (module-level). */
+function enclosingFunction(node: Parser.SyntaxNode): Parser.SyntaxNode | undefined {
+  for (let p = node.parent; p; p = p.parent) {
+    if (p.type === "function_definition") return p;
+  }
+  return undefined;
+}
+
+function* eachFunction(node: Parser.SyntaxNode): Generator<Parser.SyntaxNode> {
+  if (node.type === "function_definition") yield node;
+  for (const c of node.namedChildren) yield* eachFunction(c);
+}
+
+/** The simple (last-segment) name a call targets: `foo()` → "foo", `obj.bar()` → "bar". */
+function calleeName(call: Parser.SyntaxNode): string | undefined {
+  const fn = call.childForFieldName("function");
+  if (fn?.type === "identifier") return fn.text;
+  if (fn?.type === "attribute") return fn.childForFieldName("attribute")?.text;
+  return undefined;
+}
+
+/** Heuristic within-file call edges (baseline tier): resolve each call's callee name to a
+ *  function/method defined in the SAME file and emit a Calls edge from the enclosing function.
+ *  Name-based (no types); a name defined more than once in the file is left unresolved to avoid
+ *  wrong edges, and module-level calls (no enclosing function) are skipped. Cross-file
+ *  resolution is a follow-up. (ama-bnj) */
+function pythonCalls(
+  root: Parser.SyntaxNode,
+  rel: string,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const byName = new Map<string, string | null>(); // simple name → id, or null when ambiguous
+  for (const fn of eachFunction(root)) {
+    const qn = qualifiedNameOf(fn);
+    if (!qn) continue;
+    const simple = qn.slice(qn.lastIndexOf(".") + 1);
+    byName.set(simple, byName.has(simple) ? null : symbolId({ file: rel, qualifiedName: qn }));
+  }
+  const edges: GraphEdge[] = [];
+  const seen = new Set<string>();
+  for (const call of eachCall(root)) {
+    const enc = enclosingFunction(call);
+    const name = calleeName(call);
+    if (!enc || !name) continue;
+    const to = byName.get(name);
+    const callerQn = qualifiedNameOf(enc);
+    if (!to || !callerQn) continue; // callee not defined in this file, or an ambiguous name
+    const from = symbolId({ file: rel, qualifiedName: callerQn });
+    const key = `${from} ${to}`;
+    if (from === to || seen.has(key)) continue; // skip self-recursion + duplicate call sites
+    seen.add(key);
+    edges.push({ from, to, kind: "Calls", provenance: "heuristic" });
+  }
+  return { nodes: [], edges };
+}
+
 /**
  * Baseline (syntactic) spec for Python. Functions and classes are the symbols
  * worth a node; methods are `function_definition` too (Python doesn't
@@ -200,4 +255,5 @@ export const pythonSpec: LanguageSpec = {
   },
   resolveImports: pythonImports,
   collectRoutes: pythonRoutesAll,
+  collectCalls: pythonCalls,
 };

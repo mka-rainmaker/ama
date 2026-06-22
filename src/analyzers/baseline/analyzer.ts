@@ -45,6 +45,16 @@ export interface LanguageSpec {
     root: Parser.SyntaxNode,
     rel: string,
   ) => { nodes: GraphNode[]; edges: GraphEdge[] };
+
+  /**
+   * Optional call detector: walk the CST for call sites and return heuristic `Calls` edges.
+   * Baseline tier — name-based resolution within the file (no types), so callers/callees and
+   * blast-radius work for languages without a deep analyzer. (ama-bnj)
+   */
+  readonly collectCalls?: (
+    root: Parser.SyntaxNode,
+    rel: string,
+  ) => { nodes: GraphNode[]; edges: GraphEdge[] };
 }
 
 /**
@@ -99,6 +109,11 @@ export class BaselineAnalyzer implements Analyzer {
             const routes = this.spec.collectRoutes(tree.rootNode, rel);
             fileNodes.push(...routes.nodes);
             fileEdges.push(...routes.edges);
+          }
+          if (this.spec.collectCalls) {
+            const calls = this.spec.collectCalls(tree.rootNode, rel);
+            fileNodes.push(...calls.nodes);
+            fileEdges.push(...calls.edges);
           }
           nodes.push(...fileNodes);
           edges.push(...fileEdges);
