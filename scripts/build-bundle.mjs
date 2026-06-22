@@ -30,9 +30,12 @@ const NODE_VERSION = process.env.AMA_NODE_VERSION ?? "24.12.0";
 const out = path.join(repo, "bundle", target);
 const lib = path.join(out, "lib");
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, stdio: "inherit" });
+// npm is npm.cmd on Windows; Node won't spawn a .cmd without a shell. tar/unzip are real exes, so
+// they stay on `run` (no shell). Args here are fixed literals → shell:true carries no injection risk.
+const npm = (args, cwd) => execFileSync("npm", args, { cwd, stdio: "inherit", shell: true });
 
 console.log(`[bundle] target ${target}`);
-run("npm", ["run", "build"], repo); // 1. compile dist/
+npm(["run", "build"], repo); // 1. compile dist/
 
 // 2. stage lib/ = dist + manifests, then a prod-only install (pure JS/wasm deps)
 fs.rmSync(out, { recursive: true, force: true });
@@ -41,7 +44,7 @@ fs.cpSync(path.join(repo, "dist"), path.join(lib, "dist"), { recursive: true });
 for (const f of ["package.json", "package-lock.json"]) {
   fs.copyFileSync(path.join(repo, f), path.join(lib, f));
 }
-run("npm", ["ci", "--omit=dev", "--ignore-scripts"], lib);
+npm(["ci", "--omit=dev", "--ignore-scripts"], lib);
 
 // 3. vendor the Node runtime (official download + checksum, or opt-in host copy)
 await vendorNode(target, path.join(out, "node"));
