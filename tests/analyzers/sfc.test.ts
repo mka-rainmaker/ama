@@ -32,3 +32,30 @@ describe("SfcAnalyzer (.vue/.svelte) (ama-krw)", () => {
     expect(imports).toContain(fileId("Card.vue")); // ./Card.vue → Card.vue (explicit)
   });
 });
+
+/**
+ * The SfcAnalyzer is registered for `.svelte` too (same engine), and SFCs lean on
+ * dynamic `import()` for lazy components/routes — both must be covered. (ama-grb)
+ */
+describe("SfcAnalyzer on Svelte + dynamic imports (ama-grb)", () => {
+  const result = new SfcAnalyzer("svelte", [".svelte"]).analyze(root, [
+    "Toggle.svelte",
+    "Panel.svelte",
+  ]);
+  const importsFrom = (rel: string) =>
+    result.edges.filter((e) => e.kind === "Imports" && e.from === fileId(rel)).map((e) => e.to);
+
+  it("detects a .svelte file as a Component", () => {
+    const toggle = result.nodes.find(
+      (n) => n.id === symbolId({ file: "Toggle.svelte", qualifiedName: "Toggle" }),
+    );
+    expect(toggle?.kind).toBe("Component");
+    expect(toggle?.name).toBe("Toggle");
+  });
+
+  it("captures static and dynamic (lazy) <script> imports", () => {
+    const imports = importsFrom("Toggle.svelte");
+    expect(imports).toContain(fileId("helper.ts")); // static: import { helper } from "./helper"
+    expect(imports).toContain(fileId("Panel.svelte")); // dynamic: import("./Panel.svelte")
+  });
+});

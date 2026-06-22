@@ -29,13 +29,15 @@ function scriptBlocks(code: string): string {
   return out;
 }
 
-/** Module specifiers a `<script>` imports or re-exports — `… from "x"` (import,
- *  `export … from`) and side-effect `import "x"`. Baseline (syntactic) breadth: a
- *  best-effort scan, not a full parse. (ama-krw) */
+/** Module specifiers a `<script>` imports or re-exports: `… from "x"` (import,
+ *  `export … from`), side-effect `import "x"`, and dynamic `import("x")` — the last
+ *  is how SFCs lazy-load components/routes, so it belongs in the import graph too.
+ *  Baseline (syntactic) breadth: a best-effort scan, not a full parse. (ama-krw, ama-grb) */
 function importSpecifiers(script: string): string[] {
   const specs: string[] = [];
   for (const m of script.matchAll(/\bfrom\s*['"]([^'"]+)['"]/g)) specs.push(m[1] as string);
   for (const m of script.matchAll(/\bimport\s*['"]([^'"]+)['"]/g)) specs.push(m[1] as string);
+  for (const m of script.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]/g)) specs.push(m[1] as string);
   return specs;
 }
 
