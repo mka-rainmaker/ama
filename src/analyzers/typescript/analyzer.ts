@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import ts from "typescript";
-import { deriveDispatchEdges, fileId, symbolId } from "../../graph/index.js";
+import { PRISMA_REF_PREFIX, deriveDispatchEdges, fileId, symbolId } from "../../graph/index.js";
 import type { GraphEdge, GraphNode, NodeKind, SourceRange } from "../../graph/index.js";
 import type { AnalysisResult, Analyzer, ResolutionStats } from "../types.js";
 
@@ -414,7 +414,18 @@ export class TypeScriptAnalyzer implements Analyzer {
           // resolveValueRef → nodeIdForDecl already filters targets to in-project
           // top-level + class/interface members, so external reads (`console.log`)
           // and locals add no edge — only the `X.m()` call form is excluded here.
-          if (!(ts.isCallExpression(parent.parent) && parent.parent.expression === parent)) {
+          if (isPrismaClientExpr(parent.expression)) {
+            // `prisma.<model>` (also `db.`/`tx.`/`this.prisma.`) — a Prisma client model
+            // access. Emit a raw candidate the indexer resolves to the schema model node;
+            // the name-based check is intentionally loose because a candidate matching no
+            // model is dropped at resolution (derivePrismaReferences). (ama-kvv)
+            edges.push({
+              from: enclosingId,
+              to: PRISMA_REF_PREFIX + child.text.toLowerCase(),
+              kind: "References",
+              provenance: "prisma-ref",
+            });
+          } else if (!(ts.isCallExpression(parent.parent) && parent.parent.expression === parent)) {
             const to = resolveValueRef(child, checker, declToId, root);
             if (to && to !== enclosingId) {
               edges.push({ from: enclosingId, to, kind: "References" });
@@ -1489,6 +1500,20 @@ function fileRoutePath(rel: string): string | undefined {
 }
 
 /** Module extensions a filename-routed endpoint can use. (ama-w7g) */
+/** Conventional names for a Prisma client instance, so `prisma.<model>` / `db.<model>` /
+ *  `tx.<model>` / `this.prisma.<model>` reads as a schema model access. (ama-kvv) */
+const PRISMA_CLIENT_NAMES = new Set(["prisma", "db", "tx", "trx", "prismaclient", "dbclient"]);
+
+/** Whether `expr` is a Prisma client — a bare `prisma`/`db`/… identifier or a
+ *  `this.prisma`-style member — so a `.member` off it names a model. (ama-kvv) */
+function isPrismaClientExpr(expr: ts.Expression): boolean {
+  if (ts.isIdentifier(expr)) return PRISMA_CLIENT_NAMES.has(expr.text.toLowerCase());
+  if (ts.isPropertyAccessExpression(expr)) {
+    return PRISMA_CLIENT_NAMES.has(expr.name.text.toLowerCase());
+  }
+  return false;
+}
+
 const FILE_ROUTE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs"]);
 
 /** The URL path for a *filename*-routed module (the route includes the filename),

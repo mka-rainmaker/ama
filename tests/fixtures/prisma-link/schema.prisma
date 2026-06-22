@@ -1,0 +1,9 @@
+model User {
+  id    String @id
+  email String
+}
+
+model Post {
+  id    String @id
+  title String
+}

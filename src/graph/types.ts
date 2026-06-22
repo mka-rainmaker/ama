@@ -90,8 +90,13 @@ export interface GraphNode {
  * "may-reach", not a proven direct call. Lets query results label edge trust — the
  * node-level tier honesty rule, at edge level. `dispatch` also marks the edges the
  * indexer re-derives after an incremental reindex (ama-tr1).
+ *
+ * `prisma-ref` is a raw, unresolved candidate the TS analyzer emits for a `prisma.<model>`
+ * client access (its target encodes the model name, not a node id); `prisma` is the
+ * resolved cross-analyzer edge a whole-graph pass derives from it, linking the access to
+ * the schema model node. Like `dispatch`, `prisma` is re-derived after a reindex. (ama-kvv)
  */
-export type EdgeProvenance = "resolved" | "heuristic" | "dispatch";
+export type EdgeProvenance = "resolved" | "heuristic" | "dispatch" | "prisma-ref" | "prisma";
 
 export interface GraphEdge {
   /** Source node id. */

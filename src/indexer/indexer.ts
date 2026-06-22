@@ -18,7 +18,7 @@ import { AnalyzerRegistry } from "../analyzers/registry.js";
 import { SfcAnalyzer } from "../analyzers/sfc/analyzer.js";
 import type { AnalysisResult, Analyzer, ResolutionStats } from "../analyzers/types.js";
 import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
-import { deriveDispatchEdges } from "../graph/index.js";
+import { deriveDispatchEdges, derivePrismaReferences } from "../graph/index.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
 import type { FileMeta, Store } from "../store/types.js";
@@ -195,6 +195,10 @@ export class Indexer {
       });
     }
 
+    // Resolve cross-analyzer Prisma links now that every analyzer's nodes are in the
+    // store — the TS `prisma-ref` candidates and the schema model nodes only meet here. (ama-kvv)
+    relinkPrisma(store);
+
     // Persist enough to reopen this index next process without re-analyzing:
     // coverage + resolution (for index_status), the root it was built for, and
     // the schema version that wrote it.
@@ -287,6 +291,7 @@ export class Indexer {
     // file's cross-file dispatch edges. Re-derive them over the full store after the
     // structural change, restoring full-index parity. (ama-tr1)
     redispatch(store);
+    relinkPrisma(store); // re-resolve prisma.<model> links whole-graph too (ama-kvv)
   }
 
   /**
@@ -354,6 +359,17 @@ function redispatch(store: Store): void {
   const nodes = [...store.allNodes()];
   const base = store.allEdges().filter((e) => e.provenance !== "dispatch");
   store.replaceEdgesByProvenance("dispatch", deriveDispatchEdges(nodes, base));
+}
+
+/**
+ * Re-derive the cross-analyzer Prisma links (`prisma.<model>` usage → schema model node)
+ * over the full store, replacing the prior ones — mirrors {@link redispatch}. The TS
+ * analyzer's raw `prisma-ref` candidates and the PrismaAnalyzer's model nodes only meet
+ * here, after every analyzer has run, so resolution can't happen in either batch. (ama-kvv) */
+function relinkPrisma(store: Store): void {
+  const nodes = [...store.allNodes()];
+  const base = store.allEdges().filter((e) => e.provenance !== "prisma");
+  store.replaceEdgesByProvenance("prisma", derivePrismaReferences(nodes, base));
 }
 
 /** Fingerprint a file for staleness tracking: size, mtime, and content hash.
