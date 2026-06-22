@@ -6,7 +6,21 @@ import * as path from "node:path";
  * `.vscode`, …) are skipped separately. Shared by the indexer's file discovery
  * and the file watcher so the set of files we *watch* matches what we *index*.
  */
-export const IGNORED_DIRS = new Set(["node_modules", "dist", "build", "coverage"]);
+export const IGNORED_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  "coverage",
+  // Vendored deps, build output, and caches that hold no first-party source. Dot-dirs
+  // (.venv, .git, .tox, .mypy_cache, …) are already skipped by the leading-dot rule in
+  // isIgnoredSegment, so these are the non-dot ones — notably a plain `venv` and Python's
+  // `__pycache__`/`site-packages`, which otherwise flooded a parent-workspace index. (ama-65z)
+  "venv",
+  "__pycache__",
+  "site-packages",
+  "target",
+  "vendor",
+]);
 
 /**
  * Files larger than this are skipped by both discovery and the watcher — a
