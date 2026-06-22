@@ -1,0 +1,30 @@
+// A representative Prisma schema for the analyzer test (ama-cdg).
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+model User {
+  id    String @id @default(uuid())
+  email String @unique
+  role  Role   @default(USER)
+  posts Post[]
+
+  @@map("users")
+}
+
+model Post {
+  id       String  @id
+  title    String
+  authorId String
+  author   User    @relation(fields: [authorId], references: [id])
+}

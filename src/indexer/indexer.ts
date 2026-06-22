@@ -13,6 +13,7 @@ import { phpSpec } from "../analyzers/baseline/php.js";
 import { pythonSpec } from "../analyzers/baseline/python.js";
 import { rustSpec } from "../analyzers/baseline/rust.js";
 import { swiftSpec } from "../analyzers/baseline/swift.js";
+import { PrismaAnalyzer } from "../analyzers/prisma/analyzer.js";
 import { AnalyzerRegistry } from "../analyzers/registry.js";
 import { SfcAnalyzer } from "../analyzers/sfc/analyzer.js";
 import type { AnalysisResult, Analyzer, ResolutionStats } from "../analyzers/types.js";
@@ -338,6 +339,7 @@ export function createDefaultIndexer(createStore?: (root: string) => Store): Ind
   registry.register(new BaselineAnalyzer(swiftSpec));
   registry.register(new SfcAnalyzer("vue", [".vue"]));
   registry.register(new SfcAnalyzer("svelte", [".svelte"]));
+  registry.register(new PrismaAnalyzer());
   return new Indexer(registry, createStore);
 }
 
