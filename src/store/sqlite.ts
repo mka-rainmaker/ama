@@ -1,4 +1,9 @@
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
+// A static `import "node:sqlite"` emits its ExperimentalWarning during ESM *linking* — before
+// any module body runs, too early to filter. So this side-effect import installs the filter
+// first, and node:sqlite is loaded at runtime (below) with the filter already in place. (ama-hee)
+import "../runtime/quiet-sqlite-warning.js";
+import type * as NodeSqlite from "node:sqlite"; // type only — erased at runtime, no warning
 import type {
   EdgeKind,
   EdgeProvenance,
@@ -8,6 +13,10 @@ import type {
   Tier,
 } from "../graph/index.js";
 import type { FileMeta, Store } from "./types.js";
+
+/** node:sqlite's `DatabaseSync`, loaded at runtime (not statically) so the quiet filter imported
+ *  above is installed before its module-load ExperimentalWarning fires. (ama-hee) */
+const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof NodeSqlite;
 
 interface FileRow {
   path: string;
@@ -46,7 +55,7 @@ interface EdgeRow {
  * Pass a file path to persist across processes, or omit it for an in-memory db.
  */
 export class SqliteStore implements Store {
-  private readonly db: DatabaseSync;
+  private readonly db: InstanceType<typeof DatabaseSync>;
 
   constructor(location = ":memory:") {
     this.db = new DatabaseSync(location);
@@ -372,7 +381,7 @@ function rowToFile(r: FileRow): FileMeta {
   };
 }
 
-function count(db: DatabaseSync, table: string): number {
+function count(db: InstanceType<typeof DatabaseSync>, table: string): number {
   const row = db.prepare(`SELECT count(*) AS c FROM ${table}`).get() as {
     c: number | bigint;
   };
