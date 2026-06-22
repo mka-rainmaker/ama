@@ -18,7 +18,7 @@ Every answer reports **which tier produced it**, so partial coverage never quiet
 And because it's built for agents:
 
 - **100% local.** No external APIs, no API keys, no telemetry. Your code never leaves your machine.
-- **Cheaper and faster.** Fewer tool calls and fewer tokens per question, because one graph query replaces a pile of file reads.
+- **Cheaper and faster.** Fewer tool calls and fewer tokens per question, because one graph query replaces a pile of file reads — see [benchmarks](docs/benchmarks/README.md) (a focused, single-call answer vs. grep-then-read; methodology + honest caveats there).
 
 ## Install
 
