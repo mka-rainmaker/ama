@@ -31,4 +31,10 @@ describe("TypeScriptAnalyzer property references (ama-qo3, ama-emb)", () => {
     // `b.size` inside the free function widen() — obj.<prop> from outside any class.
     expect(referrersTo(sym("Box.size"))).toContain(sym("widen"));
   });
+
+  it("tracks destructuring reads of a property, like obj.<prop> (ama-eda)", () => {
+    // `function dims({ size }: Box)` reads Box.size by destructuring — the same member
+    // read as `b.size`, so it should be a referrer too.
+    expect(referrersTo(sym("Box.size"))).toContain(sym("dims"));
+  });
 });

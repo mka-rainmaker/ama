@@ -19,3 +19,7 @@ export class Box {
 export function widen(b: Box): number {
   return b.size;
 }
+
+export function dims({ size }: Box): number {
+  return size;
+}

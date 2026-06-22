@@ -426,6 +426,18 @@ export class TypeScriptAnalyzer implements Analyzer {
             edges.push({ from: enclosingId, to, kind: "References" });
           }
         }
+      } else if (ts.isObjectBindingPattern(child) && enclosingId) {
+        // Destructuring (`const { a, b: c } = obj`, `({ a }: T) =>`) reads each element's
+        // property of the pattern's type — track it like a `.prop` read so find_referrers
+        // sees destructuring sites, not just `obj.prop`. A renamed `{ a: b }` reads `a`;
+        // the same nodeIdForDecl filtering keeps external/local targets out. (ama-eda)
+        const type = checker.getTypeAtLocation(child);
+        for (const el of child.elements) {
+          const prop = el.propertyName ?? el.name;
+          if (!ts.isIdentifier(prop)) continue; // skip computed keys / nested patterns
+          const to = resolveTypeMember(type, prop.text, declToId, root);
+          if (to && to !== enclosingId) edges.push({ from: enclosingId, to, kind: "References" });
+        }
       }
       const childId = declToId.get(child);
       const nextEnclosing =
@@ -1667,6 +1679,20 @@ function resolveValueRef(
     symbol = checker.getAliasedSymbol(symbol);
   }
   const decl = symbol.valueDeclaration ?? symbol.declarations?.[0];
+  return decl ? (declToId.get(decl) ?? nodeIdForDecl(decl, root)) : undefined;
+}
+
+/** Resolve a named property of a type to its declaration's node id — for destructuring,
+ *  where the read is a binding name against the destructured value's type rather than a
+ *  `.prop` expression. Same in-project filtering as {@link resolveValueRef}. (ama-eda) */
+function resolveTypeMember(
+  type: ts.Type,
+  name: string,
+  declToId: Map<ts.Node, string>,
+  root: string,
+): string | undefined {
+  const prop = type.getProperty(name);
+  const decl = prop?.valueDeclaration ?? prop?.declarations?.[0];
   return decl ? (declToId.get(decl) ?? nodeIdForDecl(decl, root)) : undefined;
 }
 
