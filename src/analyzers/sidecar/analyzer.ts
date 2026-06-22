@@ -26,6 +26,40 @@ export class SidecarAnalyzer implements Analyzer {
     private readonly args: readonly string[] = [],
   ) {}
 
+  /** Probe whether the sidecar can start and speak the protocol: spawn it and wait for
+   *  its `ready` handshake within `timeoutMs`. A spawn failure, an early exit, or a
+   *  timeout means unavailable — routing then leaves the language to the baseline tier
+   *  rather than dropping it. (ama-3bb.4) */
+  isAvailable(timeoutMs = 2000): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const child = spawn(this.command, [...this.args], { stdio: ["pipe", "pipe", "ignore"] });
+      let done = false;
+      const finish = (ok: boolean): void => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        child.kill();
+        resolve(ok);
+      };
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      child.on("error", () => finish(false)); // spawn failure (ENOENT, …)
+      child.on("exit", () => finish(false)); // exited before announcing
+      child.stdin?.on("error", () => {});
+      if (!child.stdout) {
+        finish(false);
+        return;
+      }
+      const rl = readline.createInterface({ input: child.stdout });
+      rl.on("line", (line) => {
+        try {
+          if (parseMessage(line).type === "ready") finish(true);
+        } catch {
+          // ignore noise on stdout until a valid `ready` arrives or the timeout fires
+        }
+      });
+    });
+  }
+
   analyze(root: string, files: string[]): Promise<AnalysisResult> {
     const request: AnalyzeRequest = { type: "analyze", id: 1, root, files };
     return new Promise<AnalysisResult>((resolve, reject) => {

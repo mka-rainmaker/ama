@@ -39,4 +39,11 @@ export interface Analyzer {
    * returning the nodes and edges they define.
    */
   analyze(root: string, files: string[]): AnalysisResult | Promise<AnalysisResult>;
+
+  /**
+   * Whether this analyzer can actually run right now. In-process analyzers omit it
+   * (always available); an out-of-process sidecar probes its subprocess so routing can
+   * prefer it only when present, falling back to baseline otherwise. (ama-3bb.4)
+   */
+  isAvailable?(): boolean | Promise<boolean>;
 }
