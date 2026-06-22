@@ -50,6 +50,25 @@ PATH=/usr/bin:/bin bundle/<target>/bin/ama --version
 End-to-end, a bundled `ama mcp` indexes and serves a repo with no system node anywhere — wasm
 parsing and `node:sqlite` run entirely on the vendored runtime.
 
+## Install (end users)
+
+Once the repo is public and a release is published, the bundle installs with no Node:
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/mka-rainmaker/ama/main/install.sh | sh
+```
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/mka-rainmaker/ama/main/install.ps1 | iex
+```
+
+`install.sh` / `install.ps1` detect the platform, download the matching bundle from the Release,
+unpack it under `~/.ama` (or `%LOCALAPPDATA%\ama`), and put a launcher shim on PATH. Env knobs:
+`AMA_VERSION` (tag, default `latest`), `AMA_HOME`, `AMA_BIN_DIR`, and `AMA_DIST_URL` (override the
+download — used for testing against a local `file://` archive).
+
 ## Status & roadmap (ama-py1r)
 
 - **Slice 1 (done):** the `build-bundle` script + launcher, proven on the host target.
@@ -60,10 +79,16 @@ parsing and `node:sqlite` run entirely on the vendored runtime.
   GitHub Release on a `v*` tag. `workflow_dispatch` runs the build+smoke matrix *without* releasing,
   so the matrix can be verified before a tag is cut. (Verified locally per target by `file`-checking
   the vendored binary; the native run/smoke is verified by the CI matrix.)
-- **Slice 4 — installers:** `curl … | sh` (macOS/Linux) and PowerShell (Windows) one-liners.
+- **Slice 4 (done):** `install.sh` (macOS/Linux) + `install.ps1` (Windows) — detect the platform,
+  download the bundle from the Release, unpack under `~/.ama`, and drop a launcher *shim* on PATH
+  (absolute-path shim, so the relative-path launcher still resolves its own dir). `install.sh` is
+  verified end-to-end against a local bundle (only the GitHub fetch is stubbed via `file://`);
+  `install.ps1` is verified on Windows/CI.
 - **Slice 5 — npm shim:** a thin npm package that pulls the right bundle via platform-specific
   `optionalDependencies`, so `npm i -g`/`npx` keep working without requiring a local Node.
 - **`ama upgrade` (ama-h522):** detect the install method and update in place.
 
-Until slices 3–5 land, the published install path remains `npm i -g @mka-rainmaker/ama` (Node 24+).
-The README badge says `Node.js 24+`, not "bundled," on purpose — it flips when distribution ships.
+Until the first public release, the install path remains `npm i -g @mka-rainmaker/ama` (Node 24+);
+the `curl … | sh` / PowerShell installers go live with the first tagged release on a public repo,
+and the npm shim (slice 5) is what keeps `npm i -g`/`npx` working with no local Node. The README
+badge says `Node.js 24+`, not "bundled," on purpose — it flips when distribution ships.
