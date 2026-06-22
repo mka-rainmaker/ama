@@ -1,6 +1,6 @@
 {
   "name": "@mka-rainmaker/ama",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Local-first code-intelligence MCP server with deep, language-specific semantic parsing.",
   "type": "module",
   "license": "MIT",
