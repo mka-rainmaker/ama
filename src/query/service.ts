@@ -891,7 +891,15 @@ export class QueryService {
   getGraphSchema(): GraphSchema {
     const nodes: Record<string, number> = {};
     const edges: Record<string, number> = {};
-    const edgeProvenance = { resolved: 0, heuristic: 0, dispatch: 0, "prisma-ref": 0, prisma: 0 };
+    const edgeProvenance = {
+      resolved: 0,
+      heuristic: 0,
+      dispatch: 0,
+      "prisma-ref": 0,
+      prisma: 0,
+      "call-ref": 0,
+      call: 0,
+    };
     for (const node of this.store.allNodes()) {
       nodes[node.kind] = (nodes[node.kind] ?? 0) + 1;
       for (const edge of this.store.edgesFrom(node.id)) {

@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import type Parser from "web-tree-sitter";
-import { type GraphEdge, type GraphNode, symbolId } from "../../graph/index.js";
+import { CALL_REF_PREFIX, type GraphEdge, type GraphNode, symbolId } from "../../graph/index.js";
 import type { LanguageSpec } from "./analyzer.js";
 
 /**
@@ -204,11 +204,52 @@ function calleeName(call: Parser.SyntaxNode): string | undefined {
   return undefined;
 }
 
-/** Heuristic within-file call edges (baseline tier): resolve each call's callee name to a
- *  function/method defined in the SAME file and emit a Calls edge from the enclosing function.
- *  Name-based (no types); a name defined more than once in the file is left unresolved to avoid
- *  wrong edges, and module-level calls (no enclosing function) are skipped. Cross-file
- *  resolution is a follow-up. (ama-bnj) */
+/** Common Python builtins — not emitted as cross-file call candidates (they resolve to no
+ *  project function, so they'd only add dangling candidates). (ama-bnj) */
+const PYTHON_BUILTINS = new Set([
+  "print",
+  "len",
+  "range",
+  "str",
+  "int",
+  "float",
+  "bool",
+  "list",
+  "dict",
+  "set",
+  "tuple",
+  "isinstance",
+  "issubclass",
+  "super",
+  "open",
+  "enumerate",
+  "zip",
+  "map",
+  "filter",
+  "sorted",
+  "reversed",
+  "sum",
+  "min",
+  "max",
+  "abs",
+  "round",
+  "getattr",
+  "setattr",
+  "hasattr",
+  "type",
+  "repr",
+  "format",
+  "iter",
+  "next",
+  "any",
+  "all",
+]);
+
+/** Heuristic baseline call edges. A call to a function/method defined in the SAME file resolves
+ *  straight to a `Calls` edge (name-based; an ambiguous name defined more than once, and
+ *  module-level calls with no enclosing function, are skipped). A call to a name NOT defined
+ *  locally (and not a builtin) becomes a `call:<name>` candidate that {@link deriveCallEdges}
+ *  resolves cross-file via the import graph. (ama-bnj) */
 function pythonCalls(
   root: Parser.SyntaxNode,
   rel: string,
@@ -226,14 +267,29 @@ function pythonCalls(
     const enc = enclosingFunction(call);
     const name = calleeName(call);
     if (!enc || !name) continue;
-    const to = byName.get(name);
     const callerQn = qualifiedNameOf(enc);
-    if (!to || !callerQn) continue; // callee not defined in this file, or an ambiguous name
+    if (!callerQn) continue;
     const from = symbolId({ file: rel, qualifiedName: callerQn });
-    const key = `${from} ${to}`;
-    if (from === to || seen.has(key)) continue; // skip self-recursion + duplicate call sites
-    seen.add(key);
-    edges.push({ from, to, kind: "Calls", provenance: "heuristic" });
+    const local = byName.get(name);
+    if (local === null) continue; // a name defined more than once locally — don't guess
+    if (local) {
+      // resolved within this file (slice 1)
+      const key = `c ${from} ${local}`;
+      if (from === local || seen.has(key)) continue; // skip self-recursion + duplicate sites
+      seen.add(key);
+      edges.push({ from, to: local, kind: "Calls", provenance: "heuristic" });
+    } else if (!PYTHON_BUILTINS.has(name)) {
+      // not local — a cross-file candidate deriveCallEdges resolves via the import graph (slice 2)
+      const key = `r ${from} ${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({
+        from,
+        to: `${CALL_REF_PREFIX}${name}`,
+        kind: "References",
+        provenance: "call-ref",
+      });
+    }
   }
   return { nodes: [], edges };
 }

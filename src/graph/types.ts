@@ -96,7 +96,16 @@ export interface GraphNode {
  * resolved cross-analyzer edge a whole-graph pass derives from it, linking the access to
  * the schema model node. Like `dispatch`, `prisma` is re-derived after a reindex. (ama-kvv)
  */
-export type EdgeProvenance = "resolved" | "heuristic" | "dispatch" | "prisma-ref" | "prisma";
+export type EdgeProvenance =
+  | "resolved"
+  | "heuristic"
+  | "dispatch"
+  | "prisma-ref"
+  | "prisma"
+  // Baseline call resolution (ama-bnj): `call-ref` is the analyzer's unresolved candidate; `call`
+  // is the whole-graph-resolved cross-file Calls edge.
+  | "call-ref"
+  | "call";
 
 export interface GraphEdge {
   /** Source node id. */

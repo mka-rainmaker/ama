@@ -18,7 +18,7 @@ import { AnalyzerRegistry } from "../analyzers/registry.js";
 import { SfcAnalyzer } from "../analyzers/sfc/analyzer.js";
 import type { AnalysisResult, Analyzer, ResolutionStats } from "../analyzers/types.js";
 import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
-import { deriveDispatchEdges, derivePrismaReferences } from "../graph/index.js";
+import { deriveCallEdges, deriveDispatchEdges, derivePrismaReferences } from "../graph/index.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
 import type { FileMeta, Store } from "../store/types.js";
@@ -198,6 +198,7 @@ export class Indexer {
     // Resolve cross-analyzer Prisma links now that every analyzer's nodes are in the
     // store — the TS `prisma-ref` candidates and the schema model nodes only meet here. (ama-kvv)
     relinkPrisma(store);
+    relinkCalls(store); // and cross-file baseline call edges (ama-bnj)
 
     // Persist enough to reopen this index next process without re-analyzing:
     // coverage + resolution (for index_status), the root it was built for, and
@@ -292,6 +293,7 @@ export class Indexer {
     // structural change, restoring full-index parity. (ama-tr1)
     redispatch(store);
     relinkPrisma(store); // re-resolve prisma.<model> links whole-graph too (ama-kvv)
+    relinkCalls(store); // re-resolve cross-file baseline call edges whole-graph (ama-bnj)
   }
 
   /**
@@ -370,6 +372,16 @@ function relinkPrisma(store: Store): void {
   const nodes = [...store.allNodes()];
   const base = store.allEdges().filter((e) => e.provenance !== "prisma");
   store.replaceEdgesByProvenance("prisma", derivePrismaReferences(nodes, base));
+}
+
+/**
+ * Re-derive cross-file baseline call edges (a `call:<name>` candidate → a function in an imported
+ * file) over the full store, replacing the prior ones — mirrors {@link relinkPrisma}. A single
+ * file's analyzer can't see other files' functions, so resolution happens here. (ama-bnj) */
+function relinkCalls(store: Store): void {
+  const nodes = [...store.allNodes()];
+  const base = store.allEdges().filter((e) => e.provenance !== "call");
+  store.replaceEdgesByProvenance("call", deriveCallEdges(nodes, base));
 }
 
 /** Fingerprint a file for staleness tracking: size, mtime, and content hash.

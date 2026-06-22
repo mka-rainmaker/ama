@@ -41,6 +41,8 @@ describe("edge provenance round-trips through both stores (ama-m8k.1)", () => {
       dispatch: 0,
       "prisma-ref": 0,
       prisma: 0,
+      "call-ref": 0,
+      call: 0,
     });
   });
 });
