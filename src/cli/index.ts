@@ -59,6 +59,10 @@ export interface CliCommand {
 
 function usage(commands: readonly CliCommand[]): string {
   const lines = ["Usage: ama [--json] <command> [args]", "", "Commands:"];
+  // The MCP server is the primary way agents use Ama; the rest are one-shot CLI queries.
+  lines.push(
+    `  ${"mcp".padEnd(12)} serve the code-intelligence MCP server over stdio (for coding agents)`,
+  );
   if (commands.length === 0) {
     lines.push("  (none registered yet)");
   } else {
@@ -152,7 +156,17 @@ export const COMMANDS: readonly CliCommand[] = [
 ];
 
 export async function main(): Promise<void> {
-  process.exit(await run(process.argv.slice(2), COMMANDS));
+  const argv = process.argv.slice(2);
+  // `ama mcp` serves the code-intelligence MCP protocol over stdio — the entry coding
+  // agents spawn for a local server. WASM is already pinned by the entry guard; the stdio
+  // server owns the process lifecycle (it stays alive on the transport until the client
+  // disconnects), so unlike a query command it must not `process.exit`.
+  if (argv[0] === "mcp") {
+    const { main: serveMcp } = await import("../mcp/server.js");
+    await serveMcp();
+    return;
+  }
+  process.exit(await run(argv, COMMANDS));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
