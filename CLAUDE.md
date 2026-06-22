@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Read AGENTS.md first
 
 **[`AGENTS.md`](AGENTS.md) is the canonical, committed contributor guide — read it before working.**
-This file (`CLAUDE.md`) is git-ignored (`.gitignore`: "Local-only Claude instructions") and only
-distills the essentials. When the two disagree, `AGENTS.md` wins.
+This file (`CLAUDE.md`) is committed too and distills the essentials for coding agents working in
+this repo. When the two disagree, `AGENTS.md` wins.
 
 ## Current state
 
