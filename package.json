@@ -1,7 +1,6 @@
 {
-  "name": "ama",
-  "version": "0.0.1",
-  "private": true,
+  "name": "@mka-rainmaker/ama",
+  "version": "0.1.0",
   "description": "Local-first code-intelligence MCP server with deep, language-specific semantic parsing.",
   "type": "module",
   "license": "MIT",
@@ -10,6 +9,26 @@
   },
   "bin": {
     "ama": "dist/cli/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mka-rainmaker/ama.git"
+  },
+  "homepage": "https://github.com/mka-rainmaker/ama#readme",
+  "bugs": "https://github.com/mka-rainmaker/ama/issues",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "code-intelligence",
+    "code-graph",
+    "static-analysis",
+    "typescript",
+    "ai-agents",
+    "developer-tools"
+  ],
+  "files": ["dist", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc",
@@ -21,7 +40,8 @@
     "serve:dev": "AMA_LOG_TOOLS=1 AMA_DB=.ama/index.db AMA_ROOT=. tsx watch src/mcp/http.ts",
     "cli": "tsx src/cli/index.ts",
     "format": "biome format --write .",
-    "lint": "biome check ."
+    "lint": "biome check .",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.13.0",

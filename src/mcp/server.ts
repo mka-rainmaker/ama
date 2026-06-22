@@ -6,6 +6,7 @@ import { NODE_KINDS } from "../graph/index.js";
 import type { NodeKind } from "../graph/index.js";
 import { DEFAULT_SEARCH_LIMIT } from "../query/service.js";
 import { ensureBaselineWasmTier } from "../runtime/wasm-tier.js";
+import { serverStamp } from "./build-info.js";
 import { AmaSession } from "./session.js";
 
 /** JSON tool result helper. `value ?? null` so an `undefined` result (e.g. a
@@ -144,7 +145,7 @@ function tap<A, R>(name: string, run: (args: A) => R | Promise<R>): (args: A) =>
  * tests or by stdio in production.
  */
 export function createServer(session: AmaSession = new AmaSession()): McpServer {
-  const server = new McpServer({ name: "ama", version: "0.0.1" });
+  const server = new McpServer({ name: "ama", version: serverStamp.version });
 
   // Fires on each connection's initialize handshake — i.e. on reconnect. Arm a
   // catch-up so the first query reconciles edits made while disconnected.
