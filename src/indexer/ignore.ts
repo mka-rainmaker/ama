@@ -11,15 +11,13 @@ export const IGNORED_DIRS = new Set([
   "dist",
   "build",
   "coverage",
-  // Vendored deps, build output, and caches that hold no first-party source. Dot-dirs
-  // (.venv, .git, .tox, .mypy_cache, …) are already skipped by the leading-dot rule in
-  // isIgnoredSegment, so these are the non-dot ones — notably a plain `venv` and Python's
-  // `__pycache__`/`site-packages`, which otherwise flooded a parent-workspace index. (ama-65z)
-  "venv",
+  // Python bytecode + installed-package dirs that are *never* first-party source in any project.
+  // Only universally-non-source names are hardcoded here; project-specific build/vendor dirs
+  // (`target`, `vendor`, `venv`, `Pods`, …) are legitimate source dirs in *some* projects, so
+  // they're the project's `.gitignore`'s job (honored root + nested), not a blanket hardcode —
+  // especially since this set isn't negation-overridable. (ama-65z, ama-d28)
   "__pycache__",
   "site-packages",
-  "target",
-  "vendor",
 ]);
 
 /**
