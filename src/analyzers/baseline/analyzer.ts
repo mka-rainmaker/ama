@@ -35,6 +35,16 @@ export interface LanguageSpec {
     importerRel: string,
     root: string,
   ) => string[][] | undefined;
+
+  /**
+   * Optional route detector: walk the CST for framework route registrations and return Route
+   * nodes plus their handler `References` edges. Baseline tier — a heuristic, syntactic match
+   * on decorator/call patterns (e.g. Python's `@app.get("/x")`). (ama-bvg)
+   */
+  readonly collectRoutes?: (
+    root: Parser.SyntaxNode,
+    rel: string,
+  ) => { nodes: GraphNode[]; edges: GraphEdge[] };
 }
 
 /**
@@ -85,6 +95,11 @@ export class BaselineAnalyzer implements Analyzer {
           walkSymbols(tree.rootNode, this.spec.symbols, rel, id, "", fileNodes, fileEdges);
           if (this.spec.resolveImports)
             this.collectImports(tree.rootNode, rel, root, id, fileEdges);
+          if (this.spec.collectRoutes) {
+            const routes = this.spec.collectRoutes(tree.rootNode, rel);
+            fileNodes.push(...routes.nodes);
+            fileEdges.push(...routes.edges);
+          }
           nodes.push(...fileNodes);
           edges.push(...fileEdges);
         } finally {

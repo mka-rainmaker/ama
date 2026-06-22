@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import type Parser from "web-tree-sitter";
+import { type GraphEdge, type GraphNode, symbolId } from "../../graph/index.js";
 import type { LanguageSpec } from "./analyzer.js";
 
 /**
@@ -40,6 +41,100 @@ function pythonImports(node: Parser.SyntaxNode, importerRel: string): string[][]
   return groups;
 }
 
+/** Flask/FastAPI HTTP-verb decorator attributes (`@app.get(...)`); `route` is handled
+ *  separately as Flask's any-/default-GET form. (ama-bvg) */
+const ROUTE_METHOD_ATTRS = new Set(["get", "post", "put", "delete", "patch", "options", "head"]);
+
+/** Normalize a framework route path to the `:param` form — Flask `<id>`/`<int:id>` and
+ *  FastAPI `{id}` both become `:id` — and ensure a leading slash. (ama-bvg) */
+function normalizeRoutePath(p: string): string {
+  const s = p.replace(/<(?:[^:>]+:)?([^>]+)>/g, ":$1").replace(/\{([^}]+)\}/g, ":$1");
+  return s.startsWith("/") ? s : `/${s}`;
+}
+
+/** The first string-literal argument of a call's `arguments`, unquoted. */
+function firstStringArg(args: Parser.SyntaxNode | null): string | undefined {
+  if (!args) return undefined;
+  for (const a of args.namedChildren) {
+    if (a.type === "string") return a.namedChildren.find((c) => c.type === "string_content")?.text;
+  }
+  return undefined;
+}
+
+/** Method + normalized path for a Flask/FastAPI route decorator, else undefined. `@x.route(p)`
+ *  → GET (Flask default; the `methods=` kwarg is a later refinement); `@x.get(p)` etc. take the
+ *  verb from the attribute name. (ama-bvg) */
+function routeFromDecorator(dec: Parser.SyntaxNode): { method: string; path: string } | undefined {
+  const call = dec.namedChildren.find((c) => c.type === "call");
+  const fn = call?.childForFieldName("function");
+  if (!call || fn?.type !== "attribute") return undefined;
+  const attr = fn.childForFieldName("attribute")?.text?.toLowerCase();
+  if (!attr || (attr !== "route" && !ROUTE_METHOD_ATTRS.has(attr))) return undefined;
+  const raw = firstStringArg(call.childForFieldName("arguments"));
+  if (raw === undefined) return undefined;
+  return { method: attr === "route" ? "GET" : attr.toUpperCase(), path: normalizeRoutePath(raw) };
+}
+
+/** The handler's qualified name, matching walkSymbols' nesting: prepend each enclosing
+ *  class/function name (a class method is `Class.method`; a top-level def is just its name). */
+function qualifiedNameOf(fn: Parser.SyntaxNode): string | undefined {
+  const own = fn.childForFieldName("name")?.text;
+  if (!own) return undefined;
+  const parts: string[] = [];
+  for (let p = fn.parent; p; p = p.parent) {
+    if (p.type === "class_definition" || p.type === "function_definition") {
+      const n = p.childForFieldName("name")?.text;
+      if (n) parts.unshift(n);
+    }
+  }
+  parts.push(own);
+  return parts.join(".");
+}
+
+function* eachDecorated(node: Parser.SyntaxNode): Generator<Parser.SyntaxNode> {
+  if (node.type === "decorated_definition") yield node;
+  for (const c of node.namedChildren) yield* eachDecorated(c);
+}
+
+/** Detect Flask/FastAPI routes: a decorated function whose decorator is `@<obj>.route(path)`
+ *  or `@<obj>.<verb>(path)` becomes a `METHOD /path` Route referencing the function. (ama-bvg) */
+function pythonRoutes(
+  root: Parser.SyntaxNode,
+  rel: string,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+  for (const dd of eachDecorated(root)) {
+    const fn = dd.childForFieldName("definition");
+    if (fn?.type !== "function_definition") continue;
+    const handler = qualifiedNameOf(fn);
+    if (!handler) continue;
+    for (const dec of dd.namedChildren) {
+      if (dec.type !== "decorator") continue;
+      const route = routeFromDecorator(dec);
+      if (!route) continue;
+      const name = `${route.method} ${route.path}`;
+      const routeId = symbolId({ file: rel, qualifiedName: name });
+      nodes.push({
+        id: routeId,
+        kind: "Route",
+        name,
+        file: rel,
+        qualifiedName: name,
+        tier: "baseline",
+        range: { startLine: fn.startPosition.row + 1, endLine: fn.endPosition.row + 1 },
+      });
+      edges.push({
+        from: routeId,
+        to: symbolId({ file: rel, qualifiedName: handler }),
+        kind: "References",
+        provenance: "heuristic",
+      });
+    }
+  }
+  return { nodes, edges };
+}
+
 /**
  * Baseline (syntactic) spec for Python. Functions and classes are the symbols
  * worth a node; methods are `function_definition` too (Python doesn't
@@ -56,4 +151,5 @@ export const pythonSpec: LanguageSpec = {
     class_definition: { kind: "Class" },
   },
   resolveImports: pythonImports,
+  collectRoutes: pythonRoutes,
 };
