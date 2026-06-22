@@ -1,4 +1,4 @@
-# AGENT.md — working with the Ama codebase
+# AGENTS.md — working with the Ama codebase
 
 Instructions for AI coding agents (and humans) contributing to **Ama**, a local-first
 code-intelligence MCP server written in TypeScript. This file is shared and committed; keep any
@@ -91,7 +91,7 @@ Full runbook: [`docs/SELF_IMPROVEMENT_LOOP.md`](docs/SELF_IMPROVEMENT_LOOP.md).
   (NodeNext resolution) and `import type` for type-only imports.
 - **MCP:** `@modelcontextprotocol/sdk` over stdio and Streamable HTTP. **Tests:** `vitest`. **Format/lint:** Biome.
 - Keep the layering clean: `graph/` (model) → `analyzers/` (per-language, tiered) → `store/` →
-  `query/` → `mcp/` (and later `cli/`). Avoid leaking analyzer- or store-specific types across layers.
+  `query/` → `mcp/` + `cli/`. Avoid leaking analyzer- or store-specific types across layers.
 - Match the surrounding code's naming, comments, and idioms. Prefer small, well-commented passes over
   clever density — analyzer code is read far more than it's written.
 
