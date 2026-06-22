@@ -135,6 +135,54 @@ function pythonRoutes(
   return { nodes, edges };
 }
 
+/** Django URL-pattern functions in `urls.py`. */
+const DJANGO_URL_FUNCS = new Set(["path", "re_path"]);
+
+function* eachCall(node: Parser.SyntaxNode): Generator<Parser.SyntaxNode> {
+  if (node.type === "call") yield node;
+  for (const c of node.namedChildren) yield* eachCall(c);
+}
+
+/** Detect Django URL patterns: `path("users/<int:pk>/", view)` / `re_path(...)` in urls.py —
+ *  method-agnostic (the view handles every verb), so each forms an `ANY /path` Route. The view
+ *  is a cross-module reference (`views.foo`), not a same-file symbol, so no handler edge. (ama-a2r) */
+function djangoUrlRoutes(
+  root: Parser.SyntaxNode,
+  rel: string,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const nodes: GraphNode[] = [];
+  for (const call of eachCall(root)) {
+    const fn = call.childForFieldName("function");
+    if (fn?.type !== "identifier" || !DJANGO_URL_FUNCS.has(fn.text)) continue;
+    const raw = firstStringArg(call.childForFieldName("arguments"));
+    if (raw === undefined) continue;
+    const name = `ANY ${normalizeRoutePath(raw)}`;
+    nodes.push({
+      id: symbolId({ file: rel, qualifiedName: name }),
+      kind: "Route",
+      name,
+      file: rel,
+      qualifiedName: name,
+      tier: "baseline",
+      range: { startLine: call.startPosition.row + 1, endLine: call.endPosition.row + 1 },
+    });
+  }
+  return { nodes, edges: [] };
+}
+
+/** Python route detection across shapes: Flask/FastAPI decorators + Django urls.py `path()`. */
+function pythonRoutesAll(
+  root: Parser.SyntaxNode,
+  rel: string,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const decorated = pythonRoutes(root, rel);
+  const django = djangoUrlRoutes(root, rel);
+  return {
+    nodes: [...decorated.nodes, ...django.nodes],
+    edges: [...decorated.edges, ...django.edges],
+  };
+}
+
 /**
  * Baseline (syntactic) spec for Python. Functions and classes are the symbols
  * worth a node; methods are `function_definition` too (Python doesn't
@@ -151,5 +199,5 @@ export const pythonSpec: LanguageSpec = {
     class_definition: { kind: "Class" },
   },
   resolveImports: pythonImports,
-  collectRoutes: pythonRoutes,
+  collectRoutes: pythonRoutesAll,
 };

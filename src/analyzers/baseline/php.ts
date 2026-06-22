@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type Parser from "web-tree-sitter";
+import { type GraphEdge, type GraphNode, symbolId } from "../../graph/index.js";
 import type { LanguageSpec } from "./analyzer.js";
 import { nearestConfig, parentDir } from "./config.js";
 
@@ -54,6 +55,62 @@ function phpImports(
   return [[file]];
 }
 
+/** Laravel `Route` facade HTTP-verb methods — `Route::get('/x', ...)`. (ama-a2r) */
+const PHP_ROUTE_METHODS = new Set(["get", "post", "put", "delete", "patch", "options", "head"]);
+
+/** Normalize a Laravel route path: `{id}` → `:id`; ensure a leading slash. (ama-a2r) */
+function normalizePhpRoutePath(p: string): string {
+  const s = p.replace(/\{([^}]+)\}/g, ":$1");
+  return s.startsWith("/") ? s : `/${s}`;
+}
+
+function firstOfType(node: Parser.SyntaxNode, type: string): Parser.SyntaxNode | undefined {
+  if (node.type === type) return node;
+  for (const c of node.namedChildren) {
+    const found = firstOfType(c, type);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function* eachScopedCall(node: Parser.SyntaxNode): Generator<Parser.SyntaxNode> {
+  if (node.type === "scoped_call_expression") yield node;
+  for (const c of node.namedChildren) yield* eachScopedCall(c);
+}
+
+/** Detect Laravel routes: `Route::<verb>('/path', handler)` — a static call on the `Route`
+ *  facade with an HTTP-verb method and a string first arg — becomes a `METHOD /path` Route.
+ *  Scoped to the `Route` facade so unrelated static calls (`Cache::get`) don't match. The
+ *  handler is usually a controller reference (array/string), not a same-file function, so no
+ *  handler edge is emitted. (ama-a2r) */
+function phpRoutes(
+  root: Parser.SyntaxNode,
+  rel: string,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const nodes: GraphNode[] = [];
+  for (const call of eachScopedCall(root)) {
+    const scope = call.childForFieldName("scope")?.text ?? call.namedChild(0)?.text;
+    const method = call.childForFieldName("name")?.text?.toLowerCase();
+    if (scope !== "Route" || !method || !PHP_ROUTE_METHODS.has(method)) continue;
+    const firstArg = call
+      .childForFieldName("arguments")
+      ?.namedChildren.find((c) => c.type === "argument");
+    const raw = firstArg && firstOfType(firstArg, "string_content")?.text;
+    if (!raw) continue;
+    const name = `${method.toUpperCase()} ${normalizePhpRoutePath(raw)}`;
+    nodes.push({
+      id: symbolId({ file: rel, qualifiedName: name }),
+      kind: "Route",
+      name,
+      file: rel,
+      qualifiedName: name,
+      tier: "baseline",
+      range: { startLine: call.startPosition.row + 1, endLine: call.endPosition.row + 1 },
+    });
+  }
+  return { nodes, edges: [] };
+}
+
 /**
  * Baseline (syntactic) spec for PHP. Each top-level construct has its own CST
  * node type — class/interface/trait/enum declarations, free functions, and
@@ -75,4 +132,5 @@ export const phpSpec: LanguageSpec = {
     method_declaration: { kind: "Method" },
   },
   resolveImports: phpImports,
+  collectRoutes: phpRoutes,
 };

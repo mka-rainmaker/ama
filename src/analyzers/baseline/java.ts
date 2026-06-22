@@ -1,4 +1,5 @@
 import type Parser from "web-tree-sitter";
+import { type GraphEdge, type GraphNode, symbolId } from "../../graph/index.js";
 import type { LanguageSpec } from "./analyzer.js";
 import { ancestorDirs } from "./paths.js";
 
@@ -32,6 +33,95 @@ function javaImports(node: Parser.SyntaxNode, importerRel: string): string[][] |
   return [ancestorCandidates(importerRel, file)];
 }
 
+/** Spring method-mapping annotations → HTTP verb. `@RequestMapping` is the class-level prefix. */
+const JAVA_MAPPING_VERBS = new Map([
+  ["GetMapping", "GET"],
+  ["PostMapping", "POST"],
+  ["PutMapping", "PUT"],
+  ["DeleteMapping", "DELETE"],
+  ["PatchMapping", "PATCH"],
+]);
+
+function firstOfType(node: Parser.SyntaxNode, type: string): Parser.SyntaxNode | undefined {
+  if (node.type === type) return node;
+  for (const c of node.namedChildren) {
+    const found = firstOfType(c, type);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function* eachClass(node: Parser.SyntaxNode): Generator<Parser.SyntaxNode> {
+  if (node.type === "class_declaration") yield node;
+  for (const c of node.namedChildren) yield* eachClass(c);
+}
+
+/** The string argument of an `@Annotation("x")`, or undefined for a marker annotation. */
+function annotationArg(ann: Parser.SyntaxNode): string | undefined {
+  return firstOfType(ann, "string_fragment")?.text;
+}
+
+/** Combine a Spring class prefix and a method sub-path into a normalized `:param` route. */
+function joinJavaRoutePath(prefix: string, sub: string): string {
+  const norm = (s: string) => s.replace(/\{([^}]+)\}/g, ":$1");
+  const segs = [norm(prefix), norm(sub)].flatMap((s) => s.split("/")).filter(Boolean);
+  return `/${segs.join("/")}`;
+}
+
+/** Detect Spring MVC routes: a class `@RequestMapping("/prefix")` prefixes each method's
+ *  `@GetMapping`/`@PostMapping`/… (path or marker) to form a `METHOD /prefix/path` Route that
+ *  references the method (`Class.method`). (ama-a2r) */
+function javaRoutes(
+  root: Parser.SyntaxNode,
+  rel: string,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+  const annotationsOf = (node: Parser.SyntaxNode) =>
+    (node.namedChildren.find((c) => c.type === "modifiers")?.namedChildren ?? []).filter(
+      (a) => a.type === "annotation" || a.type === "marker_annotation",
+    );
+  for (const cls of eachClass(root)) {
+    const className = cls.childForFieldName("name")?.text;
+    const prefix =
+      annotationsOf(cls).find((a) => a.childForFieldName("name")?.text === "RequestMapping") ??
+      null;
+    const classPrefix = prefix ? (annotationArg(prefix) ?? "") : "";
+    const body = cls.childForFieldName("body");
+    for (const member of body?.namedChildren ?? []) {
+      if (member.type !== "method_declaration") continue;
+      const mapping = annotationsOf(member)
+        .map((a) => ({
+          verb: JAVA_MAPPING_VERBS.get(a.childForFieldName("name")?.text ?? ""),
+          ann: a,
+        }))
+        .find((m) => m.verb);
+      if (!mapping?.verb) continue;
+      const methodName = member.childForFieldName("name")?.text;
+      const name = `${mapping.verb} ${joinJavaRoutePath(classPrefix, annotationArg(mapping.ann) ?? "")}`;
+      const routeId = symbolId({ file: rel, qualifiedName: name });
+      nodes.push({
+        id: routeId,
+        kind: "Route",
+        name,
+        file: rel,
+        qualifiedName: name,
+        tier: "baseline",
+        range: { startLine: member.startPosition.row + 1, endLine: member.endPosition.row + 1 },
+      });
+      if (className && methodName) {
+        edges.push({
+          from: routeId,
+          to: symbolId({ file: rel, qualifiedName: `${className}.${methodName}` }),
+          kind: "References",
+          provenance: "heuristic",
+        });
+      }
+    }
+  }
+  return { nodes, edges };
+}
+
 /**
  * Baseline (syntactic) spec for Java. Java gives every kind its own CST node
  * type — class/interface/enum declarations and methods — so each maps directly
@@ -49,4 +139,5 @@ export const javaSpec: LanguageSpec = {
     method_declaration: { kind: "Method" },
   },
   resolveImports: javaImports,
+  collectRoutes: javaRoutes,
 };
