@@ -2,38 +2,18 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type Parser from "web-tree-sitter";
 import type { LanguageSpec } from "./analyzer.js";
+import { nearestConfig, parentDir } from "./config.js";
 
-/** Cache: an importer's directory (absolute) → its nearest `go.mod`'s repo-relative
- *  directory and module path, or null if none up to the index root. Memoized so a
- *  package isn't re-walked per import. */
-const goModuleCache = new Map<string, { dir: string; module: string } | null>();
+/** Cache for the nearest `go.mod`'s declared module path, by importer directory. */
+const goModuleCache = new Map<string, { dir: string; value: string } | null>();
 
-function parentDir(rel: string): string {
-  const p = path.posix.dirname(rel);
-  return p === "." ? "" : p;
-}
-
-/** The nearest `go.mod` at or above `dirRel`, with its repo-relative directory and
- *  declared module path — so Go imports resolve whether the index root *is* the
- *  module or merely contains it (a monorepo / Ama's own fixture). (ama-9yu) */
-function nearestGoModule(root: string, dirRel: string): { dir: string; module: string } | null {
-  const absDir = path.join(root, dirRel);
-  const cached = goModuleCache.get(absDir);
-  if (cached !== undefined) return cached;
-  let result: { dir: string; module: string } | null = null;
+/** The `module` path declared by a `go.mod` in `absDir`, or undefined if there's none. */
+function readGoModule(absDir: string): string | undefined {
   try {
-    const module = fs
-      .readFileSync(path.join(absDir, "go.mod"), "utf8")
-      .match(/^module\s+(\S+)/m)?.[1];
-    if (module) result = { dir: dirRel, module };
+    return fs.readFileSync(path.join(absDir, "go.mod"), "utf8").match(/^module\s+(\S+)/m)?.[1];
   } catch {
-    result = null; // no go.mod here — try the parent below
+    return undefined; // no go.mod here — nearestConfig walks to the parent
   }
-  if (!result && dirRel !== "" && dirRel !== ".") {
-    result = nearestGoModule(root, parentDir(dirRel));
-  }
-  goModuleCache.set(absDir, result);
-  return result;
 }
 
 /** Resolve a Go import to the `.go` files of its package directory. Go imports a
@@ -51,9 +31,9 @@ function goImports(
   const str = node.namedChildren.find((c) => c.type === "interpreted_string_literal");
   if (!str) return [];
   const importPath = str.text.replace(/^["`]|["`]$/g, "");
-  const mod = nearestGoModule(root, parentDir(importerRel));
-  if (!mod || (importPath !== mod.module && !importPath.startsWith(`${mod.module}/`))) return [];
-  const sub = importPath === mod.module ? "" : importPath.slice(mod.module.length + 1);
+  const mod = nearestConfig(root, parentDir(importerRel), readGoModule, goModuleCache);
+  if (!mod || (importPath !== mod.value && !importPath.startsWith(`${mod.value}/`))) return [];
+  const sub = importPath === mod.value ? "" : importPath.slice(mod.value.length + 1);
   const pkgDir = [mod.dir, sub].filter(Boolean).join("/");
   let entries: string[];
   try {

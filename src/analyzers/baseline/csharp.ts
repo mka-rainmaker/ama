@@ -2,18 +2,63 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type Parser from "web-tree-sitter";
 import type { LanguageSpec } from "./analyzer.js";
+import { nearestConfig, parentDir } from "./config.js";
 import { ancestorDirs } from "./paths.js";
 
-/** Resolve a C# `using A.B.C;` to the source files of that namespace. C# has no
- *  1:1 namespace→file mapping: a namespace is a *set* of files, conventionally a
- *  directory, so a `using` links to every `.cs` file in the matching directory — the
- *  same "package = directory" shape as Go. The namespace→directory mapping is by
- *  convention, and a .csproj RootNamespace can rebase it (namespace `App.Models` may
- *  live in `Models/`), so we ancestor-scan from the importer's own directory upward and
- *  try progressively shorter suffixes of the dotted name — longest (most specific)
- *  first — taking the first directory that actually holds `.cs` files. `using Alias = …`
- *  and framework namespaces (no matching directory on disk) resolve to nothing; this is
- *  a heuristic baseline (no .csproj parsing), so it favors recall. (ama-7e3) */
+/** Cache for the nearest `.csproj`'s root namespace, by importer directory. */
+const csprojCache = new Map<string, { dir: string; value: string } | null>();
+
+/** The C# root namespace declared by a `.csproj` in `absDir` — its `<RootNamespace>`, or
+ *  (the C# default) the project file's base name. Undefined when `absDir` holds no
+ *  `.csproj`, so the walk-up continues. (ama-66z) */
+function readCsprojRootNamespace(absDir: string): string | undefined {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(absDir, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
+  const proj = entries.find((e) => e.isFile() && e.name.endsWith(".csproj"));
+  if (!proj) return undefined;
+  try {
+    const content = fs.readFileSync(path.join(absDir, proj.name), "utf8");
+    return (
+      content.match(/<RootNamespace>\s*([^<\s]+)\s*<\/RootNamespace>/)?.[1] ??
+      proj.name.replace(/\.csproj$/i, "")
+    );
+  } catch {
+    return proj.name.replace(/\.csproj$/i, ""); // unreadable body — default to the file name
+  }
+}
+
+/** The `.cs` files directly in repo-relative `rel` (excluding the importer), one
+ *  File→File candidate group each — or undefined if `rel` isn't a directory or holds no
+ *  `.cs` files. */
+function csFilesIn(root: string, rel: string, importerRel: string): string[][] | undefined {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true });
+  } catch {
+    return undefined; // not a directory on disk
+  }
+  const files = entries
+    .filter((e) => e.isFile() && e.name.endsWith(".cs"))
+    .map((e) => (rel ? `${rel}/${e.name}` : e.name))
+    .filter((f) => f !== importerRel);
+  return files.length > 0 ? files.map((f) => [f]) : undefined;
+}
+
+/** Resolve a C# `using A.B.C;` to the source files of that namespace. C# has no 1:1
+ *  namespace→file mapping: a namespace is a *set* of files, conventionally a directory,
+ *  so a `using` links to every `.cs` file in the matching directory — the "package =
+ *  directory" shape Go has. Two strategies, precise first: (1) if the namespace is under
+ *  the nearest `.csproj`'s root namespace (`<RootNamespace>`, else the project file
+ *  name), map it *exactly* to that project's directory tree — avoiding a coincidental
+ *  match at a closer ancestor. (2) Otherwise (a namespace from another project, or no
+ *  `.csproj`), ancestor-scan from the importer's own directory upward, trying
+ *  progressively shorter suffixes of the dotted name — longest (most specific) first —
+ *  and take the first directory holding `.cs` files; this favors recall. `using Alias =
+ *  …` and framework namespaces resolve to nothing. (ama-7e3, ama-66z) */
 function csharpImports(
   node: Parser.SyntaxNode,
   importerRel: string,
@@ -25,22 +70,23 @@ function csharpImports(
     (c) => c.type === "qualified_name" || c.type === "identifier",
   );
   if (!name) return [];
+
+  // (1) Precise: a namespace under this project's root namespace maps to an exact dir.
+  const proj = nearestConfig(root, parentDir(importerRel), readCsprojRootNamespace, csprojCache);
+  if (proj && (name.text === proj.value || name.text.startsWith(`${proj.value}.`))) {
+    const sub = name.text === proj.value ? "" : name.text.slice(proj.value.length + 1);
+    const exact = [proj.dir, sub.replace(/\./g, "/")].filter(Boolean).join("/");
+    const files = csFilesIn(root, exact, importerRel);
+    if (files) return files;
+  }
+
+  // (2) Heuristic fallback: ancestor-scan + progressively shorter suffixes (recall).
   const segments = name.text.split(".");
   for (const ancestor of ancestorDirs(importerRel)) {
-    // Longest suffix first so the full namespace path beats a rebased shorter one.
     for (let len = segments.length; len >= 1; len--) {
       const rel = [ancestor, ...segments.slice(segments.length - len)].filter(Boolean).join("/");
-      let entries: fs.Dirent[];
-      try {
-        entries = fs.readdirSync(path.join(root, rel), { withFileTypes: true });
-      } catch {
-        continue; // not a directory on disk
-      }
-      const files = entries
-        .filter((e) => e.isFile() && e.name.endsWith(".cs"))
-        .map((e) => (rel ? `${rel}/${e.name}` : e.name))
-        .filter((f) => f !== importerRel);
-      if (files.length > 0) return files.map((f) => [f]); // one File→File edge per .cs file
+      const files = csFilesIn(root, rel, importerRel);
+      if (files) return files;
     }
   }
   return []; // a framework/NuGet namespace, or none on disk

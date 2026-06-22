@@ -2,46 +2,27 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type Parser from "web-tree-sitter";
 import type { LanguageSpec } from "./analyzer.js";
+import { nearestConfig, parentDir } from "./config.js";
 
-/** Cache: an importer's directory (absolute) → the nearest composer.json's repo-
- *  relative directory and its PSR-4 `[prefix, baseDir]` autoload map, or null. */
-const composerCache = new Map<string, { dir: string; psr4: [string, string][] } | null>();
+/** Cache for the nearest composer.json's PSR-4 `[prefix, baseDir]` map, by directory. */
+const composerCache = new Map<string, { dir: string; value: [string, string][] } | null>();
 
-function parentDir(rel: string): string {
-  const p = path.posix.dirname(rel);
-  return p === "." ? "" : p;
-}
-
-/** The nearest composer.json at or above `dirRel`, with its directory and parsed
- *  PSR-4 prefix→directory map — so a `use` resolves whether the index root *is* the
- *  package or merely contains it (a monorepo / Ama's own fixture). (ama-x96) */
-function nearestComposer(
-  root: string,
-  dirRel: string,
-): { dir: string; psr4: [string, string][] } | null {
-  const absDir = path.join(root, dirRel);
-  const cached = composerCache.get(absDir);
-  if (cached !== undefined) return cached;
-  let result: { dir: string; psr4: [string, string][] } | null = null;
+/** The PSR-4 autoload prefix→directory map declared by a composer.json in `absDir`, or
+ *  undefined if there's none (or no `autoload.psr-4`). */
+function readComposerPsr4(absDir: string): [string, string][] | undefined {
   try {
     const json = JSON.parse(fs.readFileSync(path.join(absDir, "composer.json"), "utf8"));
     const map = json?.autoload?.["psr-4"];
-    if (map && typeof map === "object") {
-      const psr4: [string, string][] = [];
-      for (const [prefix, base] of Object.entries(map)) {
-        const dir = Array.isArray(base) ? base[0] : base; // a prefix may map to one dir or a list
-        if (typeof dir === "string") psr4.push([prefix, dir.replace(/\/+$/, "")]);
-      }
-      result = { dir: dirRel, psr4 };
+    if (!map || typeof map !== "object") return undefined;
+    const psr4: [string, string][] = [];
+    for (const [prefix, base] of Object.entries(map)) {
+      const dir = Array.isArray(base) ? base[0] : base; // a prefix may map to one dir or a list
+      if (typeof dir === "string") psr4.push([prefix, dir.replace(/\/+$/, "")]);
     }
+    return psr4;
   } catch {
-    result = null; // no/invalid composer.json — try the parent below
+    return undefined; // no/invalid composer.json — nearestConfig walks to the parent
   }
-  if (!result && dirRel !== "" && dirRel !== ".") {
-    result = nearestComposer(root, parentDir(dirRel));
-  }
-  composerCache.set(absDir, result);
-  return result;
 }
 
 /** Resolve a PHP `use Vendor\Pkg\Klass;` to its class file via PSR-4. The class is
@@ -59,10 +40,10 @@ function phpImports(
   const qn = node.namedChildren.find((c) => c.type === "qualified_name");
   if (!qn) return [];
   const fqn = qn.text.replace(/^\\/, ""); // a leading `\` just marks the FQN as absolute
-  const composer = nearestComposer(root, parentDir(importerRel));
+  const composer = nearestConfig(root, parentDir(importerRel), readComposerPsr4, composerCache);
   if (!composer) return [];
   let best: { prefix: string; base: string } | undefined;
-  for (const [prefix, base] of composer.psr4) {
+  for (const [prefix, base] of composer.value) {
     if (fqn.startsWith(prefix) && (!best || prefix.length > best.prefix.length)) {
       best = { prefix, base };
     }

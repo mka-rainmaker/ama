@@ -21,6 +21,7 @@ const javaRoot = path.resolve(here, "../../fixtures/java-imports");
 const goRoot = path.resolve(here, "../../fixtures/go-imports");
 const phpRoot = path.resolve(here, "../../fixtures/php-imports");
 const csharpRoot = path.resolve(here, "../../fixtures/csharp-imports");
+const csCsprojRoot = path.resolve(here, "../../fixtures/cs-csproj");
 const cRoot = path.resolve(here, "../../fixtures/c-imports");
 const kotlinRoot = path.resolve(here, "../../fixtures/kotlin-imports");
 
@@ -169,6 +170,24 @@ describe("baseline C# import edges (ama-7e3)", () => {
     // the ancestor + suffix scan.
     expect(imports.some((e) => e.to === fileId("App/Models/User.cs"))).toBe(true);
     expect(imports.length).toBe(1);
+  });
+});
+
+describe("baseline C# .csproj RootNamespace precision (ama-66z)", () => {
+  it("maps a namespace under the project's RootNamespace to its exact directory", async () => {
+    const result = await new BaselineAnalyzer(csharpSpec).analyze(csCsprojRoot, [
+      "Deep/Page.cs",
+      "Sub/Real.cs",
+      "Deep/Sub/Wrong.cs",
+    ]);
+    const imports = result.edges.filter(
+      (e) => e.kind === "Imports" && e.from === fileId("Deep/Page.cs"),
+    );
+    // `using App.Sub;` with <RootNamespace>App</RootNamespace> maps App.Sub exactly to
+    // Sub/ (project root + "Sub"), NOT the coincidental Deep/Sub/ a closer suffix scan
+    // from Deep/Page.cs would hit first.
+    expect(imports.some((e) => e.to === fileId("Sub/Real.cs"))).toBe(true);
+    expect(imports.some((e) => e.to === fileId("Deep/Sub/Wrong.cs"))).toBe(false);
   });
 });
 
