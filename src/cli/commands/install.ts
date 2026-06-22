@@ -4,9 +4,12 @@ import * as path from "node:path";
 import {
   AGENTS,
   type AgentSpec,
+  SERVER_NAME,
   detectAgents,
   withAmaServer,
+  withAmaServerToml,
   withoutAmaServer,
+  withoutAmaServerToml,
 } from "../agents.js";
 import type { CliCommand } from "../index.js";
 
@@ -30,6 +33,19 @@ function writeJson(file: string, data: unknown): void {
   fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
 }
 
+function readText(file: string): string | undefined {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+function writeText(file: string, text: string): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, text);
+}
+
 /**
  * Wire ama into every detected agent's MCP config, merging idempotently (other servers and
  * keys preserved). `dryRun` detects but writes nothing. `home` is a parameter so tests run
@@ -40,7 +56,8 @@ export function installAgents(home: string, dryRun = false): AgentResult[] {
     const file = agent.configPath(home);
     if (dryRun) return { agent, file, ok: true };
     try {
-      writeJson(file, withAmaServer(readJson(file)));
+      if (agent.format === "toml") writeText(file, withAmaServerToml(readText(file) ?? ""));
+      else writeJson(file, withAmaServer(readJson(file)));
       return { agent, file, ok: true };
     } catch (err) {
       return { agent, file, ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -53,11 +70,17 @@ export function uninstallAgents(home: string): AgentResult[] {
   const out: AgentResult[] = [];
   for (const agent of AGENTS) {
     const file = agent.configPath(home);
-    const config = readJson(file);
-    const servers = config?.mcpServers as Record<string, unknown> | undefined;
-    if (!config || !servers || !("ama" in servers)) continue;
     try {
-      writeJson(file, withoutAmaServer(config));
+      if (agent.format === "toml") {
+        const text = readText(file);
+        if (!text?.includes(`[mcp_servers.${SERVER_NAME}]`)) continue;
+        writeText(file, withoutAmaServerToml(text));
+      } else {
+        const config = readJson(file);
+        const servers = config?.mcpServers as Record<string, unknown> | undefined;
+        if (!config || !servers || !(SERVER_NAME in servers)) continue;
+        writeJson(file, withoutAmaServer(config));
+      }
       out.push({ agent, file, ok: true });
     } catch (err) {
       out.push({ agent, file, ok: false, error: err instanceof Error ? err.message : String(err) });
@@ -74,7 +97,7 @@ export const installCommand: CliCommand = {
     const results = installAgents(os.homedir(), dryRun);
     if (results.length === 0) {
       ctx.error?.(
-        "No supported agents detected (Claude Code, Cursor, Windsurf). See the README to configure manually.",
+        "No supported agents detected (Claude Code, Cursor, Windsurf, Codex). See the README to configure manually.",
       );
       return 1;
     }

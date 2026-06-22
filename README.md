@@ -37,7 +37,7 @@ npm install -g @mka-rainmaker/ama
 **Fastest — let Ama wire itself in:**
 
 ```bash
-ama install        # detects Claude Code / Cursor / Windsurf and writes their MCP config
+ama install        # detects Claude Code / Cursor / Windsurf / Codex and writes their MCP config
 ama install --dry-run   # preview what it would change, writing nothing
 ama uninstall      # remove it again
 ```
