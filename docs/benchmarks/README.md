@@ -39,7 +39,7 @@ node scripts/benchmark.mjs [repoPath]   # defaults to this repo
   thorough agent confirming each reference. A leaner agent reads fewer files, so real-world
   savings are **lower than the headline**; treat 99% as the ceiling, not a promise.
 - ❌ **Not a full agent-loop benchmark.** It excludes the LLM's reasoning tokens and multi-turn
-  overhead. Tools like a comparable tool publish whole-agent "% cheaper" figures; a comparable number
+  overhead. Some code-graph tools publish whole-agent "% cheaper" figures; a comparable number
   for Ama would need an LLM harness (future work).
 - The deeper win is **qualitative**: Ama returns the *precise, structured* answer — real
   callers, transitive blast radius, exact snippet — with no grep false positives and no

@@ -11,7 +11,10 @@ dist/
 # Ama local index cache (file-backed SqliteStore for the dev HTTP server)
 .ama/
 
-# beads: commit issues.jsonl + the audit log, but never the local Dolt database
+# beads: keep the tracker local. The Dolt DB syncs via refs/dolt/data; the JSONL + audit-log
+# exports carry the full backlog (issue text, identities), so they're not published.
+.beads/issues.jsonl
+.beads/interactions.jsonl
 .beads/*.db
 .beads/dolt/
 .beads/.dolt/
