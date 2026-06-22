@@ -30,8 +30,12 @@ bundle runs no matter where it's unpacked and never touches a system `node`.
 
 ```bash
 npm run bundle            # host platform (<platform>-<arch>)
-npm run bundle linux-x64  # a specific target  (cross-target = slice 2, see below)
+npm run bundle linux-x64  # any target — downloads + checksum-verifies the official Node
 ```
+
+The official Node for the target is downloaded and verified against `SHASUMS256.txt`, so any target
+builds on any OS. Env knobs: `AMA_BUNDLE_HOST_NODE=1` copies the running node instead (host only,
+fast dev); `AMA_NODE_VERSION=x.y.z` overrides the pinned version.
 
 Targets: `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`, `win32-x64`, `win32-arm64`.
 
@@ -48,11 +52,9 @@ parsing and `node:sqlite` run entirely on the vendored runtime.
 
 ## Status & roadmap (ama-py1r)
 
-- **Slice 1 (done):** the `build-bundle` script + launcher, proven on the host target (copies the
-  running node, since the running Node *is* the official build for this platform).
-- **Slice 2 — cross-target Node download:** fetch the official Node tarball/zip for any target
-  (`https://nodejs.org/dist/v<ver>/...`) instead of copying the host's, so all six targets build on
-  any OS.
+- **Slice 1 (done):** the `build-bundle` script + launcher, proven on the host target.
+- **Slice 2 (done):** downloads + checksum-verifies the official Node for any target, so all six
+  targets build on any OS (verified: a `linux-x64` bundle cross-built on macOS yields an ELF binary).
 - **Slice 3 — release pipeline:** a GitHub Actions workflow that builds all six bundles and attaches
   them to a GitHub Release.
 - **Slice 4 — installers:** `curl … | sh` (macOS/Linux) and PowerShell (Windows) one-liners.
@@ -60,5 +62,5 @@ parsing and `node:sqlite` run entirely on the vendored runtime.
   `optionalDependencies`, so `npm i -g`/`npx` keep working without requiring a local Node.
 - **`ama upgrade` (ama-h522):** detect the install method and update in place.
 
-Until slices 2–5 land, the published install path remains `npm i -g @mka-rainmaker/ama` (Node 24+).
+Until slices 3–5 land, the published install path remains `npm i -g @mka-rainmaker/ama` (Node 24+).
 The README badge says `Node.js 24+`, not "bundled," on purpose — it flips when distribution ships.
