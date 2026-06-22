@@ -102,6 +102,22 @@ ama --help     # list commands
 ama mcp        # run the MCP server over stdio (what coding agents spawn)
 ```
 
+### Programmatic API
+
+Embed Ama as a library — index a repo and query its graph from your own code (the same surface the MCP server and CLI use):
+
+```ts
+import { index } from "@mka-rainmaker/ama";
+
+const ama = await index("/path/to/repo");
+ama.searchSymbol("createServer"); // GraphNode[]
+ama.findCallers("createServer"); // who calls it
+ama.impactAnalysis("AmaSession"); // transitive blast radius
+ama.close(); // release resources when done
+```
+
+`index(root)` returns a transport-free `AmaSession` (aliased `Ama`) with the full query surface; `open(root)` reuses a persisted index. See [`src/api.ts`](src/api.ts) for the exported types.
+
 ## What's in 0.1
 
 - **Deep TypeScript analysis** via the TypeScript Compiler API — types, overloads, generics, imports/re-exports, inheritance, interface dispatch, cross-file binding, and call graphs.
