@@ -129,7 +129,17 @@ export class Indexer {
     // Discover files BEFORE touching the store: a failing walk must not clear a
     // persistent store reused across indexes — that corrupts the live index.
     // Walking first keeps a failed re-index a no-op.
-    const files = discoverFiles(root);
+    const skippedLarge: string[] = [];
+    const files = discoverFiles(root, (rel) => skippedLarge.push(rel));
+    if (skippedLarge.length > 0) {
+      // Honest about omissions, like the per-analyzer isolation below: a file too big
+      // to parse safely is left out, but said so on stderr (stdout is JSON-RPC only).
+      console.error(
+        `[ama] skipped ${skippedLarge.length} file(s) over the ` +
+          `${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB parse cap (too large to index): ` +
+          skippedLarge.join(", "),
+      );
+    }
     const store = this.createStore(root);
     store.clear(); // a persistent store may hold a previous index; rebuild clean
 
@@ -380,8 +390,12 @@ export function isStale(root: string, rel: string, meta: FileMeta): boolean {
   }
 }
 
-/** Repo-relative paths of every file under `root`, skipping ignored trees. */
-function discoverFiles(root: string): string[] {
+/**
+ * Repo-relative paths of every file under `root`, skipping ignored trees. Files over the
+ * parse cap are left out; `onSkipLarge` is invoked with each so a caller can report them
+ * instead of dropping them silently. (ama-j0y)
+ */
+function discoverFiles(root: string, onSkipLarge?: (rel: string) => void): string[] {
   const rootRules = loadIgnoreRules(root); // dotfiles + IGNORED_DIRS + the root .gitignore
   const out: string[] = [];
   const walk = (dir: string, dirRel: string, parent: IgnoreRules): void => {
@@ -397,15 +411,19 @@ function discoverFiles(root: string): string[] {
       if (entry.isDirectory()) walk(abs, rel, rules);
       else if (entry.isFile()) {
         // Skip oversized files (minified bundles, data blobs) — the same cap the
-        // watcher enforces, so the initial index and re-index agree. A vanished
-        // file is just skipped.
+        // watcher enforces, so the initial index and re-index agree. Report the skip
+        // (never silently dropped, like the per-analyzer isolation) so a caller knows a
+        // file was omitted. A vanished file is just skipped.
         let size: number;
         try {
           size = fs.statSync(abs).size;
         } catch {
           continue;
         }
-        if (size > MAX_FILE_SIZE_BYTES) continue;
+        if (size > MAX_FILE_SIZE_BYTES) {
+          onSkipLarge?.(rel);
+          continue;
+        }
         out.push(rel);
       }
     }
