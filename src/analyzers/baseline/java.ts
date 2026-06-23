@@ -85,9 +85,47 @@ function* eachClass(node: Parser.SyntaxNode): Generator<Parser.SyntaxNode> {
   for (const c of node.namedChildren) yield* eachClass(c);
 }
 
-/** The string argument of an `@Annotation("x")`, or undefined for a marker annotation. */
+/** The last dotted segment of an annotation name — so fully-qualified annotations like
+ *  `@org.springframework.web.bind.annotation.GetMapping` resolve to `GetMapping` and match
+ *  the simple-name entries in `JAVA_MAPPING_VERBS` / `JAVA_JAXRS_VERBS`. A plain identifier
+ *  name (e.g. `GetMapping`) is returned as-is. */
+function annotationSimpleName(ann: Parser.SyntaxNode): string | undefined {
+  const nameNode = ann.childForFieldName("name");
+  if (!nameNode) return undefined;
+  if (nameNode.type === "identifier") return nameNode.text;
+  // scoped_identifier: walk to the outermost named child that is an `identifier` (the right-most
+  // segment). The tree-sitter-java CST nests left-associatively, so the rightmost identifier is
+  // the last namedChild of the outermost scoped_identifier.
+  if (nameNode.type === "scoped_identifier") {
+    const ids = nameNode.namedChildren.filter((c) => c.type === "identifier");
+    return ids[ids.length - 1]?.text;
+  }
+  return nameNode.text;
+}
+
+/** The route-path string argument of an annotation, honouring named-arg order:
+ *  - If there are ANY `element_value_pair` children in the argument list, look for one named
+ *    `value` or `path` (in that precedence order) and return its string value.
+ *  - If there are NO named pairs (i.e. a single positional arg `@GetMapping("/x")`), fall back
+ *    to the first `string_fragment` inside the argument list.
+ *  Returns `undefined` for a marker annotation (no argument list / no string). */
 function annotationArg(ann: Parser.SyntaxNode): string | undefined {
-  return firstOfType(ann, "string_fragment")?.text;
+  const argList = ann.namedChildren.find((c) => c.type === "annotation_argument_list");
+  if (!argList) return undefined;
+  const pairs = argList.namedChildren.filter((c) => c.type === "element_value_pair");
+  if (pairs.length > 0) {
+    // Named-arg form: prefer `value=` then `path=`; ignore other pairs (e.g. `produces=`).
+    for (const key of ["value", "path"]) {
+      const pair = pairs.find((p) => p.namedChildren[0]?.text === key);
+      if (pair) {
+        const strLit = pair.namedChildren.find((c) => c.type === "string_literal");
+        return firstOfType(strLit ?? pair, "string_fragment")?.text;
+      }
+    }
+    return undefined; // named pairs present but none are `value`/`path` → no path arg
+  }
+  // Positional single-arg form — take the first string_fragment anywhere in the list.
+  return firstOfType(argList, "string_fragment")?.text;
 }
 
 /** Combine a Spring class prefix and a method sub-path into a normalized `:param` route. */
@@ -149,11 +187,9 @@ function javaRoutes(
   for (const cls of eachClass(root)) {
     const classAnns = annotationsOf(cls);
     // Spring class prefix (`@RequestMapping("/x")`) and JAX-RS class prefix (`@Path("/x")`).
-    const springPrefix = classAnns.find(
-      (a) => a.childForFieldName("name")?.text === "RequestMapping",
-    );
+    const springPrefix = classAnns.find((a) => annotationSimpleName(a) === "RequestMapping");
     const springClassPath = springPrefix ? (annotationArg(springPrefix) ?? "") : "";
-    const jaxrsPrefix = classAnns.find((a) => a.childForFieldName("name")?.text === "Path");
+    const jaxrsPrefix = classAnns.find((a) => annotationSimpleName(a) === "Path");
     const jaxrsClassPath = jaxrsPrefix ? (annotationArg(jaxrsPrefix) ?? "") : "";
     const body = cls.childForFieldName("body");
     for (const member of body?.namedChildren ?? []) {
@@ -170,9 +206,10 @@ function javaRoutes(
       };
 
       // Spring: a single `@GetMapping`/… carries both verb and (optional) sub-path.
+      // `annotationSimpleName` strips FQN prefixes so `@org.springframework…GetMapping` resolves.
       const spring = methodAnns
         .map((a) => ({
-          verb: JAVA_MAPPING_VERBS.get(a.childForFieldName("name")?.text ?? ""),
+          verb: JAVA_MAPPING_VERBS.get(annotationSimpleName(a) ?? ""),
           ann: a,
         }))
         .find((m) => m.verb);
@@ -190,10 +227,10 @@ function javaRoutes(
 
       // JAX-RS: the verb is a `@GET`/… marker; the sub-path is a separate method `@Path` (or none).
       const jaxrsVerb = methodAnns
-        .map((a) => JAVA_JAXRS_VERBS.get(a.childForFieldName("name")?.text ?? ""))
+        .map((a) => JAVA_JAXRS_VERBS.get(annotationSimpleName(a) ?? ""))
         .find(Boolean);
       if (jaxrsVerb) {
-        const methodPathAnn = methodAnns.find((a) => a.childForFieldName("name")?.text === "Path");
+        const methodPathAnn = methodAnns.find((a) => annotationSimpleName(a) === "Path");
         const sub = methodPathAnn ? (annotationArg(methodPathAnn) ?? "") : "";
         emitRoute(rel, jaxrsVerb, joinJavaRoutePath(jaxrsClassPath, sub), handlerQn, range, out);
       }
@@ -307,7 +344,13 @@ const JAVA_SYMBOL_TYPES = new Set([
 
 /** Reproduce walkSymbols' dotted qualified name for `node`: the `name` of each symbol-typed
  *  ancestor, outermost first. Undefined if a link is anonymous (can't qualify) — it must match the
- *  id of the Method node walkSymbols already emitted, so call edges resolve to it. */
+ *  id of the Method node walkSymbols already emitted, so call edges resolve to it.
+ *
+ *  Anonymous-class methods fold into the enclosing method's namespace: `new Foo(){void run(){}}` inside
+ *  `Outer.method()` yields `Outer.method.run`. This is intentional — `object_creation_expression`
+ *  (the anonymous-class wrapper) is not in `JAVA_SYMBOL_TYPES`, so the traversal skips it and lands
+ *  on `method_declaration` (the enclosing named method) as the next qualifying ancestor, giving the
+ *  same dotted chain that walkSymbols' recursion through non-symbol nodes produces. (S2, #34) */
 function javaQualifiedName(node: Parser.SyntaxNode): string | undefined {
   const parts: string[] = [];
   for (let n: Parser.SyntaxNode | null = node; n; n = n.parent) {
@@ -363,8 +406,10 @@ function javaCalls(
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   // Both methods and constructors register by simple name: a constructor's `name` field is the class
   // identifier, so `new Foo(...)` (callee simple name `Foo`) resolves to the `Foo.Foo` constructor.
-  // Overloaded constructors/methods collide by simple name → null (ambiguous), so they stay skipped:
-  // disambiguating an overload by argument shape is deep-tier, not baseline. (S2)
+  // Within-file: overloaded constructors/methods collide by simple name → null (ambiguous → skipped).
+  // Cross-file: only one definition per simple name exists per file in `funcsByFile` (deriveCallEdges
+  // first-wins), so an overloaded target resolves to the FIRST matching definition in the imported file —
+  // an arbitrary overload, not skipped. This is a known baseline limitation (deep-tier #15). (S2)
   const byName = new Map<string, string | null>(); // simple name → id, or null when ambiguous
   for (const m of [
     ...eachOfType(root, "method_declaration"),
