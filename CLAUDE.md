@@ -10,10 +10,11 @@ this repo. When the two disagree, `AGENTS.md` wins.
 
 ## Current state
 
-Ama is **built and published** (`@mka-rainmaker/ama`, v0.2) — `src/`, `tests/`, `docs/`, and the
-beads tracker all exist, the suite is green, and `README.md`/`AGENTS.md` describe what's actually on
-disk. Deep tier = TypeScript (compiler API); baseline tier = tree-sitter for ~14 more languages,
-plus a heuristic Python call graph and framework-route detection across TS/Python/Go/PHP/Java/Rust.
+Ama is **built, published, and public** (`@mka-rainmaker/ama`, v0.3) — `src/`, `tests/`, and `docs/`
+all exist, the suite is green. Deep tier = TypeScript (compiler API); baseline tier = tree-sitter for
+~14 more languages, plus a heuristic Python call graph (incl. FastAPI test-impact) and framework-route
+detection across TS/Python/Go/PHP/Java/Rust. Self-contained, no-Node install bundles ship via the
+GitHub Actions release workflow (`curl | sh` / PowerShell) alongside the npm package.
 
 ## Use Ama on Ama (dogfooding)
 
@@ -69,8 +70,9 @@ analyzer is the reference implementation.
   **and** Ama re-indexes its own source cleanly.
 - **Report capability tiers honestly.** Each analyzer is `deep` (semantic) or `baseline` (syntactic),
   and every tool result surfaces which tier produced it. Never let baseline-only coverage look complete.
-- **Branch, then merge.** No feature work straight to `main`; use a short-lived `loop/NN-<topic>`
-  branch (one isolated, revertable commit) and fast-forward. Use Conventional Commits.
+- **Branch → PR → merge.** `main` is protected: no direct pushes. Work on a short-lived branch, open a
+  PR, and let CI (build/typecheck/test/lint) + a code-owner review pass before a squash-merge. Use
+  Conventional Commits and reference the issue (`Closes #N`).
 - **Log insights as you go.** Non-obvious lessons get appended to `docs/insights/README.md` (under
   "## Log") as part of the same change — this is a required step, not optional.
 
@@ -83,61 +85,6 @@ use **`.js` extensions on relative imports** and `import type` for type-only imp
 
 ## Issue tracking
 
-The backlog lives in **beads** (`bd`): `bd ready` to see actionable work, `bd update <id> --claim` to
-claim. See `docs/ISSUE_TRACKING.md` (once it exists) and the full loop in `docs/SELF_IMPROVEMENT_LOOP.md`.
-
-
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
-## Beads Issue Tracker
-
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
-
-### Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
-
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
-
-## Agent Context Profiles
-
-The managed Beads block is task-tracking guidance, not permission to override repository, user, or orchestrator instructions.
-
-- **Conservative (default)**: Use `bd` for task tracking. Do not run git commits, git pushes, or Dolt remote sync unless explicitly asked. At handoff, report changed files, validation, and suggested next commands.
-- **Minimal**: Keep tool instruction files as pointers to `bd prime`; use the same conservative git policy unless active instructions say otherwise.
-- **Team-maintainer**: Only when the repository explicitly opts in, agents may close beads, run quality gates, commit, and push as part of session close. A current "do not commit" or "do not push" instruction still wins.
-
-## Session Completion
-
-This protocol applies when ending a Beads implementation workflow. It is subordinate to explicit user, repository, and orchestrator instructions.
-
-1. **File issues for remaining work** - Create beads for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **Handle git/sync by active profile**:
-   ```bash
-   # Conservative/minimal/default: report status and proposed commands; wait for approval.
-   git status
-
-   # Team-maintainer opt-in only, unless current instructions forbid it:
-   git pull --rebase
-   git push
-   git status
-   ```
-5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
-
-**Critical rules:**
-- Explicit user or orchestrator instructions override this Beads block.
-- Do not commit or push without clear authority from the active profile or the current user request.
-- If a required sync or push is blocked, stop and report the exact command and error.
-<!-- END BEADS INTEGRATION -->
+Issues and the backlog live in [**GitHub Issues**](https://github.com/mka-rainmaker/ama/issues):
+`gh issue list` to find actionable work, `gh issue create` to file a gap. Reference issues from PRs
+with `Closes #N`. (Do not use TodoWrite or markdown TODO lists for project tracking.)

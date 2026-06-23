@@ -32,14 +32,12 @@ which Claude loads when you ask it to "run the loop". This document is the setup
    npm run build    # tsc -> dist/, producing dist/mcp/server.js
    ```
 
-3. **Install beads (`bd`) and rebuild the issue DB.** The backlog lives in beads:
+3. **Find work in GitHub Issues.** The backlog lives in
+   [GitHub Issues](https://github.com/mka-rainmaker/ama/issues):
 
    ```sh
-   brew install beads
-   bd ready          # sanity-check: prints the claimable backlog
+   gh issue list     # the open backlog (gh issue create to file a gap)
    ```
-
-   Full workflow and the git model: `docs/ISSUE_TRACKING.md`.
 
 ---
 
@@ -71,18 +69,14 @@ become available:
 
 ## The loop
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│ 0. /mcp → confirm Ama is connected (else STOP: build + restart)       │
-│ 1. index_repository(".")              ← Ama indexes itself            │
-│ 2. bd ready → bd update <id> --claim  ← one item                     │
-│ 3. Understand it with Ama's OWN tools (search_symbol/find_callers/…)  │
-│ 4. Change test-first; re-index; npm test green                        │
-│ 5. Out-of-scope find? file (non-blocking) or fix now (blocking)       │
-│ 6. Log an insight in docs/insights/README.md                          │
-│ 7. bd close + export; commit on loop/NN; ff main; push; loop          │
-└──────────────────────────────────────────────────────────────────────┘
-```
+1. `/mcp` → confirm Ama is connected (else STOP: build + restart).
+2. `index_repository(".")` — Ama indexes itself.
+3. `gh issue list` → pick one open issue.
+4. Understand it with Ama's **own** tools (`search_symbol` / `find_callers` / …), not Read/Grep.
+5. Change it test-first; re-index; `npm test` green.
+6. Out-of-scope find? File a GitHub issue (non-blocking), or fix it now (blocking).
+7. Log an insight in `docs/insights/README.md`.
+8. Branch → PR (`Closes #N`); CI + review must pass; squash-merge; loop.
 
 The mechanics, gotchas, and red flags are in the `self-improvement` skill — read it (or ask Claude to
 "run a self-improvement iteration"). The two rules that make it a *loop* and not a normal dev task:
@@ -140,8 +134,8 @@ Now edit Ama's own analyzer/server code and the change is **live on your next to
 Code restart:
 
 - `tsx watch` restarts the standalone server whenever a `src/` file changes.
-- On restart the persistent SQLite index **reopens in ~1 ms** instead of re-indexing (ndw.2), and
-  **connect-time catch-up** (gd5.4) reconciles anything that changed while it bounced.
+- On restart the persistent SQLite index **reopens in ~1 ms** instead of re-indexing, and
+  **connect-time catch-up** reconciles anything that changed while it bounced.
 - Claude Code's next request transparently **reconnects** to the URL, so you query the freshly-built
   analyzer immediately.
 
@@ -153,7 +147,7 @@ setup just removes the build + restart step when iterating on Ama's own code.
 
 ## Known gaps to expect
 
-Ama's TypeScript analysis is intentionally partial in the MVP. The deep analyzer
+Ama's TypeScript analysis is intentionally partial. The deep analyzer
 (`src/analyzers/typescript/analyzer.ts`) emits nodes for File / Function / Class / Interface / Enum /
 TypeAlias / Method / Property declarations, and `Defines`, `Calls`, `Inherits`, `Implements`,
 `Imports`, and `UsesType` edges (`Calls` covers direct calls *and* `new` construction). For the live,
@@ -165,14 +159,9 @@ doesn't land:
   (or dropped at module top level).
 - **get/set accessors get no node** — class fields/properties now do, but accessors don't, so their
   bodies' calls and their types are dropped or mis-attributed.
-- **Generics, decorators, and interface-method dispatch are not yet modeled** — see the **Deeper
-  TypeScript semantics** epic in `bd` (these are the best-motivated loop targets because Ama's own
-  source exercises every one of them).
-
-What already landed (and is *no longer* a gap): `Imports`/re-exports, `Inherits`, `Implements`, and
-`UsesType` edges; type aliases and class/interface properties as nodes; `new`-expression construction
-as `Calls` edges; and the **Higher-order query tools** epic (`node`, `impact_analysis`, `affected`,
-`get_graph_schema`, `search_code`, `explore`).
+- **Generics, decorators, and interface-method dispatch are not yet modeled** — tracked in
+  [GitHub Issues](https://github.com/mka-rainmaker/ama/issues) (these are the best-motivated loop
+  targets because Ama's own source exercises every one of them).
 
 `find_callers` / `find_callees` will still undercount wherever the above gaps apply — which is exactly
 the kind of firsthand gap the loop is designed to surface and close.
