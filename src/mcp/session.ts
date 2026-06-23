@@ -68,8 +68,15 @@ export class AmaSession {
   private watcher?: FileWatcher;
   private debouncer?: Debouncer;
   private needsCatchUp = false;
+  private triedDefaultIndex = false;
 
-  constructor(private readonly indexer: Indexer = createDefaultIndexer()) {}
+  constructor(
+    private readonly indexer: Indexer = createDefaultIndexer(),
+    /** Repo to lazily index the first time a query is served with nothing indexed yet
+     *  (see {@link ensureIndexed}). The MCP server sets it to AMA_ROOT/cwd; the CLI and
+     *  library leave it unset, keeping the explicit-index contract. (#35) */
+    private readonly defaultRoot?: string,
+  ) {}
 
   async indexRepository(root: string): Promise<IndexStats> {
     const abs = path.resolve(root);
@@ -138,6 +145,19 @@ export class AmaSession {
     if (!this.needsCatchUp) return undefined;
     this.needsCatchUp = false;
     return this.sync();
+  }
+
+  /**
+   * Lazily index {@link defaultRoot} the first time a query is served with nothing
+   * indexed yet — so an agent that queries before calling `index_repository` gets a
+   * transparent first index instead of a "Nothing indexed yet" error. Tried at most
+   * once; a no-op when something is already indexed or no default root is configured
+   * (the CLI/library set none and keep the explicit-index contract). (#35)
+   */
+  async ensureIndexed(): Promise<void> {
+    if (this.query || !this.defaultRoot || this.triedDefaultIndex) return;
+    this.triedDefaultIndex = true;
+    await this.indexRepository(this.defaultRoot);
   }
 
   /**
