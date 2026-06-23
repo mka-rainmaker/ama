@@ -77,8 +77,9 @@ download — used for testing against a local `file://` archive).
 - **Slice 3 (done):** `.github/workflows/release.yml` — a matrix builds all six bundles on **native
   runners** (so each is built *and* run on its own OS/arch), packages them, and attaches them to a
   GitHub Release on a `v*` tag. `workflow_dispatch` runs the build+smoke matrix *without* releasing,
-  so the matrix can be verified before a tag is cut. (Verified locally per target by `file`-checking
-  the vendored binary; the native run/smoke is verified by the CI matrix.)
+  so the matrix can be verified before a tag is cut. (Verified green: a `workflow_dispatch` run built
+  *and ran* all six legs on real hardware — incl. `darwin-x64` on `macos-14` + Rosetta 2, since Intel
+  `macos-13` runners are scarce.)
 - **Slice 4 (done):** `install.sh` (macOS/Linux) + `install.ps1` (Windows) — detect the platform,
   download the bundle from the Release, unpack under `~/.ama`, and drop a launcher *shim* on PATH
   (absolute-path shim, so the relative-path launcher still resolves its own dir). `install.sh` is
@@ -86,7 +87,9 @@ download — used for testing against a local `file://` archive).
   `install.ps1` is verified on Windows/CI.
 - **Slice 5 — npm shim:** a thin npm package that pulls the right bundle via platform-specific
   `optionalDependencies`, so `npm i -g`/`npx` keep working without requiring a local Node.
-- **`ama upgrade` (ama-h522):** detect the install method and update in place.
+- **`ama upgrade` (ama-h522, done):** detects the install method (bundle / npm / npx / source) and
+  updates in place — `npm i -g` for npm installs, the installer one-liner for bundles; `--check`
+  reports the latest GitHub release, `--dry-run` previews, `[version]` pins.
 
 Until the first public release, the install path remains `npm i -g @mka-rainmaker/ama` (Node 24+);
 the `curl … | sh` / PowerShell installers go live with the first tagged release on a public repo,

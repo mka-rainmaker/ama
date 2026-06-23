@@ -30,6 +30,7 @@ import {
 import { searchCodeCommand, searchCommand } from "./commands/search.js";
 import { statusCommand } from "./commands/status.js";
 import { syncCommand } from "./commands/sync.js";
+import { upgradeCommand } from "./commands/upgrade.js";
 
 /** Global options parsed from argv and handed to each command. */
 export interface CliContext {
@@ -156,6 +157,7 @@ export const COMMANDS: readonly CliCommand[] = [
   typesUsedCommand,
   uninitCommand,
   uninstallCommand,
+  upgradeCommand,
 ];
 
 export async function main(): Promise<void> {
