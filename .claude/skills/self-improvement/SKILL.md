@@ -1,6 +1,6 @@
 ---
 name: self-improvement
-description: Use when asked to run the loop, run a self-improvement iteration, self-improve Ama, dogfood Ama on itself, or work an Ama backlog item (tracked in beads / bd) — in the ama repo.
+description: Use when asked to run the loop, run a self-improvement iteration, self-improve Ama, dogfood Ama on itself, or work an Ama backlog item (tracked in GitHub Issues) — in the ama repo.
 ---
 
 # Ama Self-Improvement Loop
@@ -45,10 +45,9 @@ doesn't actually run, treat the server as down and STOP. "Probably connected" is
 
 1. **Index.** Call `index_repository(".")`; record before counts (`index_status`). It must succeed —
    that is the smoke signal.
-2. **Pick ONE item** with `bd ready`, then **claim it**: `bd update <id> --claim`. One item, not a
-   batch. Favor small, high-signal gaps Ama's *own* source exercises — analyzer `KNOWN GAPS` comments
-   and items a prior iteration filed are the best-motivated picks. (Backlog is `bd` — see
-   `docs/ISSUE_TRACKING.md`.)
+2. **Pick ONE open issue** with `gh issue list`. One item, not a batch. Favor small, high-signal gaps
+   Ama's *own* source exercises — analyzer `KNOWN GAPS` comments and items a prior iteration filed are
+   the best-motivated picks.
 3. **Dogfood — understand via Ama's tools, not grep.** Use `search_symbol` to locate code,
    `find_callers` / `find_callees` for blast radius, `get_code_snippet` to read it. If a tool *can't*
    answer something you need, that itself is a captured gap → file it (see Out-of-scope finds).
@@ -58,32 +57,32 @@ doesn't actually run, treat the server as down and STOP. "Probably connected" is
    layering (`graph/ → analyzers/ → store/ → query/ → mcp/`), `.js` import extensions, `import type`.
 5. **Verify:** full suite green (`npm test`) **and** the self-index gate (`tests/self-index.test.ts`)
    **and** re-index — confirm Ama still indexes itself and the counts moved as expected. Record after
-   counts. Lint clean: `npm run lint` (use `biome check --write .` to auto-fix imports/format).
+   counts. Lint clean: `npm run lint` — **assert the exit code, don't eyeball a tail** (a pipe hides
+   biome's failure); `biome check --write .` auto-fixes imports/format.
 6. **Log the insight** (REQUIRED): append to `docs/insights/README.md` under "## Log" as
    `date · area · lesson` — what changed, before/after self-index counts, any non-obvious finding.
-7. **Finish — automatically, no review gate, don't ask:** `bd close <id> -r "<what changed +
-   before/after counts>"`, then `bd export -o .beads/issues.jsonl` and `git add .beads/`. Commit on a
-   `loop/NN-<topic>` branch (Conventional Commits), fast-forward `main`, **push `main` to origin**,
-   and **delete the local `loop/NN` branch**. Running the loop *is* the authorization to commit and
-   push — the green suite + clean self-index are the only gate.
+7. **Finish — open a PR, never push to `main`.** Commit on a short-lived branch, push the branch, and
+   open a PR with `Closes #N`. `main` is protected: CI (build/typecheck/test/lint) **and** a code-owner
+   review must pass before a **squash-merge**. A green suite + clean self-index are the bar to *open*
+   the PR; CI green + the maintainer's review are the bar to *merge*. Use Conventional Commits.
 
 ## Out-of-scope finds (don't silently absorb them)
 
 While dogfooding you will trip over bugs or gaps unrelated to the claimed item. Never swallow them:
 
 - **Not blocking delivery of the current item** → file it immediately and stay on scope:
-  `bd create "…" -t bug|task -l <area> --deps discovered-from:<claimed-id>`.
+  `gh issue create` (note it's discovered-from the current issue in the body).
 - **Blocking delivery** → fix it *now* as part of this iteration (you cannot ship the item around it),
-  and note it in the close reason.
+  and note it in the PR description.
 
 ## Red flags — you are NOT running the loop
 
 - You understood the code with Read/Grep and never called an Ama MCP tool → not dogfooding.
 - You skipped the `docs/insights/` entry → the project's whole premise is compounding lessons.
 - You batched several backlog items → keep iterations atomic and reviewable.
-- You committed feature work straight to `main` instead of via a `loop/NN` branch.
-- You stopped before pushing "to be conservative" — for this loop, finishing *includes* the push.
-- You merged/pushed with a red suite or a failing self-index — green is the unconditional gate.
+- You committed/pushed to `main` directly instead of opening a PR (`main` is protected — it won't let you).
+- You "verified" lint by eyeballing a tail of `biome check` output instead of its exit code.
+- You merged/pushed with a red suite or a failing self-index — green CI is the unconditional gate.
 - Ama wasn't connected and you "made do" by reading files instead of stopping.
 
 ## Quick reference
@@ -92,8 +91,8 @@ While dogfooding you will trip over bugs or gaps unrelated to the claimed item. 
 |---|---|
 | Is Ama live? | `/mcp`; if not → STOP, user runs `npm run build` + restarts Claude Code |
 | See real test/build errors | `rtk proxy npx vitest run` / `rtk proxy npm run build` |
-| Pick work | `bd ready` → `bd update <id> --claim` (one item; see `docs/ISSUE_TRACKING.md`) |
+| Pick work | `gh issue list` (one open issue) |
 | Understand code | `search_symbol` / `find_callers` / `find_callees` / `get_code_snippet` (NOT grep) |
-| Out-of-scope find | non-blocking → `bd create … --deps discovered-from:<id>`; blocking → fix now |
-| Verify a change | `npm test` + self-index gate (MCP is cached until rebuild + restart) |
-| Finish | `bd close` → `bd export` → `git add .beads/` → `loop/NN` branch → commit → ff `main` → push origin → delete branch (no review gate) |
+| Out-of-scope find | `gh issue create` (non-blocking); blocking → fix now |
+| Verify a change | `npm test` + self-index gate + `npm run lint` (check exit code) |
+| Finish | branch → push → PR (`Closes #N`) → CI + review green → squash-merge |
