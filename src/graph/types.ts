@@ -95,6 +95,10 @@ export interface GraphNode {
  * client access (its target encodes the model name, not a node id); `prisma` is the
  * resolved cross-analyzer edge a whole-graph pass derives from it, linking the access to
  * the schema model node. Like `dispatch`, `prisma` is re-derived after a reindex. (ama-kvv)
+ *
+ * `type` marks a baseline type edge resolved whole-graph from a `type:<Name>` candidate (a Java
+ * supertype/interface/field-type) to the Class/Interface/Enum node it names. Re-derived after a
+ * reindex, like `dispatch`. (ama 0.4.0 S0)
  */
 export type EdgeProvenance =
   | "resolved"
@@ -106,6 +110,9 @@ export type EdgeProvenance =
   // is the whole-graph-resolved cross-file Calls edge.
   | "call-ref"
   | "call"
+  // Baseline type resolution (ama 0.4.0 S0): a Java `type:<Name>` candidate on an
+  // Inherits/Implements/UsesType edge, resolved whole-graph to the Class/Interface/Enum it names.
+  | "type"
   // FastAPI TestClient → Route: links a `client.get("/x")` test to the route it exercises, so
   // impact_analysis(handler) reaches route tests through route→handler. (ama-f2c)
   | "route-test";

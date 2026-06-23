@@ -23,6 +23,7 @@ import {
   deriveDispatchEdges,
   derivePrismaReferences,
   deriveRouteTestEdges,
+  deriveTypeEdges,
 } from "../graph/index.js";
 import type { Tier } from "../graph/index.js";
 import { InMemoryStore } from "../store/memory.js";
@@ -201,6 +202,8 @@ export class Indexer {
     // Resolve cross-analyzer Prisma links now that every analyzer's nodes are in the
     // store — the TS `prisma-ref` candidates and the schema model nodes only meet here. (ama-kvv)
     relinkPrisma(store);
+    relinkTypes(store); // resolve baseline type:<Name> candidates BEFORE dispatch (ama 0.4.0 S0)
+    redispatch(store); // re-derive Overrides/dispatch over the now-resolved hierarchy (ama 0.4.0 S0)
     relinkCalls(store); // and cross-file baseline call edges (ama-bnj)
     relinkRouteTests(store); // and FastAPI TestClient route→test links (ama-f2c)
 
@@ -295,6 +298,7 @@ export class Indexer {
     // analyze can't see other files' implementers, so reconcileFile would drop this
     // file's cross-file dispatch edges. Re-derive them over the full store after the
     // structural change, restoring full-index parity. (ama-tr1)
+    relinkTypes(store); // resolve baseline type:<Name> candidates whole-graph BEFORE dispatch (ama 0.4.0 S0)
     redispatch(store);
     relinkPrisma(store); // re-resolve prisma.<model> links whole-graph too (ama-kvv)
     relinkCalls(store); // re-resolve cross-file baseline call edges whole-graph (ama-bnj)
@@ -366,6 +370,17 @@ function redispatch(store: Store): void {
   const nodes = [...store.allNodes()];
   const base = store.allEdges().filter((e) => e.provenance !== "dispatch");
   store.replaceEdgesByProvenance("dispatch", deriveDispatchEdges(nodes, base));
+}
+
+/**
+ * Re-derive baseline type edges (a `type:<Name>` candidate on an Inherits/Implements/UsesType edge →
+ * the Class/Interface/Enum it names) over the full store, replacing the prior ones — mirrors
+ * {@link redispatch}. A single file's analyzer can't see other files' types, so resolution happens
+ * here. Runs BEFORE {@link redispatch} because dispatch consumes the resolved hierarchy. (ama 0.4.0 S0) */
+function relinkTypes(store: Store): void {
+  const nodes = [...store.allNodes()];
+  const base = store.allEdges().filter((e) => e.provenance !== "type");
+  store.replaceEdgesByProvenance("type", deriveTypeEdges(nodes, base));
 }
 
 /**
