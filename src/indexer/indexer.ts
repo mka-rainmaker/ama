@@ -142,9 +142,7 @@ export class Indexer {
       // Honest about omissions, like the per-analyzer isolation below: a file too big
       // to parse safely is left out, but said so on stderr (stdout is JSON-RPC only).
       console.error(
-        `[ama] skipped ${skippedLarge.length} file(s) over the ` +
-          `${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB parse cap (too large to index): ` +
-          skippedLarge.join(", "),
+        `[ama] skipped ${skippedLarge.length} file(s) over the ${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB parse cap (too large to index): ${skippedLarge.join(", ")}`,
       );
     }
     const store = this.createStore(root);
