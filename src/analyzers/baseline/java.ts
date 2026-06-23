@@ -159,6 +159,24 @@ function enclosingMethod(node: Parser.SyntaxNode): Parser.SyntaxNode | undefined
   return undefined;
 }
 
+/** Method names ubiquitous on java.lang.Object / common stdlib types — a baseline call to one of
+ *  these (`obj.toString()`, `System.out.println(...)`) almost never targets a user method in an
+ *  imported file, so a `call:` candidate for it is pure noise (it cannot resolve, or resolves wrong
+ *  by name). Conservative on purpose — only names you would never define-and-call cross-file. (#38) */
+const JAVA_BUILTINS = new Set([
+  "toString",
+  "equals",
+  "hashCode",
+  "getClass",
+  "clone",
+  "finalize",
+  "notify",
+  "notifyAll",
+  "wait",
+  "println",
+  "print",
+]);
+
 /** Heuristic baseline call edges for Java. A `method_invocation` whose name matches a method defined
  *  in the SAME file resolves by name to a `Calls` edge from the enclosing method (within-file); a
  *  non-local name becomes a `call:<name>` candidate that {@link deriveCallEdges} resolves cross-file
@@ -193,7 +211,7 @@ function javaCalls(
       if (from === local || seen.has(key)) continue; // skip self-recursion + duplicate sites
       seen.add(key);
       edges.push({ from, to: local, kind: "Calls", provenance: "heuristic" });
-    } else {
+    } else if (!JAVA_BUILTINS.has(name)) {
       // not local — a cross-file candidate deriveCallEdges resolves via the import graph (slice 2)
       const key = `r ${from} ${name}`;
       if (seen.has(key)) continue;

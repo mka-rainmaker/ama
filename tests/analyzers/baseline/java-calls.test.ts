@@ -4,7 +4,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { BaselineAnalyzer } from "../../../src/analyzers/baseline/analyzer.js";
 import { javaSpec } from "../../../src/analyzers/baseline/java.js";
 import type { AnalysisResult } from "../../../src/analyzers/types.js";
-import { type GraphEdge, deriveCallEdges, symbolId } from "../../../src/graph/index.js";
+import {
+  CALL_REF_PREFIX,
+  type GraphEdge,
+  deriveCallEdges,
+  symbolId,
+} from "../../../src/graph/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../../fixtures/java-calls");
@@ -43,6 +48,15 @@ describe("Java within-file call edges (#34)", () => {
           e.from === symbolId({ file: "Sample.java", qualifiedName: "Sample.mul" }),
       ),
     ).toBe(false);
+  });
+
+  it("skips ubiquitous stdlib names but keeps real same-file calls (#38)", () => {
+    // `println` is a builtin → no cross-file `call:` candidate emitted (noise that never resolves)
+    expect(
+      result.edges.some((e) => e.provenance === "call-ref" && e.to === `${CALL_REF_PREFIX}println`),
+    ).toBe(false);
+    // the real same-file call in the same method still resolves
+    expect(calls("Sample.log", "Sample.square")).toBe(true);
   });
 });
 

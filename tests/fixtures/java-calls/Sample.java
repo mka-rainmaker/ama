@@ -12,4 +12,8 @@ class Sample {
   int recurse(int n) {
     return n <= 1 ? 1 : recurse(n - 1);
   }
+
+  void log() {
+    System.out.println(square(2));
+  }
 }
