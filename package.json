@@ -1,6 +1,6 @@
 {
   "name": "@mka-rainmaker/ama",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local-first code-intelligence MCP server with deep, language-specific semantic parsing.",
   "type": "module",
   "license": "MIT",
@@ -35,7 +35,11 @@
     "ai-agents",
     "developer-tools"
   ],
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "publishConfig": {
     "access": "public"
   },
