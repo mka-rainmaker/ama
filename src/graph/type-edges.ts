@@ -17,6 +17,10 @@ const TYPE_CANDIDATE_KINDS = new Set<GraphEdge["kind"]>(["Inherits", "Implements
  * `provenance: "type"`. Pure + whole-graph: the candidate and the target type only meet after every
  * file is indexed, so (like the call/dispatch derivers) it can't run inside one file's batch.
  *
+ * Same-package limitation: a type referenced without an explicit `import` (e.g. a same-package
+ * sibling class) produces no `Imports` edge and so won't resolve here — the same import-guided
+ * limit as the call graph (deep-tier #15).
+ *
  * Mirrors {@link ./python-calls.ts deriveCallEdges}; the second arg is the pre-filtered base edge
  * set (every edge whose provenance is not `type`), exactly as the indexer's relinker passes it. */
 export function deriveTypeEdges(nodes: GraphNode[], edges: GraphEdge[]): GraphEdge[] {
