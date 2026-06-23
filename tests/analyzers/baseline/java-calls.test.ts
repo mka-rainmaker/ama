@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { BaselineAnalyzer } from "../../../src/analyzers/baseline/analyzer.js";
 import { javaSpec } from "../../../src/analyzers/baseline/java.js";
 import type { AnalysisResult } from "../../../src/analyzers/types.js";
-import { symbolId } from "../../../src/graph/index.js";
+import { type GraphEdge, deriveCallEdges, symbolId } from "../../../src/graph/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../../fixtures/java-calls");
@@ -43,5 +43,34 @@ describe("Java within-file call edges (#34)", () => {
           e.from === symbolId({ file: "Sample.java", qualifiedName: "Sample.mul" }),
       ),
     ).toBe(false);
+  });
+});
+
+/**
+ * Slice 2: a call to a method NOT defined in the file becomes a `call:<name>` candidate that
+ * deriveCallEdges resolves whole-graph to a method in an imported file (`Caller` imports
+ * `com.util.Helper` and calls `Helper.help`) — so Java callers/callees span files, not just classes. */
+describe("Java cross-file call edges (#34, slice 2)", () => {
+  const xroot = path.resolve(here, "../../fixtures/java-calls-xfile");
+  let edges: GraphEdge[];
+  beforeAll(async () => {
+    const result = await new BaselineAnalyzer(javaSpec).analyze(xroot, [
+      "com/app/Caller.java",
+      "com/util/Helper.java",
+    ]);
+    // The deriver resolves `call:<name>` candidates whole-graph via the import edges — the same
+    // pass relinkCalls runs in the indexer after every file is analyzed.
+    edges = [...result.edges, ...deriveCallEdges(result.nodes, result.edges)];
+  });
+
+  it("resolves a call to an imported class's method via the import graph", () => {
+    expect(
+      edges.some(
+        (e) =>
+          e.kind === "Calls" &&
+          e.from === symbolId({ file: "com/app/Caller.java", qualifiedName: "Caller.run" }) &&
+          e.to === symbolId({ file: "com/util/Helper.java", qualifiedName: "Helper.help" }),
+      ),
+    ).toBe(true);
   });
 });

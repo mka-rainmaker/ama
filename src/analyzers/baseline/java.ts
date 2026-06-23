@@ -1,5 +1,5 @@
 import type Parser from "web-tree-sitter";
-import { type GraphEdge, type GraphNode, symbolId } from "../../graph/index.js";
+import { CALL_REF_PREFIX, type GraphEdge, type GraphNode, symbolId } from "../../graph/index.js";
 import type { LanguageSpec } from "./analyzer.js";
 import { ancestorDirs } from "./paths.js";
 
@@ -159,11 +159,12 @@ function enclosingMethod(node: Parser.SyntaxNode): Parser.SyntaxNode | undefined
   return undefined;
 }
 
-/** Heuristic baseline call edges for Java (slice 1: within-file). A `method_invocation` whose name
- *  matches a method defined in the SAME file resolves by name to a `Calls` edge from the enclosing
- *  method — so find_callers/find_callees stop being empty (`callsTotal: 0`) for same-class
- *  relationships. A name defined more than once locally is ambiguous (skipped); a call outside any
- *  method, and cross-file resolution via the import graph, are skipped/deferred. (#34) */
+/** Heuristic baseline call edges for Java. A `method_invocation` whose name matches a method defined
+ *  in the SAME file resolves by name to a `Calls` edge from the enclosing method (within-file); a
+ *  non-local name becomes a `call:<name>` candidate that {@link deriveCallEdges} resolves cross-file
+ *  via the import graph — so find_callers/find_callees span Java classes and files instead of the
+ *  empty `callsTotal: 0` the baseline tier used to give. A name defined more than once locally is
+ *  ambiguous (skipped); a call outside any method is skipped. (#34) */
 function javaCalls(
   root: Parser.SyntaxNode,
   rel: string,
@@ -182,14 +183,28 @@ function javaCalls(
     const name = call.childForFieldName("name")?.text;
     if (!enc || !name) continue;
     const local = byName.get(name);
-    if (!local) continue; // null = ambiguous, undefined = cross-file/builtin — don't guess
+    if (local === null) continue; // a name defined more than once locally — don't guess
     const callerQn = javaQualifiedName(enc);
     if (!callerQn) continue;
     const from = symbolId({ file: rel, qualifiedName: callerQn });
-    const key = `${from} ${local}`;
-    if (from === local || seen.has(key)) continue; // skip self-recursion + duplicate sites
-    seen.add(key);
-    edges.push({ from, to: local, kind: "Calls", provenance: "heuristic" });
+    if (local) {
+      // resolved within this file (slice 1)
+      const key = `c ${from} ${local}`;
+      if (from === local || seen.has(key)) continue; // skip self-recursion + duplicate sites
+      seen.add(key);
+      edges.push({ from, to: local, kind: "Calls", provenance: "heuristic" });
+    } else {
+      // not local — a cross-file candidate deriveCallEdges resolves via the import graph (slice 2)
+      const key = `r ${from} ${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({
+        from,
+        to: `${CALL_REF_PREFIX}${name}`,
+        kind: "References",
+        provenance: "call-ref",
+      });
+    }
   }
   return { nodes: [], edges };
 }
