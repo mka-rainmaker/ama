@@ -1,11 +1,26 @@
 version: 2
 updates:
+  # One grouped PR of npm minor/patch updates per week. Major bumps are skipped — they tend to be
+  # breaking (TypeScript/zod/biome/vitest majors) and are handled deliberately, not auto-proposed.
   - package-ecosystem: npm
     directory: "/"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      npm:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  # One grouped PR of GitHub Actions minor/patch updates per week; action majors handled deliberately.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
