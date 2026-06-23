@@ -122,6 +122,35 @@ describe("Java hierarchy resolves cross-file and derives dispatch (ama 0.4.0 S1)
     ).toBe(true);
   });
 
+  it("derives Dog.name → Overrides → Pet.name from the resolved interface implementation", () => {
+    // Interface-method override: `Dog implements Pet`, Pet declares `name()`, Dog defines it. This is
+    // the distinct (higher-value) case for find_overrides against an interface declaration — derived
+    // by deriveDispatchEdges from the resolved Implements/Inherits hierarchy, not from class-extends.
+    expect(
+      edges.some(
+        (e) =>
+          e.kind === "Overrides" &&
+          e.from === id("com/zoo/Dog.java", "Dog.name") &&
+          e.to === id("com/zoo/Pet.java", "Pet.name"),
+      ),
+    ).toBe(true);
+  });
+
+  it("find_overrides(Dog.name) returns the interface method Pet.name", () => {
+    const ov = q.findOverrides("Dog.name");
+    expect(ov.map((c) => c.symbol.qualifiedName)).toContain("Pet.name");
+  });
+
+  it("find_overridden_by(Animal.speak) returns the class override Dog.speak", () => {
+    const by = q.findOverriddenBy("Animal.speak");
+    expect(by.map((c) => c.symbol.qualifiedName)).toContain("Dog.speak");
+  });
+
+  it("find_overridden_by(Pet.name) returns the interface implementation Dog.name", () => {
+    const by = q.findOverriddenBy("Pet.name");
+    expect(by.map((c) => c.symbol.qualifiedName)).toContain("Dog.name");
+  });
+
   it("find_implementations(Pet) returns Dog", () => {
     const impls = q.findImplementations("Pet");
     expect(impls.map((n) => n.qualifiedName)).toContain("Dog");

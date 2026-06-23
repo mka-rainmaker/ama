@@ -82,6 +82,19 @@ describe("Java fields: field_declaration → Property + UsesType (ama 0.4.0 S3)"
       ),
     ).toBe(true);
   });
+
+  it("emits a type: UsesType candidate from a method to its parameter/return types (Svc.lookup → Repo)", () => {
+    // `Repo lookup(Repo other)` uses Repo as both the param and return type — Win-4's method
+    // param/return path. Without this the entire param/return code could be deleted and stay green.
+    expect(
+      raw.some(
+        (e) =>
+          e.kind === "UsesType" &&
+          e.from === id("com/svc/Svc.java", "Svc.lookup") &&
+          e.to === `${TYPE_REF_PREFIX}Repo`,
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("Java fields resolve cross-file and power find_type_users (ama 0.4.0 S3)", () => {
@@ -110,8 +123,29 @@ describe("Java fields resolve cross-file and power find_type_users (ama 0.4.0 S3
     ).toBe(true);
   });
 
+  it("resolves the method param/return UsesType to a cross-file edge (Svc.lookup → Repo)", () => {
+    expect(
+      edges.some(
+        (e) =>
+          e.kind === "UsesType" &&
+          e.provenance === "type" &&
+          e.from === id("com/svc/Svc.java", "Svc.lookup") &&
+          e.to === id("com/repo/Repo.java", "Repo"),
+      ),
+    ).toBe(true);
+  });
+
   it("find_type_users(Repo) returns the Svc field property", () => {
     const users = q.findTypeUsers("Repo");
     expect(users.map((n) => n.qualifiedName)).toContain("Svc.repo");
+  });
+
+  it("find_type_users(Repo) includes the method that uses it as a param/return (Svc.lookup)", () => {
+    const users = q.findTypeUsers("Repo");
+    expect(users.map((n) => n.qualifiedName)).toContain("Svc.lookup");
+  });
+
+  it("find_types_used(Svc.lookup) returns Repo", () => {
+    expect(q.findTypesUsed("Svc.lookup").map((n) => n.qualifiedName)).toContain("Repo");
   });
 });

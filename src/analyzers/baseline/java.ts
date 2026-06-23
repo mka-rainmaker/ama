@@ -147,7 +147,6 @@ function javaRoutes(
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const out = { nodes: [] as GraphNode[], edges: [] as GraphEdge[] };
   for (const cls of eachClass(root)) {
-    const className = cls.childForFieldName("name")?.text;
     const classAnns = annotationsOf(cls);
     // Spring class prefix (`@RequestMapping("/x")`) and JAX-RS class prefix (`@Path("/x")`).
     const springPrefix = classAnns.find(
@@ -160,8 +159,11 @@ function javaRoutes(
     for (const member of body?.namedChildren ?? []) {
       if (member.type !== "method_declaration") continue;
       const methodAnns = annotationsOf(member);
-      const methodName = member.childForFieldName("name")?.text;
-      const handlerQn = className && methodName ? `${className}.${methodName}` : undefined;
+      // Derive the handler qn from the method CST node via javaQualifiedName — the SAME helper
+      // walkSymbols' dotted chain uses — so the References endpoint matches the Method node id even
+      // for a nested/inner controller (`Outer.Inner.list`, not the simple-class `Inner.list`). A bare
+      // `${className}.${methodName}` would dangle the edge for nested classes (the #34 class of bug).
+      const handlerQn = javaQualifiedName(member);
       const range = {
         startLine: member.startPosition.row + 1,
         endLine: member.endPosition.row + 1,
@@ -212,13 +214,58 @@ function javalinHandlerQn(arg: Parser.SyntaxNode | undefined): string | undefine
   return owner && method ? `${owner}.${method}` : undefined;
 }
 
+/** Names of local/field handles assigned from `Javalin.create(...)` in this file — the receivers a
+ *  genuine Javalin route registers on (`app.get(...)`). Used to tell a real route apart from an
+ *  ordinary `map.get("k")` / `cache.put("k", v)` stdlib call that shares the verb method name. */
+function javalinAppHandles(root: Parser.SyntaxNode): Set<string> {
+  const handles = new Set<string>();
+  // `Javalin.create()` / `Javalin.create(cfg)` is a method_invocation with object `Javalin`, name `create`.
+  const isJavalinCreate = (node: Parser.SyntaxNode | null | undefined): boolean =>
+    !!node &&
+    node.type === "method_invocation" &&
+    node.childForFieldName("object")?.text === "Javalin" &&
+    node.childForFieldName("name")?.text === "create";
+  // `Javalin app = Javalin.create();` — a local_variable_declaration with a Javalin.create() initializer.
+  for (const decl of eachOfType(root, "variable_declarator")) {
+    const name = decl.childForFieldName("name")?.text;
+    if (name && isJavalinCreate(decl.childForFieldName("value"))) handles.add(name);
+  }
+  // `app = Javalin.create();` — a plain (re)assignment to an existing local/field.
+  for (const assign of eachOfType(root, "assignment_expression")) {
+    const left = assign.childForFieldName("left");
+    if (left?.type === "identifier" && isJavalinCreate(assign.childForFieldName("right"))) {
+      handles.add(left.text);
+    }
+  }
+  return handles;
+}
+
+/** Is `arg` a Javalin handler argument shape — a method reference (`App::health`), a lambda
+ *  (`ctx -> {...}`), or a bare handler identifier — as opposed to a value/key argument? Used as the
+ *  fallback signal that an unknown-receiver `x.get("/p", h)` is a real route, not a `map.get("k")`. */
+function isHandlerArg(arg: Parser.SyntaxNode | undefined): boolean {
+  return (
+    arg?.type === "method_reference" ||
+    arg?.type === "lambda_expression" ||
+    arg?.type === "identifier"
+  );
+}
+
 /** Detect Javalin call-site routes: `app.get("/path", handler)` → a `GET /path` Route referencing the
- *  handler (when it's a `Class::method` reference). Call-site, not annotation-driven. (ama 0.4.0 S4) */
+ *  handler (when it's a `Class::method` reference). Call-site, not annotation-driven.
+ *
+ *  Honesty gate (0.4.0 review): the verb method names (`get`/`put`/`post`/…) collide with ubiquitous
+ *  stdlib calls (`map.get("k")`, `cache.put("k", v)`, `Optional.get()`), so matching name + a string
+ *  first arg alone fabricates phantom routes. Emit ONLY when the receiver is a tracked Javalin app
+ *  handle (assigned from `Javalin.create()`), OR — when the receiver can't be resolved — the second
+ *  argument is a handler (method reference / lambda / identifier). A single-arg `map.get("k")` then
+ *  never matches. (ama 0.4.0 S4) */
 function collectJavalinRoutes(
   root: Parser.SyntaxNode,
   rel: string,
   out: { nodes: GraphNode[]; edges: GraphEdge[] },
 ): void {
+  const appHandles = javalinAppHandles(root);
   for (const call of eachOfType(root, "method_invocation")) {
     const verb = JAVA_JAVALIN_VERBS.get(call.childForFieldName("name")?.text ?? "");
     if (!verb) continue;
@@ -228,6 +275,10 @@ function collectJavalinRoutes(
     if (pathArg?.type !== "string_literal") continue; // first arg must be a literal route path
     const routePath = firstOfType(pathArg, "string_fragment")?.text;
     if (routePath === undefined) continue;
+    // Gate on Javalin shape: a tracked app receiver, or (receiver unknown) a handler 2nd argument.
+    const receiver = call.childForFieldName("object");
+    const onAppHandle = receiver?.type === "identifier" && appHandles.has(receiver.text);
+    if (!onAppHandle && !isHandlerArg(named[1])) continue;
     emitRoute(
       rel,
       verb,
