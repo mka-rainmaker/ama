@@ -17,7 +17,7 @@ npm run lint       # biome
 
 ## Workflow
 
-1. Pick or file an issue (the backlog is tracked with [beads](https://github.com/steveyegge/beads): `bd ready`).
+1. Pick or file an issue on [GitHub Issues](https://github.com/mka-rainmaker/ama/issues).
 2. Branch off `main` (`git switch -c feat/<topic>`).
 3. Work **test-first** — a failing test, then the minimal code to pass.
 4. Keep the suite green **and** ensure Ama still re-indexes its own source cleanly (the self-index
