@@ -271,7 +271,12 @@ function baseTypeName(node: Parser.SyntaxNode): string | undefined {
       const ids = node.namedChildren.filter((c) => c.type === "type_identifier");
       return ids[ids.length - 1]?.text;
     }
+    case "array_type":
+      // `Foo[]` → strip the array to its element type (first child); the `dimensions` child is skipped.
+      return node.namedChildren[0] ? baseTypeName(node.namedChildren[0]) : undefined;
     default:
+      // Primitive (integral_type/floating_point_type/boolean_type), void_type, wildcards, etc. name
+      // no on-disk type — no UsesType candidate. (S3 honesty: only real type references get an edge.)
       return undefined;
   }
 }
@@ -354,6 +359,83 @@ function javaHierarchy(
   return { nodes: [], edges };
 }
 
+/** The `field_declaration`s lexically inside a class/interface/enum body — direct body members only,
+ *  so a field of a nested type isn't double-counted under its enclosing type. */
+function* eachField(
+  node: Parser.SyntaxNode,
+): Generator<{ field: Parser.SyntaxNode; ownerQn: string }> {
+  for (const { node: decl, qn } of eachTypeDecl(node)) {
+    const body = decl.childForFieldName("body");
+    for (const member of body?.namedChildren ?? []) {
+      if (member.type === "field_declaration") yield { field: member, ownerQn: qn };
+    }
+  }
+}
+
+/** Baseline field + type-use edges for Java. Each `field_declaration` declarator becomes a `Property`
+ *  node (`Class.field`, multi-declarator aware: `int a, b;` → two), with a `Defines` edge from its
+ *  declaring type and a `UsesType` `type:<SimpleName>` candidate to the field's declared type (generics
+ *  stripped to the base, arrays to the element type; primitives/voids name no type and are skipped).
+ *  Method parameter and return types add `UsesType` candidates from the method too. {@link deriveTypeEdges}
+ *  relinks the candidates whole-graph, powering find_type_users / find_types_used. (ama 0.4.0 S3) */
+function javaFields(
+  root: Parser.SyntaxNode,
+  rel: string,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+  const seen = new Set<string>();
+  // A `UsesType` candidate from `fromId` to the base type of `typeNode`, deduped. Primitives/voids
+  // (baseTypeName → undefined) name no on-disk type, so no edge — keeping baseline honest.
+  const usesType = (fromId: string, typeNode: Parser.SyntaxNode | null | undefined) => {
+    const name = typeNode ? baseTypeName(typeNode) : undefined;
+    if (!name) return;
+    const to = `${TYPE_REF_PREFIX}${name}`;
+    const key = `${fromId} ${to}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    edges.push({ from: fromId, to, kind: "UsesType", provenance: "heuristic" });
+  };
+
+  for (const { field, ownerQn } of eachField(root)) {
+    const typeNode = field.childForFieldName("type");
+    const ownerId = symbolId({ file: rel, qualifiedName: ownerQn });
+    // Multi-declarator: `int a, b;` exposes only the first via the `declarator` field, so iterate all
+    // `variable_declarator` named children to emit a Property per declared name.
+    for (const decl of field.namedChildren) {
+      if (decl.type !== "variable_declarator") continue;
+      const name = decl.childForFieldName("name")?.text;
+      if (!name) continue;
+      const qualifiedName = `${ownerQn}.${name}`;
+      const id = symbolId({ file: rel, qualifiedName });
+      nodes.push({
+        id,
+        kind: "Property",
+        name,
+        file: rel,
+        qualifiedName,
+        tier: "baseline",
+        range: { startLine: decl.startPosition.row + 1, endLine: decl.endPosition.row + 1 },
+      });
+      edges.push({ from: ownerId, to: id, kind: "Defines" });
+      usesType(id, typeNode);
+    }
+  }
+
+  // Method param + return types: a `UsesType` from the method to each named (non-primitive) type.
+  for (const method of eachOfType(root, "method_declaration")) {
+    const qn = javaQualifiedName(method);
+    if (!qn) continue;
+    const methodId = symbolId({ file: rel, qualifiedName: qn });
+    usesType(methodId, method.childForFieldName("type")); // return type (void_type → skipped)
+    const params = method.childForFieldName("parameters");
+    for (const param of params?.namedChildren ?? []) {
+      if (param.type === "formal_parameter") usesType(methodId, param.childForFieldName("type"));
+    }
+  }
+  return { nodes, edges };
+}
+
 /**
  * Baseline (syntactic) spec for Java. Java gives every kind its own CST node
  * type — class/interface/enum declarations and methods — so each maps directly
@@ -375,4 +457,5 @@ export const javaSpec: LanguageSpec = {
   collectRoutes: javaRoutes,
   collectCalls: javaCalls,
   collectHierarchy: javaHierarchy,
+  collectFields: javaFields,
 };
