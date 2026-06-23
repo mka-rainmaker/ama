@@ -85,13 +85,16 @@ download — used for testing against a local `file://` archive).
   (absolute-path shim, so the relative-path launcher still resolves its own dir). `install.sh` is
   verified end-to-end against a local bundle (only the GitHub fetch is stubbed via `file://`);
   `install.ps1` is verified on Windows/CI.
-- **Slice 5 — npm shim:** a thin npm package that pulls the right bundle via platform-specific
-  `optionalDependencies`, so `npm i -g`/`npx` keep working without requiring a local Node.
+- **Slice 5 — npm shim: intentionally skipped.** A bundle-pulling npm package's only unique value —
+  an install that ignores the user's Node version — is *already* covered by the `curl | sh` bundle
+  (which needs no Node at all). Shipping it would cost ~1 GB across six ~150–340 MB platform packages
+  (vendored Node + the `typescript` runtime dep), or a fragile postinstall-download. The two channels
+  below are the complete distribution: **lean npm** for Node ≥24, **the bundle installer** for the rest.
 - **`ama upgrade` (ama-h522, done):** detects the install method (bundle / npm / npx / source) and
   updates in place — `npm i -g` for npm installs, the installer one-liner for bundles; `--check`
   reports the latest GitHub release, `--dry-run` previews, `[version]` pins.
 
-Until the first public release, the install path remains `npm i -g @mka-rainmaker/ama` (Node 24+);
-the `curl … | sh` / PowerShell installers go live with the first tagged release on a public repo,
-and the npm shim (slice 5) is what keeps `npm i -g`/`npx` working with no local Node. The README
-badge says `Node.js 24+`, not "bundled," on purpose — it flips when distribution ships.
+Two distribution channels, complete: **lean npm** (`npm i -g @mka-rainmaker/ama`, Node 24+ — pure JS,
+deps via npm) for Node-having users, and the **`curl … | sh` / PowerShell bundle installers** (no
+Node) for everyone else. The installers go live with the first tagged release on a public repo. The
+README badge says `Node.js 24+`, not "bundled," on purpose — it flips when distribution ships.
