@@ -13,6 +13,8 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # web-tree-sitter 0.x minor bumps are breaking (Parser/SyntaxNode API) — migrate deliberately, see #32
+      - dependency-name: "web-tree-sitter"
   # One grouped PR of GitHub Actions minor/patch updates per week; action majors handled deliberately.
   - package-ecosystem: github-actions
     directory: "/"
