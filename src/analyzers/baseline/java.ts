@@ -48,6 +48,29 @@ const JAVA_MAPPING_VERBS = new Map([
   ["PatchMapping", "PATCH"],
 ]);
 
+/** JAX-RS verb marker annotations (`@GET`/`@POST`/…) → HTTP verb. The path comes from a separate
+ *  `@Path` on the class (prefix) and method (sub-path), so these mark the verb only. */
+const JAVA_JAXRS_VERBS = new Map([
+  ["GET", "GET"],
+  ["POST", "POST"],
+  ["PUT", "PUT"],
+  ["DELETE", "DELETE"],
+  ["PATCH", "PATCH"],
+  ["HEAD", "HEAD"],
+  ["OPTIONS", "OPTIONS"],
+]);
+
+/** Javalin route-registration methods (`app.get("/x", handler)`) → HTTP verb. */
+const JAVA_JAVALIN_VERBS = new Map([
+  ["get", "GET"],
+  ["post", "POST"],
+  ["put", "PUT"],
+  ["delete", "DELETE"],
+  ["patch", "PATCH"],
+  ["head", "HEAD"],
+  ["options", "OPTIONS"],
+]);
+
 function firstOfType(node: Parser.SyntaxNode, type: string): Parser.SyntaxNode | undefined {
   if (node.type === type) return node;
   for (const c of node.namedChildren) {
@@ -74,58 +97,149 @@ function joinJavaRoutePath(prefix: string, sub: string): string {
   return `/${segs.join("/")}`;
 }
 
-/** Detect Spring MVC routes: a class `@RequestMapping("/prefix")` prefixes each method's
- *  `@GetMapping`/`@PostMapping`/… (path or marker) to form a `METHOD /prefix/path` Route that
- *  references the method (`Class.method`). (ama-a2r) */
+/** The annotation/marker_annotation nodes on a declaration (under its `modifiers` child). */
+function annotationsOf(node: Parser.SyntaxNode): Parser.SyntaxNode[] {
+  return (node.namedChildren.find((c) => c.type === "modifiers")?.namedChildren ?? []).filter(
+    (a) => a.type === "annotation" || a.type === "marker_annotation",
+  );
+}
+
+/** Emit a `VERB /path` Route node referencing its handler (`Class.method`), shared by every framework
+ *  detector. Framework dispatch is modeled as a Route + `References` → handler — NEVER a Calls edge, so
+ *  find_callers stays honestly empty while find_handlers/find_routes/impact_analysis surface it. */
+function emitRoute(
+  rel: string,
+  verb: string,
+  routePath: string,
+  handlerQn: string | undefined,
+  range: { startLine: number; endLine: number },
+  out: { nodes: GraphNode[]; edges: GraphEdge[] },
+): void {
+  const name = `${verb} ${routePath}`;
+  const routeId = symbolId({ file: rel, qualifiedName: name });
+  out.nodes.push({
+    id: routeId,
+    kind: "Route",
+    name,
+    file: rel,
+    qualifiedName: name,
+    tier: "baseline",
+    range,
+  });
+  if (handlerQn) {
+    out.edges.push({
+      from: routeId,
+      to: symbolId({ file: rel, qualifiedName: handlerQn }),
+      kind: "References",
+      provenance: "heuristic",
+    });
+  }
+}
+
+/** Detect Spring MVC + JAX-RS routes: a class prefix (`@RequestMapping`/`@Path`) composes with each
+ *  method's verb mapping (`@GetMapping`/… for Spring, the `@GET`/… marker + optional `@Path` for
+ *  JAX-RS) into a `METHOD /prefix/path` Route referencing the method (`Class.method`). Plus Javalin
+ *  call sites (`app.get("/x", handler)`). All baseline-tier, dispatch via References (never Calls).
+ *  (ama-a2r, ama 0.4.0 S4) */
 function javaRoutes(
   root: Parser.SyntaxNode,
   rel: string,
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  const nodes: GraphNode[] = [];
-  const edges: GraphEdge[] = [];
-  const annotationsOf = (node: Parser.SyntaxNode) =>
-    (node.namedChildren.find((c) => c.type === "modifiers")?.namedChildren ?? []).filter(
-      (a) => a.type === "annotation" || a.type === "marker_annotation",
-    );
+  const out = { nodes: [] as GraphNode[], edges: [] as GraphEdge[] };
   for (const cls of eachClass(root)) {
     const className = cls.childForFieldName("name")?.text;
-    const prefix =
-      annotationsOf(cls).find((a) => a.childForFieldName("name")?.text === "RequestMapping") ??
-      null;
-    const classPrefix = prefix ? (annotationArg(prefix) ?? "") : "";
+    const classAnns = annotationsOf(cls);
+    // Spring class prefix (`@RequestMapping("/x")`) and JAX-RS class prefix (`@Path("/x")`).
+    const springPrefix = classAnns.find(
+      (a) => a.childForFieldName("name")?.text === "RequestMapping",
+    );
+    const springClassPath = springPrefix ? (annotationArg(springPrefix) ?? "") : "";
+    const jaxrsPrefix = classAnns.find((a) => a.childForFieldName("name")?.text === "Path");
+    const jaxrsClassPath = jaxrsPrefix ? (annotationArg(jaxrsPrefix) ?? "") : "";
     const body = cls.childForFieldName("body");
     for (const member of body?.namedChildren ?? []) {
       if (member.type !== "method_declaration") continue;
-      const mapping = annotationsOf(member)
+      const methodAnns = annotationsOf(member);
+      const methodName = member.childForFieldName("name")?.text;
+      const handlerQn = className && methodName ? `${className}.${methodName}` : undefined;
+      const range = {
+        startLine: member.startPosition.row + 1,
+        endLine: member.endPosition.row + 1,
+      };
+
+      // Spring: a single `@GetMapping`/… carries both verb and (optional) sub-path.
+      const spring = methodAnns
         .map((a) => ({
           verb: JAVA_MAPPING_VERBS.get(a.childForFieldName("name")?.text ?? ""),
           ann: a,
         }))
         .find((m) => m.verb);
-      if (!mapping?.verb) continue;
-      const methodName = member.childForFieldName("name")?.text;
-      const name = `${mapping.verb} ${joinJavaRoutePath(classPrefix, annotationArg(mapping.ann) ?? "")}`;
-      const routeId = symbolId({ file: rel, qualifiedName: name });
-      nodes.push({
-        id: routeId,
-        kind: "Route",
-        name,
-        file: rel,
-        qualifiedName: name,
-        tier: "baseline",
-        range: { startLine: member.startPosition.row + 1, endLine: member.endPosition.row + 1 },
-      });
-      if (className && methodName) {
-        edges.push({
-          from: routeId,
-          to: symbolId({ file: rel, qualifiedName: `${className}.${methodName}` }),
-          kind: "References",
-          provenance: "heuristic",
-        });
+      if (spring?.verb) {
+        emitRoute(
+          rel,
+          spring.verb,
+          joinJavaRoutePath(springClassPath, annotationArg(spring.ann) ?? ""),
+          handlerQn,
+          range,
+          out,
+        );
+        continue;
+      }
+
+      // JAX-RS: the verb is a `@GET`/… marker; the sub-path is a separate method `@Path` (or none).
+      const jaxrsVerb = methodAnns
+        .map((a) => JAVA_JAXRS_VERBS.get(a.childForFieldName("name")?.text ?? ""))
+        .find(Boolean);
+      if (jaxrsVerb) {
+        const methodPathAnn = methodAnns.find((a) => a.childForFieldName("name")?.text === "Path");
+        const sub = methodPathAnn ? (annotationArg(methodPathAnn) ?? "") : "";
+        emitRoute(rel, jaxrsVerb, joinJavaRoutePath(jaxrsClassPath, sub), handlerQn, range, out);
       }
     }
   }
-  return { nodes, edges };
+  collectJavalinRoutes(root, rel, out);
+  return out;
+}
+
+/** The handler symbol a Javalin route argument names: a method reference (`App::health` → `App.health`)
+ *  resolves to a `Class.method` qualified name. A lambda/identifier handler has no resolvable symbol
+ *  node at baseline, so it's left handler-less (Route still emitted) rather than dangling an edge. */
+function javalinHandlerQn(arg: Parser.SyntaxNode | undefined): string | undefined {
+  if (arg?.type !== "method_reference") return undefined;
+  const ids = arg.namedChildren.filter((c) => c.type === "identifier");
+  const owner = ids[0]?.text;
+  const method = ids[1]?.text;
+  return owner && method ? `${owner}.${method}` : undefined;
+}
+
+/** Detect Javalin call-site routes: `app.get("/path", handler)` → a `GET /path` Route referencing the
+ *  handler (when it's a `Class::method` reference). Call-site, not annotation-driven. (ama 0.4.0 S4) */
+function collectJavalinRoutes(
+  root: Parser.SyntaxNode,
+  rel: string,
+  out: { nodes: GraphNode[]; edges: GraphEdge[] },
+): void {
+  for (const call of eachOfType(root, "method_invocation")) {
+    const verb = JAVA_JAVALIN_VERBS.get(call.childForFieldName("name")?.text ?? "");
+    if (!verb) continue;
+    const args = call.childForFieldName("arguments");
+    const named = args?.namedChildren ?? [];
+    const pathArg = named[0];
+    if (pathArg?.type !== "string_literal") continue; // first arg must be a literal route path
+    const routePath = firstOfType(pathArg, "string_fragment")?.text;
+    if (routePath === undefined) continue;
+    emitRoute(
+      rel,
+      verb,
+      joinJavaRoutePath("", routePath),
+      javalinHandlerQn(named[1]),
+      {
+        startLine: call.startPosition.row + 1,
+        endLine: call.endPosition.row + 1,
+      },
+      out,
+    );
+  }
 }
 
 /** Symbol-typed Java CST nodes — the ones walkSymbols turns into graph nodes — so a method's
