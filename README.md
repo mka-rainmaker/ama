@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@mka-rainmaker/ama"><img alt="npm" src="https://img.shields.io/npm/v/@mka-rainmaker/ama?label=npm&color=007ec6"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-e0a100"></a>
-  <img alt="Node.js 24+" src="https://img.shields.io/badge/Node.js-24%2B-44883e">
+  <img alt="Node.js 24+ or bundled" src="https://img.shields.io/badge/Node.js-24%2B%20or%20bundled-44883e">
 </p>
 <p align="center">
   <img alt="macOS supported" src="https://img.shields.io/badge/macOS-supported-4c8eda">
@@ -22,20 +22,30 @@
 
 Named after a puppy: small, eager, and a little smarter every day.
 
-> Status: **0.2** — deep TypeScript analysis; a baseline call graph for Python (incl. FastAPI route→handler→test impact); framework-route detection across TypeScript, Python, Go, PHP, Java, and Rust; syntactic breadth for 13 more languages; an embeddable library API; 27 MCP tools; an `ama` CLI; and persistent, auto-syncing incremental indexing — all able to index Ama's own source cleanly as the built-in regression test.
+> Status: **0.3** — deep TypeScript analysis; a baseline call graph for Python (incl. FastAPI route→handler→test impact); framework-route detection across TypeScript, Python, Go, PHP, Java, and Rust; syntactic breadth for 13 more languages; an embeddable library API; 27 MCP tools; an `ama` CLI (with self-update via `ama upgrade`); persistent, auto-syncing incremental indexing; and **self-contained, no-Node install bundles** for macOS/Linux/Windows — all able to index Ama's own source cleanly as the built-in regression test.
 
-## Get started
-
-> Requires **Node.js 24+**.
+**1. Install Ama** — a self-contained bundle (no Node needed) or via npm (Node 24+):
 
 ```bash
-npm install -g @mka-rainmaker/ama   # 1. install
-ama install                          # 2. wire it into your agent (Claude Code / Cursor / Windsurf / Codex)
+# macOS / Linux — self-contained, no Node required
+curl -fsSL https://raw.githubusercontent.com/mka-rainmaker/ama/main/install.sh | sh
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/mka-rainmaker/ama/main/install.ps1 | iex
+
+# …or, if you already have Node 24+
+npm install -g @mka-rainmaker/ama
 ```
 
-3. Point your agent at a repo and ask structural questions — *"who calls `createServer`?"*, *"what breaks if I change `AmaSession`?"* Your agent runs `index_repository` once, then queries the graph; Ama re-indexes automatically as you edit.
+**2. Wire it into your agent:**
 
-No global install? Use `npx -y @mka-rainmaker/ama mcp` as the command — see [Configure your coding agent](#configure-your-coding-agent).
+```bash
+ama install   # auto-configures Claude Code / Cursor / Windsurf / Codex
+```
+
+**3. Ask your agent structural questions** — *"who calls `createServer`?"*, *"what breaks if I change `AmaSession`?"* It runs `index_repository` once, then queries the graph; Ama re-indexes automatically as you edit.
+
+(No install at all? `npx -y @mka-rainmaker/ama mcp` works as the MCP command — see [Configure your coding agent](#configure-your-coding-agent).)
 
 ## Why Ama
 
@@ -141,6 +151,7 @@ The same package ships an `ama` CLI mirroring the query surface, for one-shot us
 ```bash
 ama --help     # list commands
 ama mcp        # run the MCP server over stdio (what coding agents spawn)
+ama upgrade    # update Ama in place (npm or bundle); --check to see the latest release
 ```
 
 ## Programmatic API
@@ -188,7 +199,7 @@ npm test            # run the test suite (vitest)
 npm run typecheck   # type-check without emitting
 ```
 
-The backlog is tracked with [beads](https://github.com/steveyegge/beads) (`bd ready` to see what's actionable).
+Issues and the backlog live in [GitHub Issues](https://github.com/mka-rainmaker/ama/issues); see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow.
 
 ## License
 
