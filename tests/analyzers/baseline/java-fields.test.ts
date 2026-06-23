@@ -95,6 +95,18 @@ describe("Java fields: field_declaration → Property + UsesType (ama 0.4.0 S3)"
       ),
     ).toBe(true);
   });
+
+  it("array_type field (Repo[] items) emits a UsesType candidate for the element type Repo (#41)", () => {
+    // baseTypeName's array_type branch strips `Foo[]` to `Foo`. Without it this candidate is absent.
+    expect(
+      raw.some(
+        (e) =>
+          e.kind === "UsesType" &&
+          e.from === id("com/svc/Svc.java", "Svc.items") &&
+          e.to === `${TYPE_REF_PREFIX}Repo`,
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("Java fields resolve cross-file and power find_type_users (ama 0.4.0 S3)", () => {
@@ -147,5 +159,24 @@ describe("Java fields resolve cross-file and power find_type_users (ama 0.4.0 S3
 
   it("find_types_used(Svc.lookup) returns Repo", () => {
     expect(q.findTypesUsed("Svc.lookup").map((n) => n.qualifiedName)).toContain("Repo");
+  });
+
+  it("array_type field Svc.items resolves cross-file to a UsesType edge → Repo (#41)", () => {
+    // Exercises baseTypeName's array_type branch: `Repo[]` → element type `Repo`, then resolved
+    // cross-file via the import edge to Repo.java.
+    expect(
+      edges.some(
+        (e) =>
+          e.kind === "UsesType" &&
+          e.provenance === "type" &&
+          e.from === id("com/svc/Svc.java", "Svc.items") &&
+          e.to === id("com/repo/Repo.java", "Repo"),
+      ),
+    ).toBe(true);
+  });
+
+  it("find_type_users(Repo) includes the array-typed field (Svc.items)", () => {
+    const users = q.findTypeUsers("Repo");
+    expect(users.map((n) => n.qualifiedName)).toContain("Svc.items");
   });
 });

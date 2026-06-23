@@ -171,4 +171,64 @@ describe("deriveTypeEdges — import-guided cross-file type resolution (ama 0.4.
     const out = deriveTypeEdges(baseNodes(), edges);
     expect(out).toEqual([{ from: dogId, to: animalId, kind: "Inherits", provenance: "type" }]);
   });
+
+  // ── collision / import-order pinning tests (#41) ──────────────────────────────────────────────
+
+  it("collision: two imported files each defining the same simple type name → first-defined file wins", () => {
+    // Animal.java and Speakable.java both define a class named `Blob`. Dog imports Animal THEN
+    // Speakable. The first (Animal.java) definition wins because typesByFile is built in nodes
+    // iteration order and `if (!byName.has(simple)) byName.set(...)` is first-wins.
+    const blobInAnimal = symbolId({ file: "Animal.java", qualifiedName: "Blob" });
+    const blobInSpeakable = symbolId({ file: "Speakable.java", qualifiedName: "Blob" });
+    const nodes: GraphNode[] = [
+      ...baseNodes(),
+      node({
+        id: blobInAnimal,
+        kind: "Class",
+        file: "Animal.java",
+        name: "Blob",
+        qualifiedName: "Blob",
+      }),
+      // Blob in Speakable.java — defined AFTER Animal in the nodes array → loses
+      node({
+        id: blobInSpeakable,
+        kind: "Class",
+        file: "Speakable.java",
+        name: "Blob",
+        qualifiedName: "Blob",
+      }),
+    ];
+    const edges: GraphEdge[] = [
+      { from: fileId("Dog.java"), to: fileId("Animal.java"), kind: "Imports" },
+      { from: fileId("Dog.java"), to: fileId("Speakable.java"), kind: "Imports" },
+      { from: dogId, to: `${TYPE_REF_PREFIX}Blob`, kind: "UsesType", provenance: "heuristic" },
+    ];
+    const out = deriveTypeEdges(nodes, edges);
+    // Must resolve to exactly one edge pointing at the Animal-file Blob (first-defined wins).
+    expect(out).toHaveLength(1);
+    expect(out[0]).toEqual({ from: dogId, to: blobInAnimal, kind: "UsesType", provenance: "type" });
+  });
+
+  it("import-loop: resolves when the type lives in the SECOND of two imported files", () => {
+    // Dog imports Animal first (no Widget) then Speakable (has Widget).  The resolver must
+    // iterate all imported files, so a type only in the SECOND file still resolves.
+    const widgetId = symbolId({ file: "Speakable.java", qualifiedName: "Widget" });
+    const nodes: GraphNode[] = [
+      ...baseNodes(),
+      node({
+        id: widgetId,
+        kind: "Class",
+        file: "Speakable.java",
+        name: "Widget",
+        qualifiedName: "Widget",
+      }),
+    ];
+    const edges: GraphEdge[] = [
+      { from: fileId("Dog.java"), to: fileId("Animal.java"), kind: "Imports" }, // Animal has no Widget
+      { from: fileId("Dog.java"), to: fileId("Speakable.java"), kind: "Imports" }, // Speakable has Widget
+      { from: dogId, to: `${TYPE_REF_PREFIX}Widget`, kind: "UsesType", provenance: "heuristic" },
+    ];
+    const out = deriveTypeEdges(nodes, edges);
+    expect(out).toContainEqual({ from: dogId, to: widgetId, kind: "UsesType", provenance: "type" });
+  });
 });

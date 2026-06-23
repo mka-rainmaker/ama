@@ -45,3 +45,42 @@ describe("Java JAX-RS routes via the default indexer (ama 0.4.0 S4)", () => {
     expect(query.findCallers("BookResource.list")).toEqual([]);
   });
 });
+
+/**
+ * End-to-end through the default indexer for Javalin (call-site routing): `app.get("/health",
+ * App::health)` emits a Route that References the handler via a method reference.  The same honesty
+ * contract as JAX-RS: find_callers stays empty (no Calls edge), find_handlers/find_routes and
+ * impact_analysis all surface the route. Mirrors the JAX-RS e2e above. (ama 0.4.0 #41) */
+describe("Java Javalin routes via the default indexer (ama 0.4.0 #41)", () => {
+  const root = path.resolve(here, "../../fixtures/java-javalin");
+  let query: QueryService;
+  const file = "com/web/App.java";
+  beforeAll(async () => {
+    const { store } = await createDefaultIndexer().index(root);
+    query = new QueryService(store, root);
+  });
+
+  it("find_handlers returns the handler a Javalin route references", () => {
+    expect(
+      query
+        .findHandlers("GET /health")
+        .map((n) => n.symbol.qualifiedName)
+        .sort(),
+    ).toEqual(["App.health"]);
+  });
+
+  it("find_routes returns the route(s) referencing a handler", () => {
+    const routes = query.findRoutes("App.createItem");
+    expect(routes.map((n) => n.symbol.name)).toEqual(["POST /items"]);
+    expect(routes[0]?.symbol.kind).toBe("Route");
+  });
+
+  it("impact_analysis(handler) reaches the dispatching Route (handler is a live entry point)", () => {
+    const routeId = symbolId({ file, qualifiedName: "PUT /items/:id" });
+    expect(query.impactAnalysis("App.updateItem").map((n) => n.id)).toContain(routeId);
+  });
+
+  it("find_callers stays empty for a Javalin handler (framework dispatch is not a call)", () => {
+    expect(query.findCallers("App.health")).toEqual([]);
+  });
+});
