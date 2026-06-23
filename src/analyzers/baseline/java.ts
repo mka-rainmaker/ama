@@ -1,5 +1,5 @@
 import type Parser from "web-tree-sitter";
-import { type GraphEdge, type GraphNode, symbolId } from "../../graph/index.js";
+import { CALL_REF_PREFIX, type GraphEdge, type GraphNode, symbolId } from "../../graph/index.js";
 import type { LanguageSpec } from "./analyzer.js";
 import { ancestorDirs } from "./paths.js";
 
@@ -122,6 +122,111 @@ function javaRoutes(
   return { nodes, edges };
 }
 
+/** Symbol-typed Java CST nodes — the ones walkSymbols turns into graph nodes — so a method's
+ *  qualified name is the dotted chain of these ancestors' names (e.g. `Sample.square`). */
+const JAVA_SYMBOL_TYPES = new Set([
+  "class_declaration",
+  "interface_declaration",
+  "enum_declaration",
+  "method_declaration",
+]);
+
+/** Reproduce walkSymbols' dotted qualified name for `node`: the `name` of each symbol-typed
+ *  ancestor, outermost first. Undefined if a link is anonymous (can't qualify) — it must match the
+ *  id of the Method node walkSymbols already emitted, so call edges resolve to it. */
+function javaQualifiedName(node: Parser.SyntaxNode): string | undefined {
+  const parts: string[] = [];
+  for (let n: Parser.SyntaxNode | null = node; n; n = n.parent) {
+    if (!JAVA_SYMBOL_TYPES.has(n.type)) continue;
+    const name = n.childForFieldName("name")?.text;
+    if (!name) return undefined;
+    parts.unshift(name);
+  }
+  return parts.length ? parts.join(".") : undefined;
+}
+
+/** Every descendant (and self) of a given CST type. */
+function* eachOfType(node: Parser.SyntaxNode, type: string): Generator<Parser.SyntaxNode> {
+  if (node.type === type) yield node;
+  for (const c of node.namedChildren) yield* eachOfType(c, type);
+}
+
+/** The nearest enclosing method_declaration — the symbol a call site belongs to. */
+function enclosingMethod(node: Parser.SyntaxNode): Parser.SyntaxNode | undefined {
+  for (let n = node.parent; n; n = n.parent) {
+    if (n.type === "method_declaration") return n;
+  }
+  return undefined;
+}
+
+/** Method names ubiquitous on java.lang.Object / common stdlib types — a baseline call to one of
+ *  these (`obj.toString()`, `System.out.println(...)`) almost never targets a user method in an
+ *  imported file, so a `call:` candidate for it is pure noise (it cannot resolve, or resolves wrong
+ *  by name). Conservative on purpose — only names you would never define-and-call cross-file. (#38) */
+const JAVA_BUILTINS = new Set([
+  "toString",
+  "equals",
+  "hashCode",
+  "getClass",
+  "clone",
+  "finalize",
+  "notify",
+  "notifyAll",
+  "wait",
+  "println",
+  "print",
+]);
+
+/** Heuristic baseline call edges for Java. A `method_invocation` whose name matches a method defined
+ *  in the SAME file resolves by name to a `Calls` edge from the enclosing method (within-file); a
+ *  non-local name becomes a `call:<name>` candidate that {@link deriveCallEdges} resolves cross-file
+ *  via the import graph — so find_callers/find_callees span Java classes and files instead of the
+ *  empty `callsTotal: 0` the baseline tier used to give. A name defined more than once locally is
+ *  ambiguous (skipped); a call outside any method is skipped. (#34) */
+function javaCalls(
+  root: Parser.SyntaxNode,
+  rel: string,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const byName = new Map<string, string | null>(); // simple name → id, or null when ambiguous
+  for (const m of eachOfType(root, "method_declaration")) {
+    const qn = javaQualifiedName(m);
+    const simple = m.childForFieldName("name")?.text;
+    if (!qn || !simple) continue;
+    byName.set(simple, byName.has(simple) ? null : symbolId({ file: rel, qualifiedName: qn }));
+  }
+  const edges: GraphEdge[] = [];
+  const seen = new Set<string>();
+  for (const call of eachOfType(root, "method_invocation")) {
+    const enc = enclosingMethod(call);
+    const name = call.childForFieldName("name")?.text;
+    if (!enc || !name) continue;
+    const local = byName.get(name);
+    if (local === null) continue; // a name defined more than once locally — don't guess
+    const callerQn = javaQualifiedName(enc);
+    if (!callerQn) continue;
+    const from = symbolId({ file: rel, qualifiedName: callerQn });
+    if (local) {
+      // resolved within this file (slice 1)
+      const key = `c ${from} ${local}`;
+      if (from === local || seen.has(key)) continue; // skip self-recursion + duplicate sites
+      seen.add(key);
+      edges.push({ from, to: local, kind: "Calls", provenance: "heuristic" });
+    } else if (!JAVA_BUILTINS.has(name)) {
+      // not local — a cross-file candidate deriveCallEdges resolves via the import graph (slice 2)
+      const key = `r ${from} ${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({
+        from,
+        to: `${CALL_REF_PREFIX}${name}`,
+        kind: "References",
+        provenance: "call-ref",
+      });
+    }
+  }
+  return { nodes: [], edges };
+}
+
 /**
  * Baseline (syntactic) spec for Java. Java gives every kind its own CST node
  * type — class/interface/enum declarations and methods — so each maps directly
@@ -140,4 +245,5 @@ export const javaSpec: LanguageSpec = {
   },
   resolveImports: javaImports,
   collectRoutes: javaRoutes,
+  collectCalls: javaCalls,
 };
