@@ -15,6 +15,7 @@ export {
   PRISMA_REF_PREFIX,
 } from "./prisma-link.js";
 export { deriveCallEdges, CALL_REF_PREFIX } from "./python-calls.js";
+export { deriveTypeEdges, TYPE_REF_PREFIX } from "./type-edges.js";
 export { deriveRouteTestEdges, ROUTE_REF_PREFIX } from "./route-tests.js";
 export { symbolId, fileId } from "./id.js";
 export type { SymbolLocation } from "./id.js";

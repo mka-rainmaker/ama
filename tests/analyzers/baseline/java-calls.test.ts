@@ -88,3 +88,50 @@ describe("Java cross-file call edges (#34, slice 2)", () => {
     ).toBe(true);
   });
 });
+
+/**
+ * Pinning test for the documented cross-file overload behaviour (#41, #15 deep-tier limitation):
+ * within-file, an overloaded simple name → null (ambiguous → skipped); cross-file, deriveCallEdges
+ * uses first-definition-wins (funcsByFile Map), so a call to an overloaded method in an imported
+ * file resolves to the FIRST definition in that file, not skipped. This test pins the actual
+ * behaviour explicitly so any future change to resolution is caught and deliberate. */
+describe("Java cross-file overloaded method: first-wins pinning test (#41, deep-tier #15)", () => {
+  const oroot = path.resolve(here, "../../fixtures/java-calls-overload");
+  let edges: GraphEdge[];
+  beforeAll(async () => {
+    const result = await new BaselineAnalyzer(javaSpec).analyze(oroot, [
+      "com/app/Client.java",
+      "com/util/Helper.java",
+    ]);
+    edges = [...result.edges, ...deriveCallEdges(result.nodes, result.edges)];
+  });
+
+  it("resolves a cross-file call to an overloaded method — first definition in the imported file wins", () => {
+    // Helper.java defines `format(int)` first, then `format(String)`.
+    // Baseline tier resolves Client.run → Helper.format(int) (the first definition), NOT skipped.
+    const formatIntId = symbolId({
+      file: "com/util/Helper.java",
+      qualifiedName: "Helper.format",
+    });
+    expect(
+      edges.some(
+        (e) =>
+          e.kind === "Calls" &&
+          e.from === symbolId({ file: "com/app/Client.java", qualifiedName: "Client.run" }) &&
+          e.to === formatIntId,
+      ),
+    ).toBe(true);
+  });
+
+  it("within-file: two overloads of the same simple name stay skipped (within-file remains ambiguous → null)", () => {
+    // Helper.java has two `format` methods; within-file resolution marks the name null → no within-
+    // file Calls edge from one format to the other.
+    expect(
+      edges.some(
+        (e) =>
+          e.kind === "Calls" &&
+          e.from === symbolId({ file: "com/util/Helper.java", qualifiedName: "Helper.format" }),
+      ),
+    ).toBe(false);
+  });
+});

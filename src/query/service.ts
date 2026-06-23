@@ -899,6 +899,7 @@ export class QueryService {
       prisma: 0,
       "call-ref": 0,
       call: 0,
+      type: 0,
       "route-test": 0,
     };
     for (const node of this.store.allNodes()) {

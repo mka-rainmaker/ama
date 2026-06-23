@@ -55,6 +55,28 @@ export interface LanguageSpec {
     root: Parser.SyntaxNode,
     rel: string,
   ) => { nodes: GraphNode[]; edges: GraphEdge[] };
+
+  /**
+   * Optional type-hierarchy detector: walk the CST for `extends`/`implements` clauses and return
+   * `Inherits`/`Implements` edges whose target is a within-file type id or a `type:<SimpleName>`
+   * candidate {@link deriveTypeEdges} resolves whole-graph. Baseline tier — syntactic, name-based,
+   * with no `@Override`/signature reasoning (dispatch derives those). (ama 0.4.0 S1)
+   */
+  readonly collectHierarchy?: (
+    root: Parser.SyntaxNode,
+    rel: string,
+  ) => { nodes: GraphNode[]; edges: GraphEdge[] };
+
+  /**
+   * Optional field/type-use detector: walk the CST for field declarations (emitting a `Property`
+   * node per declarator, multi-declarator aware) and `UsesType` candidate edges from a field/param/
+   * return type to its declaring type as a `type:<SimpleName>` candidate {@link deriveTypeEdges}
+   * resolves whole-graph. Baseline tier — syntactic, name-based, primitives/voids skipped. (ama 0.4.0 S3)
+   */
+  readonly collectFields?: (
+    root: Parser.SyntaxNode,
+    rel: string,
+  ) => { nodes: GraphNode[]; edges: GraphEdge[] };
 }
 
 /**
@@ -114,6 +136,16 @@ export class BaselineAnalyzer implements Analyzer {
             const calls = this.spec.collectCalls(tree.rootNode, rel);
             fileNodes.push(...calls.nodes);
             fileEdges.push(...calls.edges);
+          }
+          if (this.spec.collectHierarchy) {
+            const hierarchy = this.spec.collectHierarchy(tree.rootNode, rel);
+            fileNodes.push(...hierarchy.nodes);
+            fileEdges.push(...hierarchy.edges);
+          }
+          if (this.spec.collectFields) {
+            const fields = this.spec.collectFields(tree.rootNode, rel);
+            fileNodes.push(...fields.nodes);
+            fileEdges.push(...fields.edges);
           }
           nodes.push(...fileNodes);
           edges.push(...fileEdges);

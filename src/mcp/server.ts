@@ -160,6 +160,21 @@ export function selectTools(spec: string | undefined): Set<string> | null {
 }
 
 /**
+ * Server-level usage guidance returned in the MCP `initialize` handshake. MCP
+ * clients (e.g. Claude Code) inject this into the agent's context on every
+ * session — including subagents — so it is Ama's one in-band channel for telling
+ * an agent *when* to prefer these tools over grep/file-reads. Without it, an agent
+ * that just installed Ama never discovers that a who-calls/impact question is one
+ * tool call rather than a grep sweep — the core "agents don't use Ama" feedback.
+ * Keep it tight (it costs context on every session) and tier-honest. (closes #19)
+ */
+const AMA_INSTRUCTIONS = `Ama parses this codebase into a queryable graph of symbols and relationships. Prefer Ama's tools over grep/ripgrep and file reads for any STRUCTURAL question — where a symbol is defined, who calls or imports it, what implements an interface, what breaks if it changes — because one call returns a precise, graph-backed answer instead of many text matches.
+
+First call index_repository on the project root (or index_status to check what is indexed); after that the file watcher keeps the graph current. Then reach for: search_symbol / search_code (locate), get_code_snippet / file_skeleton (read), find_callers / find_callees / find_implementations / find_importers (relationships), impact_analysis / affected / explore (blast radius).
+
+Every result reports its analyzer tier — deep (semantic) or baseline (syntactic). Trust deep-tier relationship results; on baseline tier, treat an empty caller/impact result as "not resolved", not "none", and confirm with a targeted search. Use grep only for plain text/log/config strings the graph does not model.`;
+
+/**
  * Build the MCP server exposing Ama's tools over one {@link AmaSession}. Pure
  * construction — no transport — so it can be driven by an in-memory client in
  * tests or by stdio in production.
@@ -168,7 +183,10 @@ export function createServer(
   session: AmaSession = new AmaSession(),
   toolsSpec: string | undefined = process.env.AMA_MCP_TOOLS,
 ): McpServer {
-  const server = new McpServer({ name: "ama", version: serverStamp.version });
+  const server = new McpServer(
+    { name: "ama", version: serverStamp.version },
+    { instructions: AMA_INSTRUCTIONS },
+  );
 
   // AMA_MCP_TOOLS minimal-tools mode: register everything, but disable (hide from
   // tools/list) any tool not in the selected set. Bind first so the `tool` rename below

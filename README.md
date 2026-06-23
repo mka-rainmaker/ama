@@ -22,7 +22,7 @@
 
 Named after a puppy: small, eager, and a little smarter every day.
 
-> Status: **0.3** — deep TypeScript analysis; a baseline call graph for Python (incl. FastAPI route→handler→test impact); framework-route detection across TypeScript, Python, Go, PHP, Java, and Rust; syntactic breadth for 13 more languages; an embeddable library API; 27 MCP tools; an `ama` CLI (with self-update via `ama upgrade`); persistent, auto-syncing incremental indexing; and **self-contained, no-Node install bundles** for macOS/Linux/Windows — all able to index Ama's own source cleanly as the built-in regression test.
+> Status: **0.4** — deep TypeScript analysis; a baseline call graph for Python (incl. FastAPI route→handler→test impact) and Java (plus Java type hierarchy, constructors, and field/type edges); framework-route detection across TypeScript, Python, Go, PHP, Java, and Rust; syntactic breadth for a dozen more languages; an embeddable library API; 27 MCP tools; an `ama` CLI (with self-update via `ama upgrade`); persistent, auto-syncing incremental indexing; and **self-contained, no-Node install bundles** for macOS/Linux/Windows — all able to index Ama's own source cleanly as the built-in regression test.
 
 **1. Install Ama** — a self-contained bundle (no Node needed) or via npm (Node 24+):
 
@@ -59,6 +59,30 @@ Every answer reports **which tier produced it**, so partial coverage never quiet
 - **100% local.** No external APIs, no API keys, no telemetry. Your code never leaves your machine.
 - **Cheaper and faster.** Fewer tool calls and fewer tokens per question — one graph query replaces a pile of file reads.
 
+## Language support
+
+Each analyzer declares a **tier**, and every result is tagged with the tier that produced it — so partial coverage never looks complete. **Deep** = semantic, via the language's real compiler (resolves types, overloads, generics, dispatch). **Baseline** = syntactic, via tree-sitter, with a heuristic call/type graph where it pays off.
+
+| Language | Tier | Symbols | Imports | Call graph | Type hierarchy | Type usage | Routes |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **TypeScript** (`.ts`, `.tsx`) | `deep` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Prisma** (`.prisma`) | `deep` | ✓ | — | — | — | ✓ | — |
+| **Java** (`.java`) | `baseline` | ✓ | ✓ | ✓ ¹ | ✓ | ✓ | ✓ |
+| **Python** (`.py`) | `baseline` | ✓ | ✓ | ✓ ¹ | — | — | ✓ |
+| **Go** (`.go`) | `baseline` | ✓ | ✓ | — | — | — | ✓ |
+| **PHP** (`.php`) | `baseline` | ✓ | ✓ | — | — | — | ✓ |
+| **Rust** (`.rs`) | `baseline` | ✓ | ✓ | — | — | — | ✓ |
+| **JavaScript** (`.js`, `.jsx`) | `baseline` | ✓ | ✓ | — | — | — | — |
+| **C#** (`.cs`) | `baseline` | ✓ | ✓ | — | — | — | — |
+| **Kotlin** (`.kt`) | `baseline` | ✓ | ✓ | — | — | — | — |
+| **C / C++** (`.c`, `.cpp`, `.h`) | `baseline` | ✓ | ✓ | — | — | — | — |
+| **Vue / Svelte** (SFC `<script>`) | `baseline` | ✓ | ✓ | — | — | — | — |
+| **Swift** (`.swift`) | `baseline` | ✓ | — | — | — | — | — |
+
+¹ **Heuristic call graph** — resolves within-file calls by name and cross-file calls through the import graph. An empty `find_callers` on baseline-tier code can mean *"not resolved,"* not *"none."*
+
+**Java is the deepest baseline language** (new in 0.4): on top of the call graph and routes, it derives type hierarchy (`extends` / `implements` → overrides + interface dispatch), constructors (`new`), and field/parameter/return **type-usage** edges. True semantic resolution — overloads, generics, external-JAR types — is the planned deep-tier sidecar (Roslyn / native Java tooling).
+
 ## Benchmarks
 
 On Ama's own repo (5 representative questions): **~99% fewer tokens and ~96% fewer tool calls** to *obtain* an answer than the grep-then-read an agent falls back to without a graph — one focused, structured result instead of pulling whole files into context. That headline is a **ceiling** (the baseline reads every grep-matching file in full); [`docs/benchmarks`](docs/benchmarks/README.md) has the methodology and honest caveats, and `node scripts/benchmark.mjs` reproduces it.
@@ -73,11 +97,16 @@ Ama keeps the graph current while connected, so you never run a manual sync:
 
 ## Framework-aware routes
 
-Ama maps HTTP routes to their handlers across stacks, so *"who handles `POST /reports`?"* is one query:
+Ama maps HTTP routes to their handlers across stacks — always as a `Route → handler` reference, never a fabricated call — so *"who handles `POST /reports`?"* is one query:
 
-- **TypeScript** — Express, NestJS, Fastify, Hapi, Koa, Hono, tRPC, GraphQL, plus filename routers (Next.js Pages & App, Nuxt, Astro, SvelteKit).
-- **Python** — Flask, FastAPI, Django (`urls.py`); FastAPI `TestClient` calls link **test → route → handler**, so `impact_analysis` / `affected` reach route tests.
-- **Go** (Gin/chi), **PHP** (Laravel), **Java** (Spring `@GetMapping`), **Rust** (actix attribute macros).
+| Stack | Tier | Frameworks |
+| --- | --- | --- |
+| **TypeScript** | `deep` | Express, NestJS, Fastify, Hapi, Koa, Hono, tRPC, GraphQL; filename routers — Next.js (Pages & App), Nuxt, Astro, SvelteKit |
+| **Python** | `baseline` | Flask, FastAPI, Django (`urls.py`); FastAPI `TestClient` links **test → route → handler**, so `impact_analysis` / `affected` reach route tests |
+| **Java** | `baseline` | Spring MVC (`@GetMapping`/…), JAX-RS (`@GET` + `@Path`), Javalin |
+| **Go** | `baseline` | Gin, chi, echo |
+| **PHP** | `baseline` | Laravel |
+| **Rust** | `baseline` | actix-web (attribute macros) |
 
 ## Configure your coding agent
 
