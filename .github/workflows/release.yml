@@ -17,7 +17,7 @@ jobs:
       matrix:
         include:
           - { target: darwin-arm64, runner: macos-14 }
-          - { target: darwin-x64, runner: macos-13 }
+          - { target: darwin-x64, runner: macos-14, rosetta: true }
           - { target: linux-x64, runner: ubuntu-latest }
           - { target: linux-arm64, runner: ubuntu-24.04-arm }
           - { target: win32-x64, runner: windows-latest }
@@ -30,6 +30,9 @@ jobs:
       - run: npm ci
       - name: Build bundle
         run: npm run bundle ${{ matrix.target }}
+      - name: Install Rosetta 2 (to smoke an x64 bundle on an arm64 runner)
+        if: matrix.rosetta
+        run: sudo softwareupdate --install-rosetta --agree-to-license
       - name: Smoke-test on the native runner
         shell: bash
         run: |
