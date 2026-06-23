@@ -1,0 +1,30 @@
+name: Bug report
+description: Something Ama got wrong, missed, or crashed on
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The tool call(s) or CLI command, and a minimal repo or snippet if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Ama version (`ama --version`), Node version, OS, and the language(s) indexed.
+      placeholder: |
+        ama: 0.3.0
+        node: 24.x
+        os: macOS 15 / Ubuntu 24.04 / Windows 11
+        languages: TypeScript, Python
+    validations:
+      required: true

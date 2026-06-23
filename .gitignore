@@ -34,3 +34,8 @@ coverage/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Secrets / local credentials (never commit)
+.env
+.env.*
+.npmrc

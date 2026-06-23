@@ -1,0 +1,24 @@
+name: ci
+
+# Build, type-check, test, and lint on every push to main and every PR. This is the status check
+# branch protection requires before a merge. (ama-h0fl)
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run lint
