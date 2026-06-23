@@ -68,6 +68,7 @@ const projectPathSchema = z
  */
 function queryTool<A>(session: AmaSession, run: (args: A) => unknown) {
   return async (args: A) => {
+    await session.ensureIndexed();
     await session.catchUpIfNeeded();
     return reply(session, run(args));
   };
@@ -749,7 +750,10 @@ export function createServer(
 
 /** Entry point: serve over stdio. stdout carries JSON-RPC only — log to stderr. */
 export async function main(): Promise<void> {
-  const server = createServer();
+  // Lazily index the launch directory (or AMA_ROOT) on the first query, so an agent that
+  // queries before calling index_repository gets a transparent first index, not an error. (#35)
+  const session = new AmaSession(undefined, process.env.AMA_ROOT ?? process.cwd());
+  const server = createServer(session);
   await server.connect(new StdioServerTransport());
   console.error("ama MCP server running on stdio");
 }

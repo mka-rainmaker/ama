@@ -40,6 +40,21 @@ describe("AmaSession", () => {
     expect(() => session.searchSymbol("add")).toThrow(/index_repository/);
   });
 
+  it("auto-indexes a configured default root on ensureIndexed (transparent first index, #35)", async () => {
+    const session = new AmaSession(createDefaultIndexer(), root);
+    expect(session.indexStatus().indexed).toBe(false);
+    await session.ensureIndexed();
+    expect(session.indexStatus().indexed).toBe(true);
+    expect(() => session.searchSymbol("add")).not.toThrow();
+  });
+
+  it("ensureIndexed is a no-op without a default root (explicit-index contract preserved, #35)", async () => {
+    const session = new AmaSession();
+    await session.ensureIndexed();
+    expect(session.indexStatus().indexed).toBe(false);
+    expect(() => session.searchSymbol("add")).toThrow(/index_repository/);
+  });
+
   it("rejects a non-directory path with a clear error, not a raw ENOTDIR", async () => {
     const session = new AmaSession();
     const file = path.resolve(here, "../fixtures/ts-calls/calls.ts");
