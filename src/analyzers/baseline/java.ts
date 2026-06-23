@@ -135,6 +135,9 @@ const JAVA_SYMBOL_TYPES = new Set([
   "interface_declaration",
   "enum_declaration",
   "method_declaration",
+  // A constructor's `name` field is the class identifier, so it qualifies as `Class.Class` — keeping
+  // its dotted chain consistent with walkSymbols so a `new Foo(...)` call edge resolves to it. (S2)
+  "constructor_declaration",
 ]);
 
 /** Reproduce walkSymbols' dotted qualified name for `node`: the `name` of each symbol-typed
@@ -157,10 +160,10 @@ function* eachOfType(node: Parser.SyntaxNode, type: string): Generator<Parser.Sy
   for (const c of node.namedChildren) yield* eachOfType(c, type);
 }
 
-/** The nearest enclosing method_declaration — the symbol a call site belongs to. */
+/** The nearest enclosing method or constructor — the symbol a call site (call or `new`) belongs to. */
 function enclosingMethod(node: Parser.SyntaxNode): Parser.SyntaxNode | undefined {
   for (let n = node.parent; n; n = n.parent) {
-    if (n.type === "method_declaration") return n;
+    if (n.type === "method_declaration" || n.type === "constructor_declaration") return n;
   }
   return undefined;
 }
@@ -193,8 +196,15 @@ function javaCalls(
   root: Parser.SyntaxNode,
   rel: string,
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  // Both methods and constructors register by simple name: a constructor's `name` field is the class
+  // identifier, so `new Foo(...)` (callee simple name `Foo`) resolves to the `Foo.Foo` constructor.
+  // Overloaded constructors/methods collide by simple name → null (ambiguous), so they stay skipped:
+  // disambiguating an overload by argument shape is deep-tier, not baseline. (S2)
   const byName = new Map<string, string | null>(); // simple name → id, or null when ambiguous
-  for (const m of eachOfType(root, "method_declaration")) {
+  for (const m of [
+    ...eachOfType(root, "method_declaration"),
+    ...eachOfType(root, "constructor_declaration"),
+  ]) {
     const qn = javaQualifiedName(m);
     const simple = m.childForFieldName("name")?.text;
     if (!qn || !simple) continue;
@@ -202,25 +212,24 @@ function javaCalls(
   }
   const edges: GraphEdge[] = [];
   const seen = new Set<string>();
-  for (const call of eachOfType(root, "method_invocation")) {
-    const enc = enclosingMethod(call);
-    const name = call.childForFieldName("name")?.text;
-    if (!enc || !name) continue;
+  // Emit a call edge for a call site in `enc` whose callee simple name is `name`: a within-file
+  // `Calls` edge if the name is defined here unambiguously, else a cross-file `call:` candidate.
+  const callSite = (enc: Parser.SyntaxNode, name: string) => {
     const local = byName.get(name);
-    if (local === null) continue; // a name defined more than once locally — don't guess
+    if (local === null) return; // a name defined more than once locally — don't guess
     const callerQn = javaQualifiedName(enc);
-    if (!callerQn) continue;
+    if (!callerQn) return;
     const from = symbolId({ file: rel, qualifiedName: callerQn });
     if (local) {
       // resolved within this file (slice 1)
       const key = `c ${from} ${local}`;
-      if (from === local || seen.has(key)) continue; // skip self-recursion + duplicate sites
+      if (from === local || seen.has(key)) return; // skip self-recursion + duplicate sites
       seen.add(key);
       edges.push({ from, to: local, kind: "Calls", provenance: "heuristic" });
     } else if (!JAVA_BUILTINS.has(name)) {
       // not local — a cross-file candidate deriveCallEdges resolves via the import graph (slice 2)
       const key = `r ${from} ${name}`;
-      if (seen.has(key)) continue;
+      if (seen.has(key)) return;
       seen.add(key);
       edges.push({
         from,
@@ -229,6 +238,20 @@ function javaCalls(
         provenance: "call-ref",
       });
     }
+  };
+  for (const call of eachOfType(root, "method_invocation")) {
+    const enc = enclosingMethod(call);
+    const name = call.childForFieldName("name")?.text;
+    if (enc && name) callSite(enc, name);
+  }
+  for (const create of eachOfType(root, "object_creation_expression")) {
+    // `new Foo(...)` is a call to Foo's constructor (callee simple name = constructed type). Skip an
+    // anonymous class (`new Foo(){...}` carries a class_body) — it defines no resolvable ctor. (S2)
+    if (create.namedChildren.some((c) => c.type === "class_body")) continue;
+    const typeNode = create.childForFieldName("type");
+    const name = typeNode ? baseTypeName(typeNode) : undefined;
+    const enc = enclosingMethod(create);
+    if (enc && name) callSite(enc, name);
   }
   return { nodes: [], edges };
 }
@@ -346,6 +369,7 @@ export const javaSpec: LanguageSpec = {
     interface_declaration: { kind: "Interface" },
     enum_declaration: { kind: "Enum" },
     method_declaration: { kind: "Method" },
+    constructor_declaration: { kind: "Method" },
   },
   resolveImports: javaImports,
   collectRoutes: javaRoutes,
