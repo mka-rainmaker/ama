@@ -1,5 +1,11 @@
 import type Parser from "web-tree-sitter";
-import { CALL_REF_PREFIX, type GraphEdge, type GraphNode, symbolId } from "../../graph/index.js";
+import {
+  CALL_REF_PREFIX,
+  type GraphEdge,
+  type GraphNode,
+  TYPE_REF_PREFIX,
+  symbolId,
+} from "../../graph/index.js";
 import type { LanguageSpec } from "./analyzer.js";
 import { ancestorDirs } from "./paths.js";
 
@@ -227,6 +233,104 @@ function javaCalls(
   return { nodes: [], edges };
 }
 
+/** The base type's *simple* name for a supertype CST node, stripping generics to the parameterized
+ *  type (`List<String>` → `List`) and a scoped name to its last segment (`a.b.Foo` → `Foo`). Returns
+ *  undefined for shapes that name no type (wildcards etc.). (ama 0.4.0 S1) */
+function baseTypeName(node: Parser.SyntaxNode): string | undefined {
+  switch (node.type) {
+    case "type_identifier":
+      return node.text;
+    case "generic_type":
+      // first namedChild is the base type (`List` of `List<String>`); recurse to strip a scoped base.
+      return node.namedChildren[0] ? baseTypeName(node.namedChildren[0]) : undefined;
+    case "scoped_type_identifier": {
+      // base/simple type is the LAST type_identifier (`Bar` of `Foo.Bar`).
+      const ids = node.namedChildren.filter((c) => c.type === "type_identifier");
+      return ids[ids.length - 1]?.text;
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** Class/interface/enum declarations anywhere in the tree (incl. nested/local), each with its
+ *  walkSymbols-consistent dotted qualified name so a hierarchy edge's `from` matches the type's
+ *  graph-node id. Anonymous links yield undefined and are skipped. */
+function* eachTypeDecl(
+  node: Parser.SyntaxNode,
+): Generator<{ node: Parser.SyntaxNode; qn: string }> {
+  if (
+    node.type === "class_declaration" ||
+    node.type === "interface_declaration" ||
+    node.type === "enum_declaration"
+  ) {
+    const qn = javaQualifiedName(node);
+    if (qn) yield { node, qn };
+  }
+  for (const c of node.namedChildren) yield* eachTypeDecl(c);
+}
+
+/** The CST nodes naming each supertype in a `type_list` (class `implements`, interface `extends`). */
+function typeListMembers(list: Parser.SyntaxNode | undefined): Parser.SyntaxNode[] {
+  const tl = list?.namedChildren.find((c) => c.type === "type_list");
+  return tl ? [...tl.namedChildren] : [];
+}
+
+/** Baseline type-hierarchy edges for Java: `class extends` / `interface extends` → `Inherits`,
+ *  `class`/`enum` `implements` (and interface-extends-list) → the matching kind, with each supertype
+ *  resolved to a within-file type id or, failing that, a `type:<SimpleName>` candidate
+ *  {@link deriveTypeEdges} relinks whole-graph. No `@Override`/signature work — {@link deriveDispatchEdges}
+ *  derives `Overrides` and virtual dispatch from these resolved edges. (ama 0.4.0 S1) */
+function javaHierarchy(
+  root: Parser.SyntaxNode,
+  rel: string,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  // Within-file type ids by simple name; first definition wins, and ambiguous (collision) → null so
+  // a same-named local type can't mis-resolve (the candidate falls through to type: instead).
+  const byName = new Map<string, string | null>();
+  for (const { node, qn } of eachTypeDecl(root)) {
+    const simple = node.childForFieldName("name")?.text;
+    if (!simple) continue;
+    byName.set(simple, byName.has(simple) ? null : symbolId({ file: rel, qualifiedName: qn }));
+  }
+  const edges: GraphEdge[] = [];
+  const seen = new Set<string>();
+  const link = (fromId: string, supertype: Parser.SyntaxNode, kind: "Inherits" | "Implements") => {
+    const name = baseTypeName(supertype);
+    if (!name) return;
+    const local = byName.get(name);
+    if (local === null) return; // ambiguous local type — don't guess; drop rather than mis-link
+    const to = local ?? `${TYPE_REF_PREFIX}${name}`;
+    if (to === fromId) return; // a type can't extend itself
+    const key = `${fromId} ${kind} ${to}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    edges.push({ from: fromId, to, kind, provenance: "heuristic" });
+  };
+
+  for (const { node, qn } of eachTypeDecl(root)) {
+    const fromId = symbolId({ file: rel, qualifiedName: qn });
+    if (node.type === "class_declaration") {
+      const sup = node.childForFieldName("superclass");
+      // `superclass` wraps a single positional type child (no named field).
+      const supType = sup?.namedChildren[0];
+      if (supType) link(fromId, supType, "Inherits");
+      for (const m of typeListMembers(node.childForFieldName("interfaces") ?? undefined)) {
+        link(fromId, m, "Implements");
+      }
+    } else if (node.type === "enum_declaration") {
+      for (const m of typeListMembers(node.childForFieldName("interfaces") ?? undefined)) {
+        link(fromId, m, "Implements");
+      }
+    } else if (node.type === "interface_declaration") {
+      // interface-extends has no field — `extends_interfaces` is a positional child wrapping a type_list.
+      const ext = node.namedChildren.find((c) => c.type === "extends_interfaces");
+      for (const m of typeListMembers(ext)) link(fromId, m, "Inherits");
+    }
+  }
+  return { nodes: [], edges };
+}
+
 /**
  * Baseline (syntactic) spec for Java. Java gives every kind its own CST node
  * type — class/interface/enum declarations and methods — so each maps directly
@@ -246,4 +350,5 @@ export const javaSpec: LanguageSpec = {
   resolveImports: javaImports,
   collectRoutes: javaRoutes,
   collectCalls: javaCalls,
+  collectHierarchy: javaHierarchy,
 };
