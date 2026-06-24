@@ -32,11 +32,16 @@ export class AnalyzerRegistry {
     return available;
   }
 
-  /** The analyzer for a file path, or undefined if no language handles it. */
+  /** The analyzer for a file path, or undefined if no language handles it. Extension first (the
+   *  fast, common path); then a filename-pattern fallback for analyzers like dotenv whose files
+   *  (`.env.example`) aren't keyed by their trailing extension. (#53) */
   forFile(path: string): Analyzer | undefined {
     const dot = path.lastIndexOf(".");
-    if (dot < 0) return undefined;
-    return this.byExtension.get(path.slice(dot).toLowerCase());
+    if (dot >= 0) {
+      const byExt = this.byExtension.get(path.slice(dot).toLowerCase());
+      if (byExt) return byExt;
+    }
+    return this.analyzers.find((a) => a.matchesFile?.(path));
   }
 
   /** All registered analyzers, in registration order. */

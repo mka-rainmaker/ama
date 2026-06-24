@@ -45,6 +45,8 @@ describe("edge provenance round-trips through both stores (ama-m8k.1)", () => {
       call: 0,
       type: 0,
       "route-test": 0,
+      "env-ref": 0,
+      env: 0,
     });
   });
 });

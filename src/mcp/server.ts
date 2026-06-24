@@ -700,6 +700,22 @@ export function createServer(
   );
 
   tool(
+    "export_code_intel",
+    {
+      description:
+        "Export the whole index as a portable, SCIP-inspired symbol/occurrence JSON — stable symbol " +
+        "ids plus definition/reference occurrences per file — for interop with other code-intelligence tools.",
+      inputSchema: { projectPath: projectPathSchema },
+    },
+    tap(
+      "export_code_intel",
+      queryTool(session, ({ projectPath }: { projectPath?: string }) =>
+        session.codeIntelIndex(projectPath),
+      ),
+    ),
+  );
+
+  tool(
     "circular_imports",
     {
       description:

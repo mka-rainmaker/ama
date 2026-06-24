@@ -13,6 +13,8 @@ import { phpSpec } from "../analyzers/baseline/php.js";
 import { pythonSpec } from "../analyzers/baseline/python.js";
 import { rustSpec } from "../analyzers/baseline/rust.js";
 import { swiftSpec } from "../analyzers/baseline/swift.js";
+import { DotenvAnalyzer } from "../analyzers/dotenv/analyzer.js";
+import { JavaBytecodeAnalyzer } from "../analyzers/java-bytecode/analyzer.js";
 import { PrismaAnalyzer } from "../analyzers/prisma/analyzer.js";
 import { AnalyzerRegistry } from "../analyzers/registry.js";
 import { SfcAnalyzer } from "../analyzers/sfc/analyzer.js";
@@ -21,6 +23,7 @@ import { TypeScriptAnalyzer } from "../analyzers/typescript/analyzer.js";
 import {
   deriveCallEdges,
   deriveDispatchEdges,
+  deriveEnvReferences,
   derivePrismaReferences,
   deriveRouteTestEdges,
   deriveTypeEdges,
@@ -206,6 +209,7 @@ export class Indexer {
     redispatch(store); // re-derive Overrides/dispatch over the now-resolved hierarchy (ama 0.4.0 S0)
     relinkCalls(store); // and cross-file baseline call edges (ama-bnj)
     relinkRouteTests(store); // and FastAPI TestClient route→test links (ama-f2c)
+    relinkEnv(store); // and process.env → .env value-provenance links (#53)
 
     // Persist enough to reopen this index next process without re-analyzing:
     // coverage + resolution (for index_status), the root it was built for, and
@@ -307,6 +311,7 @@ export class Indexer {
     relinkPrisma(store); // re-resolve prisma.<model> links whole-graph too (ama-kvv)
     relinkCalls(store); // re-resolve cross-file baseline call edges whole-graph (ama-bnj)
     relinkRouteTests(store); // re-resolve route→test links whole-graph (ama-f2c)
+    relinkEnv(store); // re-resolve process.env → .env links whole-graph (#53)
   }
 
   /**
@@ -360,6 +365,8 @@ export function createDefaultIndexer(createStore?: (root: string) => Store): Ind
   registry.register(new SfcAnalyzer("vue", [".vue"]));
   registry.register(new SfcAnalyzer("svelte", [".svelte"]));
   registry.register(new PrismaAnalyzer());
+  registry.register(new JavaBytecodeAnalyzer()); // resolved Java hierarchy from compiled .class (#47)
+  registry.register(new DotenvAnalyzer()); // .env keys as value-origin nodes (#53)
   return new Indexer(registry, createStore);
 }
 
@@ -415,6 +422,16 @@ function relinkRouteTests(store: Store): void {
   const nodes = [...store.allNodes()];
   const base = store.allEdges().filter((e) => e.provenance !== "route-test");
   store.replaceEdgesByProvenance("route-test", deriveRouteTestEdges(nodes, base));
+}
+
+/** Re-derive `.env` value-provenance links (a `env:<KEY>` candidate from a code read of
+ *  `process.env.KEY` → the `.env` Variable origin node) over the full store — mirrors
+ *  {@link relinkPrisma}. The reader and the `.env` origin live in different files, so resolution
+ *  happens here. (No-op until a read-detector emits `env:` candidates; the resolver is ready.) (#53) */
+function relinkEnv(store: Store): void {
+  const nodes = [...store.allNodes()];
+  const base = store.allEdges().filter((e) => e.provenance !== "env");
+  store.replaceEdgesByProvenance("env", deriveEnvReferences(nodes, base));
 }
 
 /** Fingerprint a file for staleness tracking: size, mtime, and content hash.

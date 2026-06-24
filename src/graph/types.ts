@@ -115,7 +115,11 @@ export type EdgeProvenance =
   | "type"
   // FastAPI TestClient → Route: links a `client.get("/x")` test to the route it exercises, so
   // impact_analysis(handler) reaches route tests through route→handler. (ama-f2c)
-  | "route-test";
+  | "route-test"
+  // .env variable resolution (ama-#53): `env-ref` is the analyzer's unresolved candidate;
+  // `env` is the whole-graph-resolved edge linking a process.env read to the .env Variable.
+  | "env-ref"
+  | "env";
 
 export interface GraphEdge {
   /** Source node id. */

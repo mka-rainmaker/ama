@@ -22,16 +22,22 @@ function ancestorCandidates(importerRel: string, file: string): string[] {
  *  packages, PascalCase types) lets one rule cover regular, `static`, and nested
  *  imports: the class file is the dotted name up to and including the first
  *  PascalCase segment — trailing segments are a static member or a nested type,
- *  which live in that same file. `import a.b.*;` (wildcard) targets a package, not
- *  a file, and is skipped; an unresolved (JDK/dependency) import simply matches no
- *  file on disk. (ama-bsj) */
+ *  which live in that same file. `import a.b.*;` (wildcard) targets a package, so it
+ *  resolves to that package's DIRECTORY — a wildcard scope the type/call resolvers
+ *  search (#34 failure mode #2). An unresolved (JDK/dependency) import simply matches
+ *  no file on disk. (ama-bsj, #34) */
 function javaImports(node: Parser.SyntaxNode, importerRel: string): string[][] | undefined {
   if (node.type !== "import_declaration") return undefined;
-  if (node.namedChildren.some((c) => c.type === "asterisk")) return []; // wildcard import
   const scoped = node.namedChildren.find(
     (c) => c.type === "scoped_identifier" || c.type === "identifier",
   );
   if (!scoped) return [];
+  // `import a.b.*;` — a package wildcard. Resolve to the package DIRECTORY (the existing one among
+  // the ancestor candidates); the resolvers treat a directory-targeted Imports edge as a wildcard
+  // package scope. A static wildcard (`import static a.b.C.*`) maps to a non-existent dir → no edge.
+  if (node.namedChildren.some((c) => c.type === "asterisk")) {
+    return [ancestorCandidates(importerRel, scoped.text.replace(/\./g, "/"))];
+  }
   const segments = scoped.text.split(".");
   const classEnd = segments.findIndex((s) => /^[A-Z]/.test(s));
   if (classEnd < 0) return []; // no PascalCase (type) segment — nothing to resolve

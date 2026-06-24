@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { type CodeIntelIndex, exportCodeIntel } from "../export/codeintel.js";
 import type {
   EdgeKind,
   EdgeProvenance,
@@ -938,6 +939,8 @@ export class QueryService {
       call: 0,
       type: 0,
       "route-test": 0,
+      "env-ref": 0,
+      env: 0,
     };
     for (const node of this.store.allNodes()) {
       nodes[node.kind] = (nodes[node.kind] ?? 0) + 1;
@@ -947,6 +950,12 @@ export class QueryService {
       }
     }
     return { nodes, edges, edgeProvenance };
+  }
+
+  /** Serialize the whole graph into a portable, SCIP-inspired symbol/occurrence index (stable
+   *  symbol ids + definition/reference occurrences) for interop with other code-intel tools. (#17) */
+  codeIntelIndex(): CodeIntelIndex {
+    return exportCodeIntel(this.store, this.root);
   }
 
   /**
