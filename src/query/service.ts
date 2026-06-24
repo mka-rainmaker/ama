@@ -8,6 +8,7 @@ import type {
   NodeKind,
   Tier,
 } from "../graph/index.js";
+import { TYPE_REF_PREFIX } from "../graph/index.js";
 import type { FileMeta, Store } from "../store/types.js";
 
 /**
@@ -98,6 +99,11 @@ export interface NodeView {
   overriddenBy: GraphNode[];
   interfaces: GraphNode[];
   implementations: GraphNode[];
+  /** Simple names of supertypes/interfaces this node extends or implements that Ama could NOT
+   *  resolve to an indexed type — almost always a dependency (JDK, third-party, or another module)
+   *  with no on-disk source node. Surfaced honestly instead of silently dropped, so the dependency
+   *  gap is visible; the hook for dependency-aware resolution. Empty when everything resolved. (#47) */
+  externalSupertypes: string[];
   /** Other symbols that matched the same ref but weren't chosen as the primary —
    *  so an ambiguous ref (e.g. "analyze" across an interface and its implementations)
    *  surfaces its alternatives instead of silently hiding them. Empty when the ref
@@ -803,8 +809,32 @@ export class QueryService {
       overriddenBy: this.findOverriddenBy(id).map((c) => c.symbol),
       interfaces: this.findInterfaces(id),
       implementations: this.findImplementations(id),
+      externalSupertypes: this.externalSupertypes(id),
       alternatives: matches.slice(1),
     };
+  }
+
+  /**
+   * Simple names of `Inherits`/`Implements` targets that stayed unresolved `type:<Name>` candidates —
+   * a supertype/interface with no indexed node, i.e. a dependency (JDK/third-party/cross-module) type.
+   * The candidate edge survives in the store (its target isn't a real node), so the inheritance
+   * queries skip it; this surfaces the name instead of dropping it. A name that also resolved (the
+   * indexer keeps both the resolved edge and the raw candidate) is excluded. (#47)
+   */
+  private externalSupertypes(id: string): string[] {
+    const resolved = new Set<string>();
+    const external = new Set<string>();
+    for (const kind of ["Inherits", "Implements"] as const) {
+      for (const edge of this.store.edgesFrom(id, kind)) {
+        if (edge.to.startsWith(TYPE_REF_PREFIX)) {
+          external.add(edge.to.slice(TYPE_REF_PREFIX.length));
+        } else {
+          const target = this.store.getNode(edge.to);
+          if (target) resolved.add(target.name);
+        }
+      }
+    }
+    return [...external].filter((name) => !resolved.has(name)).sort();
   }
 
   /** The symbols a node directly defines — its `Defines` targets (a class's
