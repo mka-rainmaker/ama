@@ -21,7 +21,7 @@ function json(value: unknown) {
  * edits still in its debounce window — so a caller sees the caveat before the
  * (possibly stale) data. No banner ⇒ identical to {@link json}.
  */
-function reply(session: AmaSession, value: unknown, hint?: string) {
+function reply(session: AmaSession, value: unknown, hint?: string, signal?: unknown) {
   const banner = session.stalenessBanner();
   const text = (t: string) => ({ type: "text" as const, text: t });
   const content = [text(JSON.stringify(value ?? null, null, 2))];
@@ -29,6 +29,10 @@ function reply(session: AmaSession, value: unknown, hint?: string) {
   // data block stays at a fixed position so a consumer reading the JSON is robust.
   if (banner) content.unshift(text(banner));
   if (hint) content.push(text(hint));
+  // A structured, machine-readable signal (e.g. the tier of an empty relationship result) as its own
+  // JSON-object block — so an agent branches on a field, not prose. The data block (an array) is
+  // unchanged, so it never collides with this object. (#52)
+  if (signal !== undefined) content.push(text(JSON.stringify(signal, null, 2)));
   return { content };
 }
 
@@ -77,9 +81,11 @@ function queryTool<A>(session: AmaSession, run: (args: A) => unknown) {
 /**
  * Like {@link queryTool}, but for a relationship query whose result is an array of neighbors
  * (find_callers/callees/implementations, impact_analysis). When the result is EMPTY and the queried
- * symbol is BASELINE-tier, it appends an explicit caveat: at the syntactic tier Ama can't resolve
- * every edge, so an empty result may mean "not resolved here", not "none". A deep-tier symbol (or any
- * non-empty result) is trustworthy and gets no note — the tier-honesty rule applied at query time. (#45)
+ * symbol is BASELINE-tier, the emptiness is inconclusive — at the syntactic tier Ama can't resolve
+ * every edge, so "empty" may mean "not resolved", not "none". It attaches a **structured**
+ * `{ tier, authoritative: false, note }` signal (a machine-readable field an agent branches on, not
+ * prose — #52, upgrading #45's text caveat); the `note` keeps the human-readable text. A deep-tier
+ * symbol (or any non-empty result) is authoritative and gets no signal.
  */
 function relationTool<A extends { projectPath?: string }>(
   session: AmaSession,
@@ -91,11 +97,15 @@ function relationTool<A extends { projectPath?: string }>(
     await session.catchUpIfNeeded();
     const result = run(args);
     const ref = refOf(args);
-    const hint =
+    const signal =
       result.length === 0 && session.symbolTier(ref, args.projectPath) === "baseline"
-        ? `ℹ️ Ama: "${ref}" is baseline-tier (syntactic) — an empty relationship result may mean "not resolved at this tier", not "none". Confirm with search_code/grep.`
+        ? {
+            tier: "baseline",
+            authoritative: false,
+            note: `Empty result at baseline (syntactic) tier — Ama may not have resolved this relationship for "${ref}"; this does not mean none exist. Confirm with search_code/grep.`,
+          }
         : undefined;
-    return reply(session, result, hint);
+    return reply(session, result, undefined, signal);
   };
 }
 
