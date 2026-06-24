@@ -1,6 +1,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { EdgeKind, EdgeProvenance, GraphEdge, GraphNode, NodeKind } from "../graph/index.js";
+import type {
+  EdgeKind,
+  EdgeProvenance,
+  GraphEdge,
+  GraphNode,
+  NodeKind,
+  Tier,
+} from "../graph/index.js";
 import type { FileMeta, Store } from "../store/types.js";
 
 /**
@@ -1140,5 +1147,14 @@ export class QueryService {
     const byName = this.store.nodesByName(ref);
     if (byName.length) return byName;
     return [...this.store.allNodes()].filter((n) => n.qualifiedName === ref);
+  }
+
+  /**
+   * The analyzer tier of the symbol a ref resolves to (first match), or undefined if it resolves to
+   * nothing. Lets the MCP layer distinguish an empty baseline-tier relationship result ("not
+   * resolved at this syntactic tier") from a trustworthy deep-tier "genuinely none". (#45)
+   */
+  symbolTier(ref: string): Tier | undefined {
+    return this.resolve(ref)[0]?.tier;
   }
 }

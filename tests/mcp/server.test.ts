@@ -89,6 +89,36 @@ describe("MCP server", () => {
   });
 });
 
+describe("baseline-tier empty relationship results carry a tier caveat (#45)", () => {
+  const javaRoot = path.resolve(here, "../fixtures/java-hierarchy");
+
+  function allText(result: { content: unknown }): string {
+    return (result.content as Array<{ text: string }>).map((c) => c.text).join("\n");
+  }
+
+  it("flags an empty find_callers on a baseline symbol as 'not resolved', not 'none'", async () => {
+    const client = await connectClient();
+    await client.callTool({ name: "index_repository", arguments: { path: javaRoot } });
+    // Animal.speak (baseline/Java) has no callers — but at the syntactic tier empty is ambiguous.
+    const text = allText(
+      await client.callTool({ name: "find_callers", arguments: { symbol: "Animal.speak" } }),
+    );
+    expect(text).toContain("[]");
+    expect(text).toContain("baseline-tier");
+  });
+
+  it("does NOT add the caveat for a deep-tier symbol with no callers", async () => {
+    const client = await connectClient();
+    await client.callTool({ name: "index_repository", arguments: { path: root } });
+    // run (deep/TS) genuinely has no callers — a deep-tier empty result is trustworthy.
+    const text = allText(
+      await client.callTool({ name: "find_callers", arguments: { symbol: "run" } }),
+    );
+    expect(text).toContain("[]");
+    expect(text).not.toContain("baseline-tier");
+  });
+});
+
 const callsRoot = path.resolve(here, "../fixtures/ts-calls");
 
 describe("MCP query tools", () => {

@@ -90,6 +90,34 @@ describe("Java cross-file call edges (#34, slice 2)", () => {
 });
 
 /**
+ * Slice 3 (#34, failure mode #1): a call to a method on a SAME-PACKAGE sibling needs no `import`
+ * in Java, so the import-guided resolver alone leaves it unresolved. Same-package resolution (a
+ * candidate resolves against methods in the same directory) connects it — the dominant real-repo
+ * case behind empty find_callers/find_callees. `Service.run` calls `Validator.check` with no import. */
+describe("Java same-package call edges, no import (#34, slice 3)", () => {
+  const sroot = path.resolve(here, "../../fixtures/java-calls-samepkg");
+  let edges: GraphEdge[];
+  beforeAll(async () => {
+    const result = await new BaselineAnalyzer(javaSpec).analyze(sroot, [
+      "com/app/Service.java",
+      "com/app/Validator.java",
+    ]);
+    edges = [...result.edges, ...deriveCallEdges(result.nodes, result.edges)];
+  });
+
+  it("resolves a call to a same-package sibling's method without an import", () => {
+    expect(
+      edges.some(
+        (e) =>
+          e.kind === "Calls" &&
+          e.from === symbolId({ file: "com/app/Service.java", qualifiedName: "Service.run" }) &&
+          e.to === symbolId({ file: "com/app/Validator.java", qualifiedName: "Validator.check" }),
+      ),
+    ).toBe(true);
+  });
+});
+
+/**
  * Pinning test for the documented cross-file overload behaviour (#41, #15 deep-tier limitation):
  * within-file, an overloaded simple name → null (ambiguous → skipped); cross-file, deriveCallEdges
  * uses first-definition-wins (funcsByFile Map), so a call to an overloaded method in an imported

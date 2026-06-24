@@ -74,6 +74,31 @@ function queryTool<A>(session: AmaSession, run: (args: A) => unknown) {
   };
 }
 
+/**
+ * Like {@link queryTool}, but for a relationship query whose result is an array of neighbors
+ * (find_callers/callees/implementations, impact_analysis). When the result is EMPTY and the queried
+ * symbol is BASELINE-tier, it appends an explicit caveat: at the syntactic tier Ama can't resolve
+ * every edge, so an empty result may mean "not resolved here", not "none". A deep-tier symbol (or any
+ * non-empty result) is trustworthy and gets no note — the tier-honesty rule applied at query time. (#45)
+ */
+function relationTool<A extends { projectPath?: string }>(
+  session: AmaSession,
+  refOf: (args: A) => string,
+  run: (args: A) => unknown[],
+) {
+  return async (args: A) => {
+    await session.ensureIndexed();
+    await session.catchUpIfNeeded();
+    const result = run(args);
+    const ref = refOf(args);
+    const hint =
+      result.length === 0 && session.symbolTier(ref, args.projectPath) === "baseline"
+        ? `ℹ️ Ama: "${ref}" is baseline-tier (syntactic) — an empty relationship result may mean "not resolved at this tier", not "none". Confirm with search_code/grep.`
+        : undefined;
+    return reply(session, result, hint);
+  };
+}
+
 /** Compact `key=value` rendering of a tool's arguments for a log line. */
 function argsHint(args: unknown): string {
   if (!args || typeof args !== "object") return "";
@@ -310,8 +335,11 @@ export function createServer(
     },
     tap(
       "find_callers",
-      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
-        session.findCallers(symbol, projectPath),
+      relationTool(
+        session,
+        (a: { symbol: string }) => a.symbol,
+        ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+          session.findCallers(symbol, projectPath),
       ),
     ),
   );
@@ -329,8 +357,11 @@ export function createServer(
     },
     tap(
       "find_callees",
-      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
-        session.findCallees(symbol, projectPath),
+      relationTool(
+        session,
+        (a: { symbol: string }) => a.symbol,
+        ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+          session.findCallees(symbol, projectPath),
       ),
     ),
   );
@@ -439,8 +470,11 @@ export function createServer(
     },
     tap(
       "find_implementations",
-      queryTool(session, ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
-        session.findImplementations(symbol, projectPath),
+      relationTool(
+        session,
+        (a: { symbol: string }) => a.symbol,
+        ({ symbol, projectPath }: { symbol: string; projectPath?: string }) =>
+          session.findImplementations(symbol, projectPath),
       ),
     ),
   );
@@ -623,8 +657,9 @@ export function createServer(
     },
     tap(
       "impact_analysis",
-      queryTool(
+      relationTool(
         session,
+        (a: { symbol: string }) => a.symbol,
         ({
           symbol,
           maxDepth,

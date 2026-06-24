@@ -11,8 +11,9 @@ function node(
 /**
  * Cross-file type resolution: the Java baseline analyzer emits `type:<SimpleName>` candidates on
  * Inherits/Implements/UsesType edges; deriveTypeEdges resolves each to the Class/Interface/Enum it
- * names in a file the source imports, re-emitting the same kind with provenance "type" — so
- * find_implementations/find_overrides/find_type_users light up across modules. (ama 0.4.0 S0) */
+ * names in the source's own Java package (same directory, no import needed — #34) or a file the
+ * source imports, re-emitting the same kind with provenance "type" — so
+ * find_implementations/find_overrides/find_type_users light up across modules. (ama 0.4.0 S0, #34) */
 describe("deriveTypeEdges — import-guided cross-file type resolution (ama 0.4.0 S0)", () => {
   const dogId = symbolId({ file: "Dog.java", qualifiedName: "Dog" });
   const animalId = symbolId({ file: "Animal.java", qualifiedName: "Animal" });
@@ -146,12 +147,39 @@ describe("deriveTypeEdges — import-guided cross-file type resolution (ama 0.4.
     expect(deriveTypeEdges(baseNodes(), edges)).toEqual([]);
   });
 
-  it("does not resolve across an unimported file", () => {
-    // Dog does NOT import Animal here → the candidate must drop, not over-resolve.
+  it("resolves a same-package sibling (same directory) with no import — Java (#34)", () => {
+    // Dog and Animal are both at the repo root (same directory = same Java package); Dog has NO
+    // `import` of Animal. Same-package resolution connects them — the import-guided path alone can't.
     const edges: GraphEdge[] = [
       { from: dogId, to: `${TYPE_REF_PREFIX}Animal`, kind: "Inherits", provenance: "heuristic" },
     ];
-    expect(deriveTypeEdges(baseNodes(), edges)).toEqual([]);
+    expect(deriveTypeEdges(baseNodes(), edges)).toContainEqual({
+      from: dogId,
+      to: animalId,
+      kind: "Inherits",
+      provenance: "type",
+    });
+  });
+
+  it("does not resolve across an unimported file in a DIFFERENT package", () => {
+    // Cat lives in a different directory (package) than Dog and is not imported → the candidate must
+    // drop, not over-resolve. Same-package resolution only reaches same-directory siblings. (#34)
+    const catId = symbolId({ file: "zoo/Cat.java", qualifiedName: "Cat" });
+    const nodes: GraphNode[] = [
+      ...baseNodes(),
+      node({
+        id: fileId("zoo/Cat.java"),
+        kind: "File",
+        file: "zoo/Cat.java",
+        name: "Cat.java",
+        qualifiedName: "",
+      }),
+      node({ id: catId, kind: "Class", file: "zoo/Cat.java", name: "Cat", qualifiedName: "Cat" }),
+    ];
+    const edges: GraphEdge[] = [
+      { from: dogId, to: `${TYPE_REF_PREFIX}Cat`, kind: "Inherits", provenance: "heuristic" },
+    ];
+    expect(deriveTypeEdges(nodes, edges)).toEqual([]);
   });
 
   it("drops a self-referential candidate", () => {

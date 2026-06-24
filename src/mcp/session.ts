@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import type { ResolutionStats } from "../analyzers/types.js";
-import type { GraphNode } from "../graph/index.js";
+import type { GraphNode, Tier } from "../graph/index.js";
 import { Debouncer } from "../indexer/debouncer.js";
 import { createDefaultIndexer } from "../indexer/indexer.js";
 import type { IndexStats, Indexer, LanguageCoverage, SyncResult } from "../indexer/indexer.js";
@@ -310,6 +310,12 @@ export class AmaSession {
 
   findCallers(ref: string, projectPath?: string): EdgeNeighbor[] {
     return this.requireQuery(projectPath).findCallers(ref);
+  }
+
+  /** Tier of the symbol `ref` resolves to — lets the MCP layer caveat an empty baseline-tier
+   *  relationship result. Undefined if `ref` resolves to nothing. (#45) */
+  symbolTier(ref: string, projectPath?: string): Tier | undefined {
+    return this.requireQuery(projectPath).symbolTier(ref);
   }
 
   findCallees(ref: string, projectPath?: string): EdgeNeighbor[] {
