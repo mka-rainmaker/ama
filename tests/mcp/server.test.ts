@@ -96,26 +96,39 @@ describe("baseline-tier empty relationship results carry a tier caveat (#45)", (
     return (result.content as Array<{ text: string }>).map((c) => c.text).join("\n");
   }
 
-  it("flags an empty find_callers on a baseline symbol as 'not resolved', not 'none'", async () => {
+  /** The structured tier signal Ama attaches to a relationship result — the content block that parses
+   *  to an object carrying a `tier` field (the data block is an array, so the two never collide). */
+  function tierSignal(result: {
+    content: unknown;
+  }): { tier?: string; authoritative?: boolean; note?: string } | undefined {
+    for (const block of result.content as Array<{ text: string }>) {
+      try {
+        const o = JSON.parse(block.text);
+        if (o && typeof o === "object" && !Array.isArray(o) && "tier" in o) return o;
+      } catch {}
+    }
+    return undefined;
+  }
+
+  it("attaches a machine-readable { tier: baseline, authoritative: false } signal to an empty baseline result (#52)", async () => {
     const client = await connectClient();
     await client.callTool({ name: "index_repository", arguments: { path: javaRoot } });
-    // Animal.speak (baseline/Java) has no callers — but at the syntactic tier empty is ambiguous.
-    const text = allText(
-      await client.callTool({ name: "find_callers", arguments: { symbol: "Animal.speak" } }),
-    );
-    expect(text).toContain("[]");
-    expect(text).toContain("baseline-tier");
+    // Animal.speak (baseline/Java) has no callers — at the syntactic tier empty is ambiguous.
+    const res = await client.callTool({
+      name: "find_callers",
+      arguments: { symbol: "Animal.speak" },
+    });
+    expect(allText(res)).toContain("[]");
+    expect(tierSignal(res)).toMatchObject({ tier: "baseline", authoritative: false });
   });
 
-  it("does NOT add the caveat for a deep-tier symbol with no callers", async () => {
+  it("attaches NO tier signal for a deep-tier symbol with no callers (trustworthy empty)", async () => {
     const client = await connectClient();
     await client.callTool({ name: "index_repository", arguments: { path: root } });
-    // run (deep/TS) genuinely has no callers — a deep-tier empty result is trustworthy.
-    const text = allText(
-      await client.callTool({ name: "find_callers", arguments: { symbol: "run" } }),
-    );
-    expect(text).toContain("[]");
-    expect(text).not.toContain("baseline-tier");
+    // run (deep/TS) genuinely has no callers — a deep-tier empty result is authoritative.
+    const res = await client.callTool({ name: "find_callers", arguments: { symbol: "run" } });
+    expect(allText(res)).toContain("[]");
+    expect(tierSignal(res)).toBeUndefined();
   });
 });
 
