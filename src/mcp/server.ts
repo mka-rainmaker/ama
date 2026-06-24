@@ -80,12 +80,13 @@ function queryTool<A>(session: AmaSession, run: (args: A) => unknown) {
 
 /**
  * Like {@link queryTool}, but for a relationship query whose result is an array of neighbors
- * (find_callers/callees/implementations, impact_analysis). When the result is EMPTY and the queried
- * symbol is BASELINE-tier, the emptiness is inconclusive — at the syntactic tier Ama can't resolve
- * every edge, so "empty" may mean "not resolved", not "none". It attaches a **structured**
- * `{ tier, authoritative: false, note }` signal (a machine-readable field an agent branches on, not
- * prose — #52, upgrading #45's text caveat); the `note` keeps the human-readable text. A deep-tier
- * symbol (or any non-empty result) is authoritative and gets no signal.
+ * (find_callers/callees/implementations, impact_analysis). A result on a BASELINE-tier symbol is
+ * never fully authoritative — at the syntactic tier Ama can't resolve every edge, so an *empty*
+ * result may mean "not resolved" (not "none") and a *non-empty* one may be incomplete. It attaches a
+ * **structured** `{ tier, authoritative: false, note }` signal (a machine-readable field an agent
+ * branches on, not prose — #52, upgrading #45's text caveat) whenever the symbol is baseline-tier;
+ * the `note` adapts to empty vs non-empty and keeps the human-readable text. A deep-tier symbol gets
+ * no signal — its results are authoritative.
  */
 function relationTool<A extends { projectPath?: string }>(
   session: AmaSession,
@@ -98,11 +99,14 @@ function relationTool<A extends { projectPath?: string }>(
     const result = run(args);
     const ref = refOf(args);
     const signal =
-      result.length === 0 && session.symbolTier(ref, args.projectPath) === "baseline"
+      session.symbolTier(ref, args.projectPath) === "baseline"
         ? {
             tier: "baseline",
             authoritative: false,
-            note: `Empty result at baseline (syntactic) tier — Ama may not have resolved this relationship for "${ref}"; this does not mean none exist. Confirm with search_code/grep.`,
+            note:
+              result.length === 0
+                ? `Empty result at baseline (syntactic) tier — Ama may not have resolved this relationship for "${ref}"; this does not mean none exist. Confirm with search_code/grep.`
+                : `Baseline (syntactic) tier — this list may be INCOMPLETE for "${ref}" (cross-module or otherwise unresolved edges can be missed). Confirm completeness with search_code/grep.`,
           }
         : undefined;
     return reply(session, result, undefined, signal);
