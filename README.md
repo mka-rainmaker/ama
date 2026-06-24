@@ -22,7 +22,7 @@
 
 Named after a puppy: small, eager, and a little smarter every day.
 
-> Status: **0.4** — deep TypeScript analysis; deep Java source semantics with bytecode support and honest baseline fallback; a baseline call graph for Python (incl. FastAPI route→handler→test impact); framework-route detection across TypeScript, Python, Go, PHP, Java, and Rust; syntactic breadth for a dozen more languages; an embeddable library API; 27 MCP tools; an `ama` CLI (with self-update via `ama upgrade`); persistent, auto-syncing incremental indexing; and **self-contained, no-Node install bundles** for macOS/Linux/Windows — all able to index Ama's own source cleanly as the built-in regression test.
+> Status: **0.5** — deep TypeScript analysis; deep Java source semantics with bytecode support and honest baseline fallback; a baseline call graph for Python (incl. FastAPI route→handler→test impact); framework-route detection across TypeScript, Python, Go, PHP, Java, and Rust; syntactic breadth for a dozen more languages; an embeddable library API; 27 MCP tools; an `ama` CLI (with self-update via `ama upgrade`); persistent, auto-syncing incremental indexing; and **self-contained, no-Node install bundles** for macOS/Linux/Windows — all able to index Ama's own source cleanly as the built-in regression test.
 
 **1. Install Ama** — a self-contained bundle (no Node needed) or via npm (Node 24+):
 
