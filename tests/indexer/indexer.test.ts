@@ -3,7 +3,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { createDefaultIndexer } from "../../src/indexer/indexer.js";
+import { AnalyzerRegistry } from "../../src/analyzers/registry.js";
+import type { AnalysisResult, Analyzer } from "../../src/analyzers/types.js";
+import { Indexer, createDefaultIndexer } from "../../src/indexer/indexer.js";
 import type { IndexStats } from "../../src/indexer/indexer.js";
 import { SqliteStore } from "../../src/store/sqlite.js";
 import type { Store } from "../../src/store/types.js";
@@ -60,8 +62,8 @@ describe("Indexer", () => {
 
 describe("Indexer resolution stat honesty (#45)", () => {
   it("omits resolution for a baseline-only index — nothing measured, not a misleading '0 of 0'", async () => {
-    const javaRoot = path.resolve(here, "../fixtures/java-hierarchy");
-    const { stats } = await createDefaultIndexer().index(javaRoot);
+    const baselineRoot = path.resolve(here, "../fixtures/csharp-basic");
+    const { stats } = await createDefaultIndexer().index(baselineRoot);
     expect(stats.languages.every((l) => l.tier === "baseline")).toBe(true);
     expect(stats.resolution).toBeUndefined();
   });
@@ -69,6 +71,20 @@ describe("Indexer resolution stat honesty (#45)", () => {
   it("keeps resolution for a deep index that actually measured it", async () => {
     const { stats } = await createDefaultIndexer().index(root);
     expect(stats.resolution?.callsTotal).toBeGreaterThan(0);
+  });
+
+  it("aggregates unresolved names that collide with Object.prototype", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ama-resolution-proto-"));
+    try {
+      fs.writeFileSync(path.join(dir, "sample.toy"), "valueOf();\n");
+      const registry = new AnalyzerRegistry();
+      registry.register(new ValueOfAnalyzer());
+      const { stats } = await new Indexer(registry).index(dir);
+
+      expect(stats.resolution?.unresolved.valueOf).toBe(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -96,3 +112,28 @@ describe("Indexer persistence (SQLite-backed)", () => {
     }
   });
 });
+
+class ValueOfAnalyzer implements Analyzer {
+  readonly language = "toy";
+  readonly tier = "deep";
+  readonly extensions = [".toy"];
+
+  analyze(_root: string, files: string[]): AnalysisResult {
+    return {
+      nodes: files.map((file) => ({
+        id: file,
+        kind: "File",
+        name: file,
+        file,
+        qualifiedName: file,
+        tier: "deep",
+      })),
+      edges: [],
+      resolution: {
+        callsTotal: 1,
+        callsResolved: 0,
+        unresolved: { valueOf: 1 },
+      },
+    };
+  }
+}

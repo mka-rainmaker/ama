@@ -5,6 +5,52 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-06-24
+
+Deep-tier Java, for real. A source-semantic analyzer resolves Java calls and types to their actual
+definitions — same-class, same-package (no import needed), single-type and wildcard imports,
+nested/inner classes, records, lambdas, `this`/field receivers, and overloads — and emits them at
+`deep` tier, with a `javac`+bytecode compiler-truth path and an **honest `baseline` fallback** when
+neither semantic path applies. Closes the deep-tier sidecar (#15). Still native, no new dependencies.
+
+### Added
+
+- **Deep-tier Java analyzer** (`src/analyzers/java-deep/`): tree-sitter source semantics resolve
+  method calls to their target definitions and field/parameter/return types to their declarations —
+  across same-class, same-package (Java needs no `import` for siblings), single-type and wildcard
+  imports, nested/inner classes (`Outer.Inner` → `Outer$Inner`), records, lambdas, and
+  `this.field` / explicit-field receivers — disambiguating overloads by arity and parameter type.
+  Emits `Calls` / `UsesType` / `Returns` / `Inherits` / `Implements` at `deep` tier. When a local
+  `javac` can compile the project, resolved bytecode descriptors provide a second compiler-truth
+  path; if both semantic paths fail the analyzer falls back to the Java baseline and **reports the
+  lowered tier honestly**. (#15)
+- **Bytecode call extraction** (`src/analyzers/java-bytecode/classfile.ts`): the `.class` reader now
+  decodes method `Code` attributes — walking the instruction stream bounds-safely (incl. `wide`,
+  `tableswitch` / `lookupswitch` padding, with clamped instruction lengths so a truncated or
+  malformed class can never desync the scanner) and resolving
+  `invokevirtual` / `invokespecial` / `invokestatic` / `invokeinterface` targets through the
+  constant pool — feeding the compiler-truth path above.
+- **Java record support (baseline)** (`src/analyzers/baseline/java.ts`): `record` declarations are
+  class-like for routes, hierarchy, and field/type edges; each record component becomes a `Property`
+  node.
+
+### Changed
+
+- **Per-result tier** (`AnalysisResult.tier`): a dynamic analyzer can lower its declared tier for a
+  specific project (deep → baseline on fallback). The indexer, the per-language summary, and query
+  results all honor the *effective* tier, so a Java index that fell back to baseline never looks
+  fully `deep`.
+- **Overload-aware symbol lookup** (`src/query/service.ts`): resolving a method by qualified name now
+  also matches its overload-disambiguated form (`Foo.bar(int, String)`), so `find_callers` /
+  `find_callees` on an overloaded method reach every signature instead of dropping the disambiguated
+  nodes.
+
+### Fixed
+
+- **Spring route placeholders** (`src/analyzers/baseline/java.ts`): route-path normalization no
+  longer mangles SpEL property placeholders — `@RequestMapping("${api.base}")` keeps its `${…}`
+  instead of being rewritten into a `:`-style path variable.
+
 ## [0.5.0] - 2026-06-24
 
 Deeper code intelligence: read resolved Java types straight from compiled bytecode (no JVM), export

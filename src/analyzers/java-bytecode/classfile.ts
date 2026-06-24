@@ -13,6 +13,22 @@ export interface ClassFileData {
   interfaces: string[];
   /** True if ACC_INTERFACE flag is set. */
   isInterface: boolean;
+  /** Methods declared in the class file, including compiler-generated ones. */
+  methods: ClassFileMethod[];
+}
+
+export interface ClassFileMethod {
+  name: string;
+  descriptor: string;
+  accessFlags: number;
+  calls: ClassFileMethodCall[];
+}
+
+export interface ClassFileMethodCall {
+  /** Fully qualified owner class in dotted binary-name form, e.g. "com.foo.Bar$Nested". */
+  owner: string;
+  name: string;
+  descriptor: string;
 }
 
 /** Parse a JVM class file from bytes. Throws on invalid format. */
@@ -85,7 +101,24 @@ export function parseClassFile(bytes: Uint8Array): ClassFileData {
     }
   }
 
-  return { thisClass, superClass, interfaces, isInterface };
+  // Skip fields for now; method descriptors and Code attributes are the part needed for deep call
+  // resolution. The generic member skipper still consumes field attributes correctly.
+  const fieldsCount = view.getUint16(offset, false);
+  offset += 2;
+  for (let i = 0; i < fieldsCount; i++) {
+    offset = skipMemberInfo(view, offset);
+  }
+
+  const methodsCount = view.getUint16(offset, false);
+  offset += 2;
+  const methods: ClassFileMethod[] = [];
+  for (let i = 0; i < methodsCount; i++) {
+    const parsed = parseMethodInfo(view, offset, constantPool);
+    offset = parsed.nextOffset;
+    methods.push(parsed.method);
+  }
+
+  return { thisClass, superClass, interfaces, isInterface, methods };
 }
 
 /**
@@ -96,6 +129,10 @@ interface ConstantPoolEntry {
   tag: number;
   value?: string; // For Utf8 entries
   classNameIndex?: number; // For Class entries
+  referenceClassIndex?: number; // For Fieldref/Methodref/InterfaceMethodref entries
+  referenceNameAndTypeIndex?: number;
+  nameIndex?: number; // For NameAndType entries
+  descriptorIndex?: number;
 }
 
 /**
@@ -149,20 +186,29 @@ function parseConstantPool(
         break;
 
       case 8: // CONSTANT_String
-        {
-          const stringIndex = view.getUint16(offset, false);
-          offset += 2;
-        }
+        offset += 2;
         break;
 
       case 9: // CONSTANT_Fieldref
       case 10: // CONSTANT_Methodref
       case 11: // CONSTANT_InterfaceMethodref
-        offset += 4; // u2 class_index + u2 name_and_type_index
+        {
+          const referenceClassIndex = view.getUint16(offset, false);
+          offset += 2;
+          const referenceNameAndTypeIndex = view.getUint16(offset, false);
+          offset += 2;
+          pool.set(i, { tag, referenceClassIndex, referenceNameAndTypeIndex });
+        }
         break;
 
       case 12: // CONSTANT_NameAndType
-        offset += 4; // u2 name_index + u2 descriptor_index
+        {
+          const nameIndex = view.getUint16(offset, false);
+          offset += 2;
+          const descriptorIndex = view.getUint16(offset, false);
+          offset += 2;
+          pool.set(i, { tag, nameIndex, descriptorIndex });
+        }
         break;
 
       case 15: // CONSTANT_MethodHandle
@@ -215,4 +261,219 @@ function resolveClassName(
  */
 function internalToQualified(internal: string): string {
   return internal.replace(/\//g, ".");
+}
+
+function utf8(pool: Map<number, ConstantPoolEntry>, index: number): string | undefined {
+  const entry = pool.get(index);
+  return entry?.tag === 1 ? entry.value : undefined;
+}
+
+function skipMemberInfo(view: DataView, startOffset: number): number {
+  let offset = startOffset;
+  offset += 6; // access_flags, name_index, descriptor_index
+  const attributesCount = view.getUint16(offset, false);
+  offset += 2;
+  for (let i = 0; i < attributesCount; i++) {
+    offset += 2; // attribute_name_index
+    const attributeLength = view.getUint32(offset, false);
+    offset += 4 + attributeLength;
+  }
+  return offset;
+}
+
+function parseMethodInfo(
+  view: DataView,
+  startOffset: number,
+  pool: Map<number, ConstantPoolEntry>,
+): { method: ClassFileMethod; nextOffset: number } {
+  let offset = startOffset;
+  const accessFlags = view.getUint16(offset, false);
+  offset += 2;
+  const nameIndex = view.getUint16(offset, false);
+  offset += 2;
+  const descriptorIndex = view.getUint16(offset, false);
+  offset += 2;
+  const name = utf8(pool, nameIndex) ?? "";
+  const descriptor = utf8(pool, descriptorIndex) ?? "";
+  const calls: ClassFileMethodCall[] = [];
+
+  const attributesCount = view.getUint16(offset, false);
+  offset += 2;
+  for (let i = 0; i < attributesCount; i++) {
+    const attributeNameIndex = view.getUint16(offset, false);
+    offset += 2;
+    const attributeLength = view.getUint32(offset, false);
+    offset += 4;
+    const attributeStart = offset;
+    const attributeName = utf8(pool, attributeNameIndex);
+    if (attributeName === "Code") {
+      calls.push(...parseCodeAttribute(view, attributeStart, pool));
+    }
+    offset = attributeStart + attributeLength;
+  }
+
+  return { method: { name, descriptor, accessFlags, calls }, nextOffset: offset };
+}
+
+function parseCodeAttribute(
+  view: DataView,
+  startOffset: number,
+  pool: Map<number, ConstantPoolEntry>,
+): ClassFileMethodCall[] {
+  let offset = startOffset;
+  offset += 2; // max_stack
+  offset += 2; // max_locals
+  const codeLength = view.getUint32(offset, false);
+  offset += 4;
+  const codeStart = offset;
+  const codeEnd = codeStart + codeLength;
+  const calls: ClassFileMethodCall[] = [];
+  let pc = codeStart;
+  while (pc < codeEnd) {
+    const opcode = view.getUint8(pc);
+    if ((opcode === 0xb6 || opcode === 0xb7 || opcode === 0xb8) && pc + 3 <= codeEnd) {
+      const methodRefIndex = view.getUint16(pc + 1, false);
+      const call = resolveMethodRef(pool, methodRefIndex);
+      if (call) calls.push(call);
+    } else if (opcode === 0xb9 && pc + 5 <= codeEnd) {
+      const methodRefIndex = view.getUint16(pc + 1, false);
+      const call = resolveMethodRef(pool, methodRefIndex);
+      if (call) calls.push(call);
+    }
+    pc += instructionLength(view, pc, codeStart, codeEnd);
+  }
+  return calls;
+}
+
+function resolveMethodRef(
+  pool: Map<number, ConstantPoolEntry>,
+  index: number,
+): ClassFileMethodCall | undefined {
+  const ref = pool.get(index);
+  if (!ref || (ref.tag !== 10 && ref.tag !== 11)) return undefined;
+  if (ref.referenceClassIndex === undefined || ref.referenceNameAndTypeIndex === undefined) {
+    return undefined;
+  }
+  const ownerInternal = resolveClassName(pool, ref.referenceClassIndex);
+  const nat = pool.get(ref.referenceNameAndTypeIndex);
+  if (!ownerInternal || !nat || nat.tag !== 12) return undefined;
+  if (nat.nameIndex === undefined || nat.descriptorIndex === undefined) return undefined;
+  const name = utf8(pool, nat.nameIndex);
+  const descriptor = utf8(pool, nat.descriptorIndex);
+  if (!name || !descriptor) return undefined;
+  return { owner: internalToQualified(ownerInternal), name, descriptor };
+}
+
+function instructionLength(view: DataView, pc: number, codeStart: number, codeEnd: number): number {
+  const opcode = view.getUint8(pc);
+  let length = 1;
+  switch (opcode) {
+    case 0x10:
+    case 0x12:
+    case 0x15:
+    case 0x16:
+    case 0x17:
+    case 0x18:
+    case 0x19:
+    case 0x36:
+    case 0x37:
+    case 0x38:
+    case 0x39:
+    case 0x3a:
+    case 0xa9:
+    case 0xbc:
+      length = 2;
+      break;
+    case 0x11:
+    case 0x13:
+    case 0x14:
+    case 0x84:
+    case 0x99:
+    case 0x9a:
+    case 0x9b:
+    case 0x9c:
+    case 0x9d:
+    case 0x9e:
+    case 0x9f:
+    case 0xa0:
+    case 0xa1:
+    case 0xa2:
+    case 0xa3:
+    case 0xa4:
+    case 0xa5:
+    case 0xa6:
+    case 0xa7:
+    case 0xa8:
+    case 0xb2:
+    case 0xb3:
+    case 0xb4:
+    case 0xb5:
+    case 0xb6:
+    case 0xb7:
+    case 0xb8:
+    case 0xbb:
+    case 0xbd:
+    case 0xc0:
+    case 0xc1:
+    case 0xc6:
+    case 0xc7:
+      length = 3;
+      break;
+    case 0xb9:
+    case 0xba:
+    case 0xc8:
+    case 0xc9:
+      length = 5;
+      break;
+    case 0xc5:
+      length = 4;
+      break;
+    case 0xc4: {
+      if (pc + 2 > codeEnd) return boundedInstructionLength(1, pc, codeEnd);
+      const widened = view.getUint8(pc + 1);
+      length = widened === 0x84 ? 6 : 4;
+      break;
+    }
+    case 0xaa:
+      return tableSwitchLength(view, pc, codeStart, codeEnd);
+    case 0xab:
+      return lookupSwitchLength(view, pc, codeStart, codeEnd);
+    default:
+      break;
+  }
+  return boundedInstructionLength(length, pc, codeEnd);
+}
+
+function switchPadding(pc: number, codeStart: number): number {
+  const offsetAfterOpcode = pc - codeStart + 1;
+  return (4 - (offsetAfterOpcode % 4)) % 4;
+}
+
+function tableSwitchLength(view: DataView, pc: number, codeStart: number, codeEnd: number): number {
+  const padding = switchPadding(pc, codeStart);
+  const payload = pc + 1 + padding;
+  const baseLength = 1 + padding + 12;
+  if (baseLength > codeEnd - pc) return boundedInstructionLength(baseLength, pc, codeEnd);
+  const low = view.getInt32(payload + 4, false);
+  const high = view.getInt32(payload + 8, false);
+  const entries = high >= low ? high - low + 1 : 0;
+  return boundedInstructionLength(baseLength + entries * 4, pc, codeEnd);
+}
+
+function lookupSwitchLength(
+  view: DataView,
+  pc: number,
+  codeStart: number,
+  codeEnd: number,
+): number {
+  const padding = switchPadding(pc, codeStart);
+  const payload = pc + 1 + padding;
+  const baseLength = 1 + padding + 8;
+  if (baseLength > codeEnd - pc) return boundedInstructionLength(baseLength, pc, codeEnd);
+  const npairs = view.getInt32(payload + 4, false);
+  return boundedInstructionLength(baseLength + Math.max(0, npairs) * 8, pc, codeEnd);
+}
+
+function boundedInstructionLength(length: number, pc: number, codeEnd: number): number {
+  return Math.max(1, Math.min(length, codeEnd - pc));
 }

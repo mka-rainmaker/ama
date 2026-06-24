@@ -59,14 +59,29 @@ describe("Java Spring annotation arg correctness: named-arg order + FQN (ama 0.4
     expect(route("GET /shop/simple")).toBeDefined();
   });
 
+  it("keeps Spring property placeholders intact while normalizing path variables", () => {
+    expect(
+      route("GET /${agentscope.admin.base-path:/v1/admin}/sessions/:sessionId:export"),
+    ).toBeDefined();
+    expect(
+      route("GET /$:agentscope.admin.base-path:/v1/admin/sessions/:sessionId:export"),
+    ).toBeUndefined();
+  });
+
   it("References each route to its handler method", () => {
     expect(links("GET /shop/search", "ShopController.search")).toBe(true);
     expect(links("POST /shop/orders", "ShopController.placeOrder")).toBe(true);
     expect(links("GET /shop/fqn", "ShopController.fqnRoute")).toBe(true);
     expect(links("GET /shop/simple", "ShopController.simple")).toBe(true);
+    expect(
+      links(
+        "GET /${agentscope.admin.base-path:/v1/admin}/sessions/:sessionId:export",
+        "AdminController.export",
+      ),
+    ).toBe(true);
   });
 
-  it("emits exactly 4 routes (search, orders, fqn, simple) — no phantom routes", () => {
-    expect(result.nodes.filter((n) => n.kind === "Route")).toHaveLength(4);
+  it("emits exactly 5 routes (search, orders, fqn, simple, export) — no phantom routes", () => {
+    expect(result.nodes.filter((n) => n.kind === "Route")).toHaveLength(5);
   });
 });

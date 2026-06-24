@@ -22,7 +22,7 @@
 
 Named after a puppy: small, eager, and a little smarter every day.
 
-> Status: **0.4** — deep TypeScript analysis; a baseline call graph for Python (incl. FastAPI route→handler→test impact) and Java (plus Java type hierarchy, constructors, and field/type edges); framework-route detection across TypeScript, Python, Go, PHP, Java, and Rust; syntactic breadth for a dozen more languages; an embeddable library API; 27 MCP tools; an `ama` CLI (with self-update via `ama upgrade`); persistent, auto-syncing incremental indexing; and **self-contained, no-Node install bundles** for macOS/Linux/Windows — all able to index Ama's own source cleanly as the built-in regression test.
+> Status: **0.4** — deep TypeScript analysis; deep Java source semantics with bytecode support and honest baseline fallback; a baseline call graph for Python (incl. FastAPI route→handler→test impact); framework-route detection across TypeScript, Python, Go, PHP, Java, and Rust; syntactic breadth for a dozen more languages; an embeddable library API; 27 MCP tools; an `ama` CLI (with self-update via `ama upgrade`); persistent, auto-syncing incremental indexing; and **self-contained, no-Node install bundles** for macOS/Linux/Windows — all able to index Ama's own source cleanly as the built-in regression test.
 
 **1. Install Ama** — a self-contained bundle (no Node needed) or via npm (Node 24+):
 
@@ -51,7 +51,7 @@ ama install   # auto-configures Claude Code / Cursor / Windsurf / Codex
 
 Most code-graph tools parse every language the same way: one fast, syntactic pass that sees *shapes* but not *meaning*. Ama takes a different bet — **use each language's real compiler when one exists.**
 
-- **Deep tier — language-specific semantic analysis.** TypeScript via the TypeScript Compiler API today; .NET via Roslyn and Java via its native tooling next. This resolves types, overloads, generics, imports/re-exports, interface dispatch, and cross-file symbol binding that a purely syntactic parser cannot.
+- **Deep tier — language-specific semantic analysis.** TypeScript via the TypeScript Compiler API today; Java via a TypeScript source-semantic resolver plus JVM bytecode/classfile parsing; .NET via Roslyn next. This resolves types, overloads, imports/re-exports, interface dispatch, and cross-file symbol binding that a purely syntactic parser cannot.
 - **Baseline tier — universal syntactic analysis for breadth.** Every other language gets parsed for structure (and, where it pays off, a heuristic call graph), so the whole repo is navigable from day one.
 
 Every answer reports **which tier produced it**, so partial coverage never quietly masquerades as complete. And because it's built for agents:
@@ -61,13 +61,13 @@ Every answer reports **which tier produced it**, so partial coverage never quiet
 
 ## Language support
 
-Each analyzer declares a **tier**, and every result is tagged with the tier that produced it — so partial coverage never looks complete. **Deep** = semantic, via the language's real compiler (resolves types, overloads, generics, dispatch). **Baseline** = syntactic, via tree-sitter, with a heuristic call/type graph where it pays off.
+Each analyzer declares a **tier**, and every result is tagged with the tier that produced it — so partial coverage never looks complete. **Deep** = semantic, via a compiler API, bytecode, or a language-specific resolver (resolves types, overloads, imports, dispatch). **Baseline** = syntactic, via tree-sitter, with a heuristic call/type graph where it pays off.
 
 | Language | Tier | Symbols | Imports | Call graph | Type hierarchy | Type usage | Routes |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | :---: |
 | **TypeScript** (`.ts`, `.tsx`) | `deep` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Prisma** (`.prisma`) | `deep` | ✓ | — | — | — | ✓ | — |
-| **Java** (`.java`) | `baseline` | ✓ | ✓ | ✓ ¹ | ✓ | ✓ | ✓ |
+| **Java** (`.java`) | `deep` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **Python** (`.py`) | `baseline` | ✓ | ✓ | ✓ ¹ | — | — | ✓ |
 | **Go** (`.go`) | `baseline` | ✓ | ✓ | — | — | — | ✓ |
 | **PHP** (`.php`) | `baseline` | ✓ | ✓ | — | — | — | ✓ |
@@ -81,7 +81,7 @@ Each analyzer declares a **tier**, and every result is tagged with the tier that
 
 ¹ **Heuristic call graph** — resolves within-file calls by name and cross-file calls through the import graph. An empty `find_callers` on baseline-tier code can mean *"not resolved,"* not *"none."*
 
-**Java is the deepest baseline language** (new in 0.4): on top of the call graph and routes, it derives type hierarchy (`extends` / `implements` → overrides + interface dispatch), constructors (`new`), and field/parameter/return **type-usage** edges. True semantic resolution — overloads, generics, external-JAR types — is the planned deep-tier sidecar (Roslyn / native Java tooling).
+**Java is now a deep-tier analyzer**: the default path is implemented in TypeScript and builds a source type/method index over tree-sitter, resolving in-repo package/import names and exact overloaded calls where receiver and argument types are known. A pure TypeScript JVM classfile reader backs the bytecode path for compiled classes. When neither semantic path can produce a reliable result for a project, Ama returns the Java baseline result and tags that result as `baseline` instead of overstating coverage. Generics, full Java overload conversion rules, and external JAR/source-root resolution are still growing toward full compiler parity.
 
 ## Benchmarks
 
@@ -103,7 +103,7 @@ Ama maps HTTP routes to their handlers across stacks — always as a `Route → 
 | --- | --- | --- |
 | **TypeScript** | `deep` | Express, NestJS, Fastify, Hapi, Koa, Hono, tRPC, GraphQL; filename routers — Next.js (Pages & App), Nuxt, Astro, SvelteKit |
 | **Python** | `baseline` | Flask, FastAPI, Django (`urls.py`); FastAPI `TestClient` links **test → route → handler**, so `impact_analysis` / `affected` reach route tests |
-| **Java** | `baseline` | Spring MVC (`@GetMapping`/…), JAX-RS (`@GET` + `@Path`), Javalin |
+| **Java** | `deep` | Spring MVC (`@GetMapping`/…), JAX-RS (`@GET` + `@Path`), Javalin |
 | **Go** | `baseline` | Gin, chi, echo |
 | **PHP** | `baseline` | Laravel |
 | **Rust** | `baseline` | actix-web (attribute macros) |

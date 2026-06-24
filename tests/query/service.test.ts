@@ -31,6 +31,53 @@ describe("QueryService", () => {
     expect(names).toEqual(["Service.compute", "main"]);
   });
 
+  it("aggregates callers for signature-qualified overload families", () => {
+    const store = new InMemoryStore();
+    store.addNode({
+      id: "factory.ts#Factory.load",
+      kind: "Method",
+      name: "load",
+      file: "factory.ts",
+      qualifiedName: "Factory.load",
+      tier: "deep",
+    });
+    store.addNode({
+      id: "factory.ts#Factory.load(File)",
+      kind: "Method",
+      name: "load",
+      file: "factory.ts",
+      qualifiedName: "Factory.load(File)",
+      tier: "deep",
+    });
+    store.addNode({
+      id: "factory.ts#Factory.load(String)",
+      kind: "Method",
+      name: "load",
+      file: "factory.ts",
+      qualifiedName: "Factory.load(String)",
+      tier: "deep",
+    });
+    store.addNode({
+      id: "caller.ts#useFactory",
+      kind: "Function",
+      name: "useFactory",
+      file: "caller.ts",
+      qualifiedName: "useFactory",
+      tier: "deep",
+    });
+    store.addEdge({
+      from: "caller.ts#useFactory",
+      to: "factory.ts#Factory.load(File)",
+      kind: "Calls",
+    });
+
+    const names = new QueryService(store, root)
+      .findCallers("Factory.load")
+      .map((n) => n.symbol.qualifiedName);
+
+    expect(names).toEqual(["useFactory"]);
+  });
+
   it("finds the callees of a method", () => {
     const callees = q.findCallees("Service.compute");
     expect(callees.map((n) => n.symbol.name)).toContain("helper");

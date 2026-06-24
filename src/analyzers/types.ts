@@ -17,6 +17,9 @@ export interface ResolutionStats {
 export interface AnalysisResult {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /** Effective tier for this result. Usually the analyzer's declared tier; dynamic analyzers can
+   *  lower it when they fall back to a less capable path for a specific project. */
+  tier?: Tier;
   /** Resolution coverage, when the analyzer measures it. Deep analyzers report
    *  it; a baseline (syntactic) analyzer resolves nothing, so it omits this. */
   resolution?: ResolutionStats;

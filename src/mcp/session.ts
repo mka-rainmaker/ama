@@ -278,9 +278,10 @@ export class AmaSession {
     for (const meta of this.store?.allFiles() ?? []) {
       const lang = this.indexer.languageOf(meta.path);
       if (!lang) continue;
+      const tier = this.store?.getNode(meta.path)?.tier ?? lang.tier;
       const entry = counts.get(lang.language);
       if (entry) entry.files++;
-      else counts.set(lang.language, { tier: lang.tier, files: 1 });
+      else counts.set(lang.language, { tier, files: 1 });
     }
     return [...counts].map(([language, { tier, files }]) => ({ language, tier, files }));
   }

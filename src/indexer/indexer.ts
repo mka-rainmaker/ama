@@ -15,6 +15,7 @@ import { rustSpec } from "../analyzers/baseline/rust.js";
 import { swiftSpec } from "../analyzers/baseline/swift.js";
 import { DotenvAnalyzer } from "../analyzers/dotenv/analyzer.js";
 import { JavaBytecodeAnalyzer } from "../analyzers/java-bytecode/analyzer.js";
+import { JavaDeepAnalyzer } from "../analyzers/java-deep/analyzer.js";
 import { PrismaAnalyzer } from "../analyzers/prisma/analyzer.js";
 import { AnalyzerRegistry } from "../analyzers/registry.js";
 import { SfcAnalyzer } from "../analyzers/sfc/analyzer.js";
@@ -162,7 +163,11 @@ export class Indexer {
     }
 
     const languages: LanguageCoverage[] = [];
-    const resolution: ResolutionStats = { callsTotal: 0, callsResolved: 0, unresolved: {} };
+    const resolution: ResolutionStats = {
+      callsTotal: 0,
+      callsResolved: 0,
+      unresolved: emptyUnresolvedMap(),
+    };
     let fileCount = 0;
     for (const [analyzer, files] of byAnalyzer) {
       // Isolate each analyzer: a crash on one language's batch (a pathological
@@ -197,7 +202,7 @@ export class Indexer {
       }
       languages.push({
         language: analyzer.language,
-        tier: analyzer.tier,
+        tier: result.tier ?? analyzer.tier,
         files: files.length,
       });
     }
@@ -269,7 +274,10 @@ export class Indexer {
     // measured nothing) so a reopen stays as honest as a fresh index — no misleading "0 of 0". (#45)
     const resolution =
       parsedResolution && parsedResolution.callsTotal > 0
-        ? { ...parsedResolution, unresolved: parsedResolution.unresolved ?? {} }
+        ? {
+            ...parsedResolution,
+            unresolved: nullPrototypeUnresolved(parsedResolution.unresolved),
+          }
         : undefined;
     return {
       store,
@@ -344,6 +352,19 @@ export class Indexer {
   }
 }
 
+function emptyUnresolvedMap(): Record<string, number> {
+  return Object.create(null) as Record<string, number>;
+}
+
+function nullPrototypeUnresolved(
+  input: Record<string, number> | undefined,
+): Record<string, number> {
+  const out = emptyUnresolvedMap();
+  if (!input) return out;
+  for (const [name, count] of Object.entries(input)) out[name] = count;
+  return out;
+}
+
 /**
  * An indexer wired with the analyzers Ama ships today. Pass a `createStore`
  * factory to persist into SQLite instead of the default in-memory store.
@@ -353,6 +374,8 @@ export function createDefaultIndexer(createStore?: (root: string) => Store): Ind
   registry.register(new TypeScriptAnalyzer());
   registry.register(new BaselineAnalyzer(pythonSpec));
   registry.register(new BaselineAnalyzer(javascriptSpec));
+  const javaDeep = new JavaDeepAnalyzer();
+  if (javaDeep.isAvailable()) registry.register(javaDeep);
   registry.register(new BaselineAnalyzer(javaSpec));
   registry.register(new BaselineAnalyzer(csharpSpec));
   registry.register(new BaselineAnalyzer(goSpec));
