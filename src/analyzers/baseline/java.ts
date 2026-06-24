@@ -86,9 +86,9 @@ function firstOfType(node: Parser.SyntaxNode, type: string): Parser.SyntaxNode |
   return undefined;
 }
 
-function* eachClass(node: Parser.SyntaxNode): Generator<Parser.SyntaxNode> {
-  if (node.type === "class_declaration") yield node;
-  for (const c of node.namedChildren) yield* eachClass(c);
+function* eachClassLike(node: Parser.SyntaxNode): Generator<Parser.SyntaxNode> {
+  if (node.type === "class_declaration" || node.type === "record_declaration") yield node;
+  for (const c of node.namedChildren) yield* eachClassLike(c);
 }
 
 /** The last dotted segment of an annotation name — so fully-qualified annotations like
@@ -136,9 +136,9 @@ function annotationArg(ann: Parser.SyntaxNode): string | undefined {
 
 /** Combine a Spring class prefix and a method sub-path into a normalized `:param` route. */
 function joinJavaRoutePath(prefix: string, sub: string): string {
-  const norm = (s: string) => s.replace(/\{([^}]+)\}/g, ":$1");
-  const segs = [norm(prefix), norm(sub)].flatMap((s) => s.split("/")).filter(Boolean);
-  return `/${segs.join("/")}`;
+  const stripSlashes = (s: string) => s.replace(/^\/+|\/+$/g, "");
+  const joined = [stripSlashes(prefix), stripSlashes(sub)].filter(Boolean).join("/");
+  return `/${joined.replace(/(?<!\$)\{([^}]+)\}/g, ":$1")}`;
 }
 
 /** The annotation/marker_annotation nodes on a declaration (under its `modifiers` child). */
@@ -190,7 +190,7 @@ function javaRoutes(
   rel: string,
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const out = { nodes: [] as GraphNode[], edges: [] as GraphEdge[] };
-  for (const cls of eachClass(root)) {
+  for (const cls of eachClassLike(root)) {
     const classAnns = annotationsOf(cls);
     // Spring class prefix (`@RequestMapping("/x")`) and JAX-RS class prefix (`@Path("/x")`).
     const springPrefix = classAnns.find((a) => annotationSimpleName(a) === "RequestMapping");
@@ -340,6 +340,7 @@ function collectJavalinRoutes(
  *  qualified name is the dotted chain of these ancestors' names (e.g. `Sample.square`). */
 const JAVA_SYMBOL_TYPES = new Set([
   "class_declaration",
+  "record_declaration",
   "interface_declaration",
   "enum_declaration",
   "method_declaration",
@@ -497,7 +498,7 @@ function baseTypeName(node: Parser.SyntaxNode): string | undefined {
   }
 }
 
-/** Class/interface/enum declarations anywhere in the tree (incl. nested/local), each with its
+/** Class/record/interface/enum declarations anywhere in the tree (incl. nested/local), each with its
  *  walkSymbols-consistent dotted qualified name so a hierarchy edge's `from` matches the type's
  *  graph-node id. Anonymous links yield undefined and are skipped. */
 function* eachTypeDecl(
@@ -505,6 +506,7 @@ function* eachTypeDecl(
 ): Generator<{ node: Parser.SyntaxNode; qn: string }> {
   if (
     node.type === "class_declaration" ||
+    node.type === "record_declaration" ||
     node.type === "interface_declaration" ||
     node.type === "enum_declaration"
   ) {
@@ -562,7 +564,7 @@ function javaHierarchy(
       for (const m of typeListMembers(node.childForFieldName("interfaces") ?? undefined)) {
         link(fromId, m, "Implements");
       }
-    } else if (node.type === "enum_declaration") {
+    } else if (node.type === "record_declaration" || node.type === "enum_declaration") {
       for (const m of typeListMembers(node.childForFieldName("interfaces") ?? undefined)) {
         link(fromId, m, "Implements");
       }
@@ -638,6 +640,30 @@ function javaFields(
     }
   }
 
+  for (const { node: decl, qn } of eachTypeDecl(root)) {
+    if (decl.type !== "record_declaration") continue;
+    const ownerId = symbolId({ file: rel, qualifiedName: qn });
+    const params = decl.childForFieldName("parameters");
+    for (const param of params?.namedChildren ?? []) {
+      if (param.type !== "formal_parameter") continue;
+      const name = param.childForFieldName("name")?.text;
+      if (!name) continue;
+      const qualifiedName = `${qn}.${name}`;
+      const id = symbolId({ file: rel, qualifiedName });
+      nodes.push({
+        id,
+        kind: "Property",
+        name,
+        file: rel,
+        qualifiedName,
+        tier: "baseline",
+        range: { startLine: param.startPosition.row + 1, endLine: param.endPosition.row + 1 },
+      });
+      edges.push({ from: ownerId, to: id, kind: "Defines" });
+      usesType(id, param.childForFieldName("type"));
+    }
+  }
+
   // Method param + return types: a `UsesType` from the method to each named (non-primitive) type.
   for (const method of eachOfType(root, "method_declaration")) {
     const qn = javaQualifiedName(method);
@@ -664,6 +690,7 @@ export const javaSpec: LanguageSpec = {
   grammar: "java",
   symbols: {
     class_declaration: { kind: "Class" },
+    record_declaration: { kind: "Class" },
     interface_declaration: { kind: "Interface" },
     enum_declaration: { kind: "Enum" },
     method_declaration: { kind: "Method" },

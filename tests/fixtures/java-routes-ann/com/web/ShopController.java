@@ -23,3 +23,10 @@ public class ShopController {
     @GetMapping("/simple")
     public String simple() { return null; }
 }
+
+class AdminController {
+
+    // Spring property placeholders are not path variables; only {sessionId} should normalize.
+    @GetMapping("${agentscope.admin.base-path:/v1/admin}/sessions/{sessionId}:export")
+    public String export() { return null; }
+}

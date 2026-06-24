@@ -1185,7 +1185,12 @@ export class QueryService {
     if (byId) return [byId];
     const byName = this.store.nodesByName(ref);
     if (byName.length) return byName;
-    return [...this.store.allNodes()].filter((n) => n.qualifiedName === ref);
+    const all = [...this.store.allNodes()];
+    const exact = all.filter((n) => n.qualifiedName === ref);
+    const overloads = all.filter((n) => n.qualifiedName.startsWith(`${ref}(`));
+    if (exact.length === 0) return overloads;
+    const seen = new Set(exact.map((node) => node.id));
+    return [...exact, ...overloads.filter((node) => !seen.has(node.id))];
   }
 
   /**

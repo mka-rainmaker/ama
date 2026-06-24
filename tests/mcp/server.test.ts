@@ -90,7 +90,7 @@ describe("MCP server", () => {
 });
 
 describe("baseline-tier empty relationship results carry a tier caveat (#45)", () => {
-  const javaRoot = path.resolve(here, "../fixtures/java-hierarchy");
+  const baselineRoot = path.resolve(here, "../fixtures/py-calls");
 
   function allText(result: { content: unknown }): string {
     return (result.content as Array<{ text: string }>).map((c) => c.text).join("\n");
@@ -112,11 +112,11 @@ describe("baseline-tier empty relationship results carry a tier caveat (#45)", (
 
   it("attaches a machine-readable { tier: baseline, authoritative: false } signal to an empty baseline result (#52)", async () => {
     const client = await connectClient();
-    await client.callTool({ name: "index_repository", arguments: { path: javaRoot } });
-    // Animal.speak (baseline/Java) has no callers — at the syntactic tier empty is ambiguous.
+    await client.callTool({ name: "index_repository", arguments: { path: baselineRoot } });
+    // handler (baseline/Python) has no callers — at the syntactic tier empty is ambiguous.
     const res = await client.callTool({
       name: "find_callers",
-      arguments: { symbol: "Animal.speak" },
+      arguments: { symbol: "handler" },
     });
     expect(allText(res)).toContain("[]");
     expect(tierSignal(res)).toMatchObject({ tier: "baseline", authoritative: false });
@@ -124,14 +124,14 @@ describe("baseline-tier empty relationship results carry a tier caveat (#45)", (
 
   it("attaches the signal to a NON-empty baseline result too — a baseline list may be incomplete (#52)", async () => {
     const client = await connectClient();
-    await client.callTool({ name: "index_repository", arguments: { path: javaRoot } });
-    // Pet (baseline/Java interface) IS implemented by Dog — but a non-empty baseline result is still
+    await client.callTool({ name: "index_repository", arguments: { path: baselineRoot } });
+    // helper (baseline/Python function) IS called by handler — but a non-empty baseline result is still
     // non-authoritative: cross-module/unresolved implementors can be missed, so the agent must know.
     const res = await client.callTool({
-      name: "find_implementations",
-      arguments: { symbol: "Pet" },
+      name: "find_callers",
+      arguments: { symbol: "helper" },
     });
-    expect(allText(res)).toContain("Dog");
+    expect(allText(res)).toContain("handler");
     expect(tierSignal(res)).toMatchObject({ tier: "baseline", authoritative: false });
   });
 
