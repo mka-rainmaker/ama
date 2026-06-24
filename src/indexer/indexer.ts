@@ -223,7 +223,9 @@ export class Indexer {
         edgeCount: store.edgeCount,
         fileCount,
         languages,
-        resolution,
+        // Only surface resolution when a deep analyzer actually measured it. A baseline-only index
+        // resolves nothing, so an all-zero stat reads as a misleading "0 of 0" — omit it instead. (#45)
+        ...(resolution.callsTotal > 0 ? { resolution } : {}),
       },
     };
   }
@@ -259,10 +261,12 @@ export class Indexer {
       ? (JSON.parse(resolutionRaw) as ResolutionStats)
       : undefined;
     // An index written before ama-qbn has no `unresolved` map; default it so the
-    // field is always present once `resolution` is.
-    const resolution = parsedResolution
-      ? { ...parsedResolution, unresolved: parsedResolution.unresolved ?? {} }
-      : undefined;
+    // field is always present once `resolution` is. Drop an all-zero stat (a baseline-only index
+    // measured nothing) so a reopen stays as honest as a fresh index — no misleading "0 of 0". (#45)
+    const resolution =
+      parsedResolution && parsedResolution.callsTotal > 0
+        ? { ...parsedResolution, unresolved: parsedResolution.unresolved ?? {} }
+        : undefined;
     return {
       store,
       stats: {

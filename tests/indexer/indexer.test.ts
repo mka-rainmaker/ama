@@ -58,6 +58,20 @@ describe("Indexer", () => {
   });
 });
 
+describe("Indexer resolution stat honesty (#45)", () => {
+  it("omits resolution for a baseline-only index — nothing measured, not a misleading '0 of 0'", async () => {
+    const javaRoot = path.resolve(here, "../fixtures/java-hierarchy");
+    const { stats } = await createDefaultIndexer().index(javaRoot);
+    expect(stats.languages.every((l) => l.tier === "baseline")).toBe(true);
+    expect(stats.resolution).toBeUndefined();
+  });
+
+  it("keeps resolution for a deep index that actually measured it", async () => {
+    const { stats } = await createDefaultIndexer().index(root);
+    expect(stats.resolution?.callsTotal).toBeGreaterThan(0);
+  });
+});
+
 describe("Indexer persistence (SQLite-backed)", () => {
   it("persists tier/coverage metadata that survives reopen", async () => {
     const file = path.join(

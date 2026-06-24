@@ -111,6 +111,21 @@ describe("Java hierarchy resolves cross-file and derives dispatch (ama 0.4.0 S1)
     ).toBe(true);
   });
 
+  it("resolves a same-package interface extends (no import) to a cross-file Inherits edge (#34)", () => {
+    // Pet.java declares `interface Pet extends Speakable` with NO `import` — Speakable is a
+    // same-package sibling, which needs none in Java. The import-guided resolver alone drops it
+    // (failure mode #1); same-package resolution must connect Pet → Speakable.
+    expect(
+      edges.some(
+        (e) =>
+          e.kind === "Inherits" &&
+          e.provenance === "type" &&
+          e.from === id("com/zoo/Pet.java", "Pet") &&
+          e.to === id("com/zoo/Speakable.java", "Speakable"),
+      ),
+    ).toBe(true);
+  });
+
   it("derives Dog.speak → Overrides → Animal.speak from the resolved hierarchy", () => {
     expect(
       edges.some(

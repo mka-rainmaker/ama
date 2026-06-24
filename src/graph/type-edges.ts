@@ -7,6 +7,13 @@ export const TYPE_REF_PREFIX = "type:";
 
 const TYPE_CANDIDATE_KINDS = new Set<GraphEdge["kind"]>(["Inherits", "Implements", "UsesType"]);
 
+/** A Java package maps to a directory under its source root, so a same-package sibling is reachable
+ *  with no `import`. The directory is our same-package key. (#34, failure mode #1) */
+function packageDir(file: string): string {
+  const slash = file.lastIndexOf("/");
+  return slash < 0 ? "" : file.slice(0, slash);
+}
+
 /**
  * Resolve `type:<name>` candidates (raw provenance, emitted by the Java baseline analyzer for
  * supertypes/interfaces/field-types it can't resolve within the file) into concrete
@@ -17,9 +24,11 @@ const TYPE_CANDIDATE_KINDS = new Set<GraphEdge["kind"]>(["Inherits", "Implements
  * `provenance: "type"`. Pure + whole-graph: the candidate and the target type only meet after every
  * file is indexed, so (like the call/dispatch derivers) it can't run inside one file's batch.
  *
- * Same-package limitation: a type referenced without an explicit `import` (e.g. a same-package
- * sibling class) produces no `Imports` edge and so won't resolve here — the same import-guided
- * limit as the call graph (deep-tier #15).
+ * Same-package resolution (#34): a type referenced without an explicit `import` (a same-package
+ * sibling, the common Java case) has no `Imports` edge, so it's resolved against same-directory
+ * siblings (a Java package maps to a directory). Gated to `.java`. Still unresolved at baseline:
+ * a wildcard `import com.foo.*` and a type whose source root differs across Maven/Gradle modules
+ * (the import path doesn't map to the on-disk file) — both deep-tier concerns (#15).
  *
  * Mirrors {@link ./python-calls.ts deriveCallEdges}; the second arg is the pre-filtered base edge
  * set (every edge whose provenance is not `type`), exactly as the indexer's relinker passes it. */
@@ -27,6 +36,7 @@ export function deriveTypeEdges(nodes: GraphNode[], edges: GraphEdge[]): GraphEd
   const fileOfNode = new Map<string, string>(); // any node id → its file
   const relOfFileNode = new Map<string, string>(); // File node id → repo-relative path
   const typesByFile = new Map<string, Map<string, string>>(); // file → simple name → type id
+  const typesByDir = new Map<string, Map<string, string>>(); // Java package (dir) → simple name → id
   for (const n of nodes) {
     fileOfNode.set(n.id, n.file);
     if (n.kind === "File") {
@@ -39,6 +49,15 @@ export function deriveTypeEdges(nodes: GraphNode[], edges: GraphEdge[]): GraphEd
         typesByFile.set(n.file, byName);
       }
       if (!byName.has(simple)) byName.set(simple, n.id); // first definition wins on collision
+      if (n.file.endsWith(".java")) {
+        const dir = packageDir(n.file);
+        let inDir = typesByDir.get(dir);
+        if (!inDir) {
+          inDir = new Map();
+          typesByDir.set(dir, inDir);
+        }
+        if (!inDir.has(simple)) inDir.set(simple, n.id); // first definition wins on collision
+      }
     }
   }
   const importsOf = new Map<string, string[]>(); // importer file → imported files
@@ -58,8 +77,12 @@ export function deriveTypeEdges(nodes: GraphNode[], edges: GraphEdge[]): GraphEd
     const name = e.to.slice(TYPE_REF_PREFIX.length);
     const sourceFile = fileOfNode.get(e.from);
     if (!sourceFile) continue;
-    // Same file first (nested/sibling types need no import), then each imported file.
+    // Same file first (nested types need no import), then the same Java package (a same-package
+    // sibling needs no import — #34), then each explicitly imported file.
     let resolved = typesByFile.get(sourceFile)?.get(name);
+    if (!resolved && sourceFile.endsWith(".java")) {
+      resolved = typesByDir.get(packageDir(sourceFile))?.get(name);
+    }
     if (!resolved) {
       for (const imported of importsOf.get(sourceFile) ?? []) {
         const id = typesByFile.get(imported)?.get(name);
