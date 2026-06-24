@@ -61,14 +61,23 @@ export function deriveTypeEdges(nodes: GraphNode[], edges: GraphEdge[]): GraphEd
     }
   }
   const importsOf = new Map<string, string[]>(); // importer file → imported files
+  const wildcardDirsOf = new Map<string, string[]>(); // importer file → wildcard-imported package dirs
   for (const e of edges) {
     if (e.kind !== "Imports") continue;
     const from = relOfFileNode.get(e.from);
+    if (!from) continue;
     const to = relOfFileNode.get(e.to);
-    if (!from || !to) continue;
-    const list = importsOf.get(from);
-    if (list) list.push(to);
-    else importsOf.set(from, [to]);
+    if (to) {
+      const list = importsOf.get(from);
+      if (list) list.push(to);
+      else importsOf.set(from, [to]);
+    } else if (typesByDir.has(e.to)) {
+      // An Imports edge whose target is a directory (not a File node) is a Java wildcard
+      // `import pkg.*` — it brings the package's whole directory into scope. (#34 failure mode #2)
+      const list = wildcardDirsOf.get(from);
+      if (list) list.push(e.to);
+      else wildcardDirsOf.set(from, [e.to]);
+    }
   }
   const out: GraphEdge[] = [];
   const seen = new Set<string>();
@@ -77,8 +86,9 @@ export function deriveTypeEdges(nodes: GraphNode[], edges: GraphEdge[]): GraphEd
     const name = e.to.slice(TYPE_REF_PREFIX.length);
     const sourceFile = fileOfNode.get(e.from);
     if (!sourceFile) continue;
-    // Same file first (nested types need no import), then the same Java package (a same-package
-    // sibling needs no import — #34), then each explicitly imported file.
+    // Java name resolution order: same file (nested types), then the same package (a same-package
+    // sibling needs no import — #34), then each single-type import, then each wildcard `import pkg.*`
+    // package scope (lowest priority, like Java's on-demand imports — #34 failure mode #2).
     let resolved = typesByFile.get(sourceFile)?.get(name);
     if (!resolved && sourceFile.endsWith(".java")) {
       resolved = typesByDir.get(packageDir(sourceFile))?.get(name);
@@ -86,6 +96,15 @@ export function deriveTypeEdges(nodes: GraphNode[], edges: GraphEdge[]): GraphEd
     if (!resolved) {
       for (const imported of importsOf.get(sourceFile) ?? []) {
         const id = typesByFile.get(imported)?.get(name);
+        if (id) {
+          resolved = id;
+          break;
+        }
+      }
+    }
+    if (!resolved) {
+      for (const dir of wildcardDirsOf.get(sourceFile) ?? []) {
+        const id = typesByDir.get(dir)?.get(name);
         if (id) {
           resolved = id;
           break;

@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import type { ResolutionStats } from "../analyzers/types.js";
+import type { CodeIntelIndex } from "../export/codeintel.js";
 import type { GraphNode, Tier } from "../graph/index.js";
 import { Debouncer } from "../indexer/debouncer.js";
 import { createDefaultIndexer } from "../indexer/indexer.js";
@@ -392,6 +393,10 @@ export class AmaSession {
 
   getGraphSchema(projectPath?: string): GraphSchema {
     return this.requireQuery(projectPath).getGraphSchema();
+  }
+
+  codeIntelIndex(projectPath?: string): CodeIntelIndex {
+    return this.requireQuery(projectPath).codeIntelIndex();
   }
 
   affected(files: string[], opts: { testsOnly?: boolean } = {}, projectPath?: string): GraphNode[] {

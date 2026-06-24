@@ -5,6 +5,37 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-24
+
+Deeper code intelligence: read resolved Java types straight from compiled bytecode (no JVM), export
+the graph in a portable interchange format, make config keys first-class nodes, and resolve Java
+wildcard imports. All implemented natively, no new dependencies.
+
+### Added
+
+- **Java bytecode analyzer** (`src/analyzers/java-bytecode/`): a pure-TypeScript `.class` reader
+  (constant pool, access flags, this/super/interfaces — including the Long/Double two-slot rule) and
+  an analyzer that emits Class/Interface nodes plus `Inherits`/`Implements` edges, so a dependency's
+  compiled classes (no on-disk source) join the graph **without a JVM**. Emits the same simple-name
+  `type:<Name>` candidates the Java source analyzer does (relinked by `deriveTypeEdges`), so it stays
+  honestly `baseline`-tier; FQN-precise deep resolution is a follow-up. (#47/#48)
+- **`export_code_intel` tool** (`src/export/codeintel.ts`): export the whole index as a portable,
+  language-agnostic symbol/occurrence JSON — stable symbol ids plus definition/reference occurrences
+  per file — for interop with external code-intelligence tools. (#17/#28)
+- **Config-value provenance** (`src/analyzers/dotenv/`): a `.env`-family analyzer makes config keys
+  first-class **value-origin** `Variable` nodes (searchable, locatable). Claims the whole family —
+  `.env`, `.env.local`, `name.env`, and the committed `.env.example` (whose trailing extension is
+  `.example`) — via a new optional `Analyzer.matchesFile()` registry hook. Only key *names* are read,
+  never values. A whole-graph `deriveEnvReferences` resolver is wired and ready to link
+  `process.env.KEY` reads to their origin (read-detection is a follow-up). (#53)
+
+### Changed
+
+- **Wildcard / scope-aware Java resolution**: `import com.foo.*` now resolves to the package's
+  directory — a wildcard scope the type and call resolvers search after same-package and single-type
+  imports — so a supertype or call reached only through a wildcard import resolves instead of
+  dropping. (#34 failure mode #2)
+
 ## [0.4.1] - 2026-06-24
 
 Java baseline refinements from real battle-test feedback: same-package resolution, tier-honest query

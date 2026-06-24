@@ -46,4 +46,12 @@ export interface Analyzer {
    * prefer it only when present, falling back to baseline otherwise. (ama-3bb.4)
    */
   isAvailable?(): boolean | Promise<boolean>;
+
+  /**
+   * Optional filename-based claim, for analyzers whose files aren't cleanly keyed by a single
+   * extension — e.g. the env-file family (`.env`, `.env.example`, `.env.local`, `name.env`), where
+   * `.env.example`'s trailing extension is `.example`. Consulted by the registry only as a fallback,
+   * when no analyzer claims the file by extension. (#53)
+   */
+  matchesFile?(path: string): boolean;
 }
