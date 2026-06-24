@@ -122,6 +122,19 @@ describe("baseline-tier empty relationship results carry a tier caveat (#45)", (
     expect(tierSignal(res)).toMatchObject({ tier: "baseline", authoritative: false });
   });
 
+  it("attaches the signal to a NON-empty baseline result too — a baseline list may be incomplete (#52)", async () => {
+    const client = await connectClient();
+    await client.callTool({ name: "index_repository", arguments: { path: javaRoot } });
+    // Pet (baseline/Java interface) IS implemented by Dog — but a non-empty baseline result is still
+    // non-authoritative: cross-module/unresolved implementors can be missed, so the agent must know.
+    const res = await client.callTool({
+      name: "find_implementations",
+      arguments: { symbol: "Pet" },
+    });
+    expect(allText(res)).toContain("Dog");
+    expect(tierSignal(res)).toMatchObject({ tier: "baseline", authoritative: false });
+  });
+
   it("attaches NO tier signal for a deep-tier symbol with no callers (trustworthy empty)", async () => {
     const client = await connectClient();
     await client.callTool({ name: "index_repository", arguments: { path: root } });
