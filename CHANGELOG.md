@@ -5,6 +5,34 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-06-24
+
+Java baseline refinements from real battle-test feedback: same-package resolution, tier-honest query
+results, and visible (not silently dropped) dependency supertypes.
+
+### Added
+
+- **`node().externalSupertypes`** (`src/query/service.ts`): the `node` tool now lists the simple
+  names of `Inherits`/`Implements` targets that stayed unresolved `type:<Name>` candidates — a
+  supertype/interface with no on-disk node, i.e. a JDK / third-party / cross-module dependency type.
+  The data was already in the store; the inheritance queries just skipped it. Surfaced so the
+  dependency a class extends is visible instead of silently dropped (#49).
+
+### Fixed
+
+- **Java same-package resolution** (`src/graph/type-edges.ts`, `src/graph/python-calls.ts`): the
+  baseline call/type resolvers were import-guided (a Python/TS module model), so a same-package
+  sibling — which needs no `import` in Java — never resolved, leaving `find_callers` /
+  `find_callees` / `find_implementations` empty on real (Maven) repos. Candidates now also resolve
+  against same-directory siblings (a Java package maps to a directory under its source root), gated
+  to `.java`. Wildcard and cross-module-source-root resolution remain a deep-tier concern (#46).
+- **Tier-honest baseline queries**: `index_status` no longer reports a misleading
+  `callsTotal: 0 / callsResolved: 0` for a baseline-only index — that stat is a deep-tier
+  measurement a baseline analyzer never populates, so it's omitted unless measured; and an empty
+  **baseline**-tier relationship result (`find_callers` / `find_callees` / `find_implementations` /
+  `impact_analysis`) now carries an explicit caveat, so "not resolved at this tier" is
+  distinguishable from "genuinely none" (#46).
+
 ## [0.4.0] - 2026-06-23
 
 Java baseline analyzer taken to its maximum **honest baseline** level (Phase 1). Every Java node and
