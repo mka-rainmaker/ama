@@ -86,6 +86,25 @@ describe("Indexer resolution stat honesty (#45)", () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("caps public resolution histograms while preserving folded counts", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ama-resolution-cap-"));
+    try {
+      fs.writeFileSync(path.join(dir, "sample.many"), "calls();\n");
+      const registry = new AnalyzerRegistry();
+      registry.register(new ManyUnresolvedAnalyzer());
+      const { stats } = await new Indexer(registry).index(dir);
+
+      expect(Object.keys(stats.resolution?.unresolved ?? {})).toHaveLength(100);
+      expect(stats.resolution?.unresolved.name105).toBe(105);
+      expect(stats.resolution?.unresolved.name1).toBeUndefined();
+      expect(stats.resolution?.unresolvedOther).toBe(15);
+      expect(Object.keys(stats.resolution?.diagnostics ?? {})).toHaveLength(100);
+      expect(stats.resolution?.diagnosticsOther).toBe(15);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("Indexer persistence (SQLite-backed)", () => {
@@ -133,6 +152,38 @@ class ValueOfAnalyzer implements Analyzer {
         callsTotal: 1,
         callsResolved: 0,
         unresolved: { valueOf: 1 },
+      },
+    };
+  }
+}
+
+class ManyUnresolvedAnalyzer implements Analyzer {
+  readonly language = "many";
+  readonly tier = "deep";
+  readonly extensions = [".many"];
+
+  analyze(_root: string, files: string[]): AnalysisResult {
+    const unresolved: Record<string, number> = Object.create(null);
+    const diagnostics: Record<string, number> = Object.create(null);
+    for (let i = 1; i <= 105; i++) {
+      unresolved[`name${i}`] = i;
+      diagnostics[`reason${i}`] = i;
+    }
+    return {
+      nodes: files.map((file) => ({
+        id: file,
+        kind: "File",
+        name: file,
+        file,
+        qualifiedName: file,
+        tier: "deep",
+      })),
+      edges: [],
+      resolution: {
+        callsTotal: 5565,
+        callsResolved: 0,
+        unresolved,
+        diagnostics,
       },
     };
   }

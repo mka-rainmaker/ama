@@ -12,13 +12,23 @@ function node(id: string): GraphNode {
 function seed(store: Store): Store {
   store.addNode(node("a.ts#x"));
   store.addNode(node("a.ts#y"));
-  store.addEdge({ from: "a.ts#x", to: "a.ts#y", kind: "References", provenance: "heuristic" });
+  store.addEdge({
+    from: "a.ts#x",
+    to: "a.ts#y",
+    kind: "References",
+    provenance: "heuristic",
+    confidence: 0.45,
+    strategy: "heuristic",
+  });
   store.addEdge({ from: "a.ts#x", to: "a.ts#y", kind: "Calls" }); // resolved (absent)
   return store;
 }
 
 function check(store: Store): void {
-  expect(store.edgesFrom("a.ts#x", "References")[0]?.provenance).toBe("heuristic");
+  const edge = store.edgesFrom("a.ts#x", "References")[0];
+  expect(edge?.provenance).toBe("heuristic");
+  expect(edge?.confidence).toBe(0.45);
+  expect(edge?.strategy).toBe("heuristic");
   expect(store.edgesFrom("a.ts#x", "Calls")[0]?.provenance).toBeUndefined();
   store.close();
 }
@@ -47,6 +57,12 @@ describe("edge provenance round-trips through both stores (ama-m8k.1)", () => {
       "route-test": 0,
       "env-ref": 0,
       env: 0,
+    });
+    expect(schema.edgeStrategies).toEqual({
+      "exact-type": 0,
+      "arity-fallback": 0,
+      "implicit-constructor": 0,
+      heuristic: 1,
     });
   });
 });

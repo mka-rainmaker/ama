@@ -23,6 +23,7 @@ describe("SqliteStore persistence", () => {
       qualifiedName: "f",
       tier: "deep",
       range: { startLine: 1, endLine: 3 },
+      external: true,
     };
     try {
       const writer = new SqliteStore(file);

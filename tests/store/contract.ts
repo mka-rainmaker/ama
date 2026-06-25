@@ -69,6 +69,42 @@ export function runStoreContract(label: string, makeStore: () => Store): void {
       expect(store.edgesFrom("a")).toHaveLength(2);
     });
 
+    it("keeps the highest-confidence duplicate edge", () => {
+      const store = makeStore();
+      store.addEdge({
+        from: "a",
+        to: "b",
+        kind: "Calls",
+        confidence: 0.3,
+        strategy: "heuristic",
+      });
+      store.addEdge({
+        from: "a",
+        to: "b",
+        kind: "Calls",
+        confidence: 0.9,
+        strategy: "exact-type",
+      });
+      store.addEdge({
+        from: "a",
+        to: "b",
+        kind: "Calls",
+        confidence: 0.4,
+        strategy: "arity-fallback",
+      });
+
+      expect(store.edgeCount).toBe(1);
+      expect(store.edgesFrom("a", "Calls")).toEqual([
+        {
+          from: "a",
+          to: "b",
+          kind: "Calls",
+          confidence: 0.9,
+          strategy: "exact-type",
+        },
+      ]);
+    });
+
     it("round-trips an edge's call sites (ama-hft.10)", () => {
       const store = makeStore();
       const sites = [

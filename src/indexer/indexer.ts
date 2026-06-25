@@ -64,7 +64,8 @@ export interface IndexStats {
  * into it changes. A persisted index stamped with a different version is treated
  * as unusable and rebuilt rather than reopened.
  */
-const SCHEMA_VERSION = 4; // 2: provenance (m8k.1); 3: source-location (hft.9); 4: call sites (hft.10)
+const SCHEMA_VERSION = 7; // 2: provenance; 3: source-location; 4: call sites; 5: edge confidence/strategy; 6: capped resolution stats; 7: external nodes
+const MAX_RESOLUTION_BREAKDOWN_ENTRIES = 100;
 
 /** What a catch-up {@link Indexer.sync} reconciled. */
 export interface SyncResult {
@@ -167,6 +168,7 @@ export class Indexer {
       callsTotal: 0,
       callsResolved: 0,
       unresolved: emptyUnresolvedMap(),
+      diagnostics: emptyUnresolvedMap(),
     };
     let fileCount = 0;
     for (const [analyzer, files] of byAnalyzer) {
@@ -196,8 +198,17 @@ export class Indexer {
       if (result.resolution) {
         resolution.callsTotal += result.resolution.callsTotal;
         resolution.callsResolved += result.resolution.callsResolved;
+        resolution.unresolvedOther =
+          (resolution.unresolvedOther ?? 0) + (result.resolution.unresolvedOther ?? 0);
         for (const [name, n] of Object.entries(result.resolution.unresolved)) {
           resolution.unresolved[name] = (resolution.unresolved[name] ?? 0) + n;
+        }
+        const diagnostics = resolution.diagnostics ?? emptyUnresolvedMap();
+        resolution.diagnostics = diagnostics;
+        resolution.diagnosticsOther =
+          (resolution.diagnosticsOther ?? 0) + (result.resolution.diagnosticsOther ?? 0);
+        for (const [reason, n] of Object.entries(result.resolution.diagnostics ?? {})) {
+          diagnostics[reason] = (diagnostics[reason] ?? 0) + n;
         }
       }
       languages.push({
@@ -215,12 +226,13 @@ export class Indexer {
     relinkCalls(store); // and cross-file baseline call edges (ama-bnj)
     relinkRouteTests(store); // and FastAPI TestClient route→test links (ama-f2c)
     relinkEnv(store); // and process.env → .env value-provenance links (#53)
+    const publicResolution = compactResolutionStats(resolution);
 
     // Persist enough to reopen this index next process without re-analyzing:
     // coverage + resolution (for index_status), the root it was built for, and
     // the schema version that wrote it.
     store.setMeta("ama:coverage", JSON.stringify({ fileCount, languages }));
-    store.setMeta("ama:resolution", JSON.stringify(resolution));
+    store.setMeta("ama:resolution", JSON.stringify(publicResolution));
     store.setMeta("ama:root", root);
     store.setMeta("ama:schema", String(SCHEMA_VERSION));
 
@@ -234,7 +246,7 @@ export class Indexer {
         languages,
         // Only surface resolution when a deep analyzer actually measured it. A baseline-only index
         // resolves nothing, so an all-zero stat reads as a misleading "0 of 0" — omit it instead. (#45)
-        ...(resolution.callsTotal > 0 ? { resolution } : {}),
+        ...(publicResolution.callsTotal > 0 ? { resolution: publicResolution } : {}),
       },
     };
   }
@@ -277,6 +289,9 @@ export class Indexer {
         ? {
             ...parsedResolution,
             unresolved: nullPrototypeUnresolved(parsedResolution.unresolved),
+            unresolvedOther: parsedResolution.unresolvedOther,
+            diagnostics: nullPrototypeUnresolved(parsedResolution.diagnostics),
+            diagnosticsOther: parsedResolution.diagnosticsOther,
           }
         : undefined;
     return {
@@ -363,6 +378,35 @@ function nullPrototypeUnresolved(
   if (!input) return out;
   for (const [name, count] of Object.entries(input)) out[name] = count;
   return out;
+}
+
+function compactResolutionStats(stats: ResolutionStats): ResolutionStats {
+  const unresolved = compactBreakdown(stats.unresolved, stats.unresolvedOther);
+  const diagnostics = compactBreakdown(stats.diagnostics ?? {}, stats.diagnosticsOther);
+  return {
+    callsTotal: stats.callsTotal,
+    callsResolved: stats.callsResolved,
+    unresolved: unresolved.values,
+    ...(unresolved.other > 0 ? { unresolvedOther: unresolved.other } : {}),
+    ...(Object.keys(diagnostics.values).length > 0 ? { diagnostics: diagnostics.values } : {}),
+    ...(diagnostics.other > 0 ? { diagnosticsOther: diagnostics.other } : {}),
+  };
+}
+
+function compactBreakdown(
+  input: Record<string, number>,
+  existingOther = 0,
+): { values: Record<string, number>; other: number } {
+  const values = emptyUnresolvedMap();
+  let other = existingOther;
+  const entries = Object.entries(input)
+    .filter(([, count]) => count > 0)
+    .sort(([aName, aCount], [bName, bCount]) => bCount - aCount || aName.localeCompare(bName));
+  for (const [index, [name, count]] of entries.entries()) {
+    if (index < MAX_RESOLUTION_BREAKDOWN_ENTRIES) values[name] = count;
+    else other += count;
+  }
+  return { values, other };
 }
 
 /**

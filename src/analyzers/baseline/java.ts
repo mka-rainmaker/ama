@@ -77,6 +77,11 @@ const JAVA_JAVALIN_VERBS = new Map([
   ["options", "OPTIONS"],
 ]);
 
+const JAVA_ROUTE_CONSTRUCTOR_VERBS = new Set([
+  ...JAVA_JAXRS_VERBS.values(),
+  ...JAVA_JAVALIN_VERBS.values(),
+]);
+
 function firstOfType(node: Parser.SyntaxNode, type: string): Parser.SyntaxNode | undefined {
   if (node.type === type) return node;
   for (const c of node.namedChildren) {
@@ -243,6 +248,7 @@ function javaRoutes(
     }
   }
   collectJavalinRoutes(root, rel, out);
+  collectRouteConstructorRoutes(root, rel, out);
   return out;
 }
 
@@ -283,15 +289,15 @@ function javalinAppHandles(root: Parser.SyntaxNode): Set<string> {
   return handles;
 }
 
-/** Is `arg` a Javalin handler argument shape — a method reference (`App::health`), a lambda
- *  (`ctx -> {...}`), or a bare handler identifier — as opposed to a value/key argument? Used as the
- *  fallback signal that an unknown-receiver `x.get("/p", h)` is a real route, not a `map.get("k")`. */
-function isHandlerArg(arg: Parser.SyntaxNode | undefined): boolean {
-  return (
-    arg?.type === "method_reference" ||
-    arg?.type === "lambda_expression" ||
-    arg?.type === "identifier"
-  );
+/** High-confidence inline Javalin handler shapes for unknown receivers. A bare identifier is too
+ *  ambiguous here: `settings.put("/targetName", targetName)` has the same tree shape as a route
+ *  registration but is ordinary map mutation. */
+function isInlineJavalinHandlerArg(arg: Parser.SyntaxNode | undefined): boolean {
+  return arg?.type === "method_reference" || arg?.type === "lambda_expression";
+}
+
+function isLowercaseIdentifier(node: Parser.SyntaxNode | null | undefined): boolean {
+  return node?.type === "identifier" && /^[a-z_$]/.test(node.text);
 }
 
 /** Detect Javalin call-site routes: `app.get("/path", handler)` → a `GET /path` Route referencing the
@@ -300,9 +306,10 @@ function isHandlerArg(arg: Parser.SyntaxNode | undefined): boolean {
  *  Honesty gate (0.4.0 review): the verb method names (`get`/`put`/`post`/…) collide with ubiquitous
  *  stdlib calls (`map.get("k")`, `cache.put("k", v)`, `Optional.get()`), so matching name + a string
  *  first arg alone fabricates phantom routes. Emit ONLY when the receiver is a tracked Javalin app
- *  handle (assigned from `Javalin.create()`), OR — when the receiver can't be resolved — the second
- *  argument is a handler (method reference / lambda / identifier). A single-arg `map.get("k")` then
- *  never matches. (ama 0.4.0 S4) */
+ *  handle (assigned from `Javalin.create()`), OR — when the receiver looks like an untyped instance
+ *  handle rather than a static utility/type (`app.get`, not `PathUtils.get`) — the second argument is
+ *  an inline handler (method reference / lambda). A single-arg `map.get("k")`, static
+ *  `PathUtils.get("/x", y)`, and `settings.put("/path", value)` then never match. (ama 0.4.0 S4) */
 function collectJavalinRoutes(
   root: Parser.SyntaxNode,
   rel: string,
@@ -318,10 +325,13 @@ function collectJavalinRoutes(
     if (pathArg?.type !== "string_literal") continue; // first arg must be a literal route path
     const routePath = firstOfType(pathArg, "string_fragment")?.text;
     if (routePath === undefined) continue;
-    // Gate on Javalin shape: a tracked app receiver, or (receiver unknown) a handler 2nd argument.
+    // Gate on Javalin shape: a tracked app receiver, or (receiver unknown) an inline handler.
     const receiver = call.childForFieldName("object");
     const onAppHandle = receiver?.type === "identifier" && appHandles.has(receiver.text);
-    if (!onAppHandle && !isHandlerArg(named[1])) continue;
+    const receiverCouldBeUntypedApp = receiver === null || isLowercaseIdentifier(receiver);
+    if (!onAppHandle && !(receiverCouldBeUntypedApp && isInlineJavalinHandlerArg(named[1]))) {
+      continue;
+    }
     emitRoute(
       rel,
       verb,
@@ -330,6 +340,62 @@ function collectJavalinRoutes(
       {
         startLine: call.startPosition.row + 1,
         endLine: call.endPosition.row + 1,
+      },
+      out,
+    );
+  }
+}
+
+function lastIdentifierText(node: Parser.SyntaxNode | undefined): string | undefined {
+  if (!node) return undefined;
+  if (node.type === "identifier") return node.text;
+  const ids = node.namedChildren.filter((c) => c.type === "identifier");
+  if (ids.length > 0) return ids[ids.length - 1]?.text;
+  for (let i = node.namedChildren.length - 1; i >= 0; i--) {
+    const found = lastIdentifierText(node.namedChildren[i]);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function routeConstructorVerb(arg: Parser.SyntaxNode | undefined): string | undefined {
+  const verb = lastIdentifierText(arg)?.toUpperCase();
+  return verb && JAVA_ROUTE_CONSTRUCTOR_VERBS.has(verb) ? verb : undefined;
+}
+
+function stringLiteralText(arg: Parser.SyntaxNode | undefined): string | undefined {
+  if (arg?.type !== "string_literal") return undefined;
+  return firstOfType(arg, "string_fragment")?.text;
+}
+
+/** Detect frameworks that declare routes by returning `new Route(GET, "/path")` objects from a
+ *  `routes()` method. This is constructor-driven dispatch, so the Route node references the enclosing
+ *  method, not the `Route` constructor. Scoped tightly to `routes()` + known HTTP verb + literal path
+ *  to avoid treating arbitrary `new Route(...)` value objects as web entry points. */
+function collectRouteConstructorRoutes(
+  root: Parser.SyntaxNode,
+  rel: string,
+  out: { nodes: GraphNode[]; edges: GraphEdge[] },
+): void {
+  for (const create of eachOfType(root, "object_creation_expression")) {
+    const typeNode = create.childForFieldName("type");
+    const typeName = typeNode ? baseTypeName(typeNode) : undefined;
+    if (typeName !== "Route") continue;
+    const enc = enclosingMethod(create);
+    if (enc?.childForFieldName("name")?.text !== "routes") continue;
+    const args = create.childForFieldName("arguments")?.namedChildren ?? [];
+    const verb = routeConstructorVerb(args[0]);
+    const routePath = stringLiteralText(args[1]);
+    const handlerQn = javaQualifiedName(enc);
+    if (!verb || routePath === undefined || !handlerQn) continue;
+    emitRoute(
+      rel,
+      verb,
+      joinJavaRoutePath("", routePath),
+      handlerQn,
+      {
+        startLine: create.startPosition.row + 1,
+        endLine: create.endPosition.row + 1,
       },
       out,
     );
@@ -401,6 +467,21 @@ const JAVA_BUILTINS = new Set([
   "print",
 ]);
 
+function isKnownJavaLibraryCall(call: Parser.SyntaxNode, name: string): boolean {
+  const receiver = call.childForFieldName("object");
+  if (!receiver) return false;
+  const owner = receiver.text;
+  return (
+    name === "of" &&
+    (owner === "List" ||
+      owner === "java.util.List" ||
+      owner === "Set" ||
+      owner === "java.util.Set" ||
+      owner === "Map" ||
+      owner === "java.util.Map")
+  );
+}
+
 /** Heuristic baseline call edges for Java. A `method_invocation` whose name matches a method defined
  *  in the SAME file resolves by name to a `Calls` edge from the enclosing method (within-file); a
  *  non-local name becomes a `call:<name>` candidate that {@link deriveCallEdges} resolves cross-file
@@ -459,6 +540,7 @@ function javaCalls(
   for (const call of eachOfType(root, "method_invocation")) {
     const enc = enclosingMethod(call);
     const name = call.childForFieldName("name")?.text;
+    if (name && isKnownJavaLibraryCall(call, name)) continue;
     if (enc && name) callSite(enc, name);
   }
   for (const create of eachOfType(root, "object_creation_expression")) {

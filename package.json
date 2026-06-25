@@ -1,6 +1,6 @@
 {
   "name": "@mka-rainmaker/ama",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Local-first code-intelligence MCP server with deep, language-specific semantic parsing.",
   "type": "module",
   "license": "MIT",
@@ -45,6 +45,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench:java-resolution": "tsx scripts/java-resolution-rate.ts",
     "serve": "node dist/mcp/server.js",
     "serve:http": "node dist/mcp/http.js",
     "serve:dev": "AMA_LOG_TOOLS=1 AMA_DB=.ama/index.db AMA_ROOT=. tsx watch src/mcp/http.ts",

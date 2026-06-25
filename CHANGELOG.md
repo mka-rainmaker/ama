@@ -5,6 +5,43 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-06-25
+
+Deep-tier Java resolves into its **dependencies**, and every resolved edge now carries an honest
+confidence. Calls and types that reach the JDK or a third-party JAR resolve instead of dropping, and
+each edge says how sure the resolver is — without ever upgrading a guess into a fact.
+
+### Added
+
+- **Classpath / dependency resolution** (`src/analyzers/java-deep/classpath.ts`): a native JAR (ZIP)
+  and `.class` reader loads dependency + JDK-runtime symbols (types, methods, supertypes), so a call
+  or type reaching an external library resolves to an **external node** instead of dropping. Parsing
+  is bounded and safe — per-archive and per-entry size guards (`AMA_JAVA_CLASSPATH_ARCHIVE_MAX_BYTES`
+  / `AMA_JAVA_CLASSPATH_ENTRY_MAX_BYTES`), decompression-bomb protection, a class-count cap, and an
+  LRU symbol cache — so a large or corrupt JAR can't exhaust memory or abort indexing. (Closes #47)
+- **Edge confidence + strategy** (`GraphEdge.confidence` 0..1, `GraphEdge.strategy`): every resolved
+  Java edge records how it was resolved — `exact-type`, `arity-fallback`, `implicit-constructor`, or
+  `heuristic` — surfaced on query results and the sidecar protocol. Lets agents rank edges instead of
+  treating "resolved" as binary.
+- **External dependency nodes**: types/methods loaded from the classpath join the graph as first-class
+  `Class`/`Method` nodes flagged `external: true` (synthetic `java:<binaryName>` file), so a dependency
+  symbol is visible **and** clearly not your source.
+- **Resolution diagnostics** (`ResolutionStats.diagnostics`): resolution *failures* are now counted by
+  stable reason key (`missing-method`, `ambiguous-overload`, `arity-mismatch`, …), and a
+  `bench:java-resolution` harness reports the per-repo resolution rate — making the gap measurable.
+
+### Changed
+
+- **Honest graded resolution**: richer inference (expression types, constructor resolution, local
+  variable types, full hierarchy walks) raises Java coverage, but the resolver still **omits rather
+  than guesses** — an `arity-fallback` whose argument types are positively wrong is dropped (or scored
+  low), the hierarchy walk continues past a child arity-mismatch to find an inherited overload, and an
+  implicit (no-source) constructor is a type-level `implicit-constructor` edge, never a fabricated
+  method call.
+- **Bounded resolution stats** (schema v6): the unresolved/diagnostics histograms persisted for
+  `index_status` are capped (top 100 by count) with the remainder folded into `unresolvedOther` /
+  `diagnosticsOther`, so dependency-scale resolution can't bloat the stored index.
+
 ## [0.5.1] - 2026-06-24
 
 Deep-tier Java, for real. A source-semantic analyzer resolves Java calls and types to their actual

@@ -79,6 +79,9 @@ export interface GraphNode {
   range?: SourceRange;
   /** Tier of the analyzer that produced this node. */
   tier: Tier;
+  /** True when the node represents a dependency/runtime symbol rather than source in the indexed
+   *  repository. External nodes are useful graph anchors, but not first-class source definitions. */
+  external?: boolean;
 }
 
 /**
@@ -121,6 +124,13 @@ export type EdgeProvenance =
   | "env-ref"
   | "env";
 
+/** How precise the resolver was when deriving an edge. */
+export type EdgeResolutionStrategy =
+  | "exact-type"
+  | "arity-fallback"
+  | "implicit-constructor"
+  | "heuristic";
+
 export interface GraphEdge {
   /** Source node id. */
   from: string;
@@ -129,6 +139,11 @@ export interface GraphEdge {
   kind: EdgeKind;
   /** How the edge was derived; absent ⇒ `resolved`. */
   provenance?: EdgeProvenance;
+  /** A 0..1 resolver confidence score. Absent means the producer has no finer
+   *  signal than provenance/tier. */
+  confidence?: number;
+  /** The resolver strategy behind `confidence`, when known. */
+  strategy?: EdgeResolutionStrategy;
   /** Where the edge originates — a call/new site's 1-based line and column. With
    *  dedup on (from,to,kind), this is the first such site. Absent for edges with
    *  no single source point (Defines, Imports). (ama-hft.9) */

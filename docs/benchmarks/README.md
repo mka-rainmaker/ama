@@ -10,6 +10,19 @@ Run it yourself (no LLM, no API key):
 node scripts/benchmark.mjs [repoPath]   # defaults to this repo
 ```
 
+## Java Resolution Rate
+
+Track Java deep-tier call-graph completeness on deterministic fixture repos:
+
+```bash
+npm run bench:java-resolution
+npm run bench:java-resolution -- --json
+```
+
+The harness reports `callsResolved / callsTotal` plus diagnostic buckets per fixture. By default it
+sets `AMA_JAVA_INCLUDE_STDLIB=0` for reproducible fixture-only numbers; set it explicitly before
+running if you want local JDK standard-library symbols included.
+
 ## Results — Ama's own repo (~317 files)
 
 | Question | Ama (calls / tokens) | Baseline (calls / tokens) | Fewer tokens |

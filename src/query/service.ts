@@ -4,6 +4,7 @@ import { type CodeIntelIndex, exportCodeIntel } from "../export/codeintel.js";
 import type {
   EdgeKind,
   EdgeProvenance,
+  EdgeResolutionStrategy,
   GraphEdge,
   GraphNode,
   NodeKind,
@@ -71,6 +72,10 @@ export interface EdgeNeighbor {
   sites?: { line: number; column: number }[];
   /** How the edge was derived; absent ⇒ resolved. */
   provenance?: EdgeProvenance;
+  /** Resolver confidence, when the analyzer can score it. */
+  confidence?: number;
+  /** Resolver strategy behind the confidence score, when known. */
+  strategy?: EdgeResolutionStrategy;
 }
 
 /** Everything about one node in a single answer — the higher-order `node` query. */
@@ -139,7 +144,9 @@ export interface GraphSchema {
   /** How many edges are checker-`resolved` vs `heuristic` (route/synthesized) vs
    *  `dispatch` (interface/override fan-out) — edge-level tier honesty (ama-m8k.1,
    *  ama-tr1). */
-  edgeProvenance: { resolved: number; heuristic: number; dispatch: number };
+  edgeProvenance: Record<string, number>;
+  /** Count of edges by resolver strategy when analyzers provide one. */
+  edgeStrategies: Record<string, number>;
 }
 
 /** A one-call overview of a question: matching symbols grouped by file, their
@@ -399,6 +406,8 @@ function neighbor(symbol: GraphNode, edge: GraphEdge): EdgeNeighbor {
   if (edge.at) n.at = edge.at;
   if (edge.sites) n.sites = edge.sites;
   if (edge.provenance) n.provenance = edge.provenance;
+  if (edge.confidence !== undefined) n.confidence = edge.confidence;
+  if (edge.strategy) n.strategy = edge.strategy;
   return n;
 }
 
@@ -942,14 +951,21 @@ export class QueryService {
       "env-ref": 0,
       env: 0,
     };
+    const edgeStrategies = {
+      "exact-type": 0,
+      "arity-fallback": 0,
+      "implicit-constructor": 0,
+      heuristic: 0,
+    };
     for (const node of this.store.allNodes()) {
       nodes[node.kind] = (nodes[node.kind] ?? 0) + 1;
       for (const edge of this.store.edgesFrom(node.id)) {
         edges[edge.kind] = (edges[edge.kind] ?? 0) + 1;
         edgeProvenance[edge.provenance ?? "resolved"]++;
+        if (edge.strategy) edgeStrategies[edge.strategy]++;
       }
     }
-    return { nodes, edges, edgeProvenance };
+    return { nodes, edges, edgeProvenance, edgeStrategies };
   }
 
   /** Serialize the whole graph into a portable, SCIP-inspired symbol/occurrence index (stable

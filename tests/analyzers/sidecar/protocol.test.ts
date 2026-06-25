@@ -31,11 +31,14 @@ describe("sidecar protocol (ama-3bb.1)", () => {
       qualifiedName: "Foo",
       range: { startLine: 1, endLine: 10 },
       tier: "deep",
+      external: true,
     };
     const edge: GraphEdge = {
       from: "a.cs#Foo",
       to: "a.cs#Bar",
       kind: "Calls",
+      confidence: 1,
+      strategy: "implicit-constructor",
       at: { line: 3, column: 5 },
     };
     const result: AnalyzeResult = { type: "result", id: 1, nodes: [node], edges: [edge] };
