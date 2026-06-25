@@ -9,6 +9,8 @@ public class StdlibCalls {
 
     public String lookup(Map<String, String> map, Map<String, String> cache, Optional<String> opt) {
         cache.put("/k", "v");
+        String targetName = map.get("targetName");
+        cache.put("/targetName", targetName);
         opt.get();
         return map.get("userId");
     }

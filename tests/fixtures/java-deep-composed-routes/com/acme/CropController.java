@@ -2,6 +2,7 @@ package com.acme;
 
 import org.springframework.web.bind.annotation.GetMapping;
 
+import com.acme.api.AliasPutMapping;
 import com.acme.api.AutoJobPostMapping;
 import com.acme.api.GeneralApi;
 
@@ -15,5 +16,10 @@ public class CropController {
   @GetMapping("/status")
   public String status() {
     return "ok";
+  }
+
+  @AliasPutMapping(route = "/alias")
+  public String alias() {
+    return "alias";
   }
 }

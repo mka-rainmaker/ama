@@ -11,6 +11,13 @@ export interface ResolutionStats {
   /** The unresolved calls, counted by callee root name (e.g. `ts`, `console`,
    *  `path`) — what the code calls that Ama can't see. (ama-qbn) */
   unresolved: Record<string, number>;
+  /** Count of unresolved calls folded out of the public histogram when it is capped. */
+  unresolvedOther?: number;
+  /** Why resolution failed, counted by stable reason key. Additive diagnostic detail for agents and
+   *  battle-test summaries; absent for older sidecars/analyzers. */
+  diagnostics?: Record<string, number>;
+  /** Count of diagnostic events folded out of the public histogram when it is capped. */
+  diagnosticsOther?: number;
 }
 
 /** Nodes and edges produced by analyzing a set of files. */

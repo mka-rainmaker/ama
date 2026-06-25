@@ -41,7 +41,14 @@ export async function open(root: string): Promise<AmaSession> {
 }
 
 // Core graph + query result types a consumer needs to read what the methods return.
-export type { GraphEdge, GraphNode, NodeKind, SourceRange, Tier } from "./graph/index.js";
+export type {
+  EdgeResolutionStrategy,
+  GraphEdge,
+  GraphNode,
+  NodeKind,
+  SourceRange,
+  Tier,
+} from "./graph/index.js";
 export type { IndexStats, LanguageCoverage } from "./indexer/indexer.js";
 export type {
   EdgeNeighbor,

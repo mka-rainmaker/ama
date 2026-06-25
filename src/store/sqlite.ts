@@ -7,6 +7,7 @@ import type * as NodeSqlite from "node:sqlite"; // type only — erased at runti
 import type {
   EdgeKind,
   EdgeProvenance,
+  EdgeResolutionStrategy,
   GraphEdge,
   GraphNode,
   NodeKind,
@@ -34,6 +35,7 @@ interface NodeRow {
   start_line: number | null;
   end_line: number | null;
   tier: string;
+  external: number | null;
 }
 
 interface EdgeRow {
@@ -41,6 +43,8 @@ interface EdgeRow {
   to_id: string;
   kind: string;
   provenance: string | null;
+  confidence: number | null;
+  strategy: string | null;
   at_line: number | null;
   at_column: number | null;
   at_sites: string | null;
@@ -76,7 +80,8 @@ export class SqliteStore implements Store {
         qualified_name TEXT NOT NULL,
         start_line     INTEGER,
         end_line       INTEGER,
-        tier           TEXT NOT NULL
+        tier           TEXT NOT NULL,
+        external       INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS nodes_name ON nodes(name);
       CREATE TABLE IF NOT EXISTS edges (
@@ -84,6 +89,8 @@ export class SqliteStore implements Store {
         to_id      TEXT NOT NULL,
         kind       TEXT NOT NULL,
         provenance TEXT,
+        confidence REAL,
+        strategy   TEXT,
         at_line    INTEGER,
         at_column  INTEGER,
         at_sites   TEXT
@@ -109,9 +116,12 @@ export class SqliteStore implements Store {
     // COLUMN` throws if present, so guard each independently (ama-m8k.1, ama-hft.9).
     for (const ddl of [
       "ALTER TABLE edges ADD COLUMN provenance TEXT",
+      "ALTER TABLE edges ADD COLUMN confidence REAL",
+      "ALTER TABLE edges ADD COLUMN strategy TEXT",
       "ALTER TABLE edges ADD COLUMN at_line INTEGER",
       "ALTER TABLE edges ADD COLUMN at_column INTEGER",
       "ALTER TABLE edges ADD COLUMN at_sites TEXT",
+      "ALTER TABLE nodes ADD COLUMN external INTEGER NOT NULL DEFAULT 0",
     ]) {
       try {
         this.db.exec(ddl);
@@ -125,8 +135,8 @@ export class SqliteStore implements Store {
     this.db
       .prepare(
         `INSERT OR REPLACE INTO nodes
-           (id, kind, name, file, qualified_name, start_line, end_line, tier)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, kind, name, file, qualified_name, start_line, end_line, tier, external)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         node.id,
@@ -137,6 +147,7 @@ export class SqliteStore implements Store {
         node.range?.startLine ?? null,
         node.range?.endLine ?? null,
         node.tier,
+        node.external ? 1 : 0,
       );
     // Keep the FTS row idempotent too: re-adding an id (a re-indexed file) must
     // not leave a stale duplicate behind, since fts5 has no INSERT OR REPLACE.
@@ -146,19 +157,50 @@ export class SqliteStore implements Store {
 
   addEdge(edge: GraphEdge): void {
     // OR IGNORE drops a duplicate (from, to, kind) via the edges_unique index.
-    this.db
+    const atSites = edge.sites ? JSON.stringify(edge.sites) : null;
+    const inserted = this.db
       .prepare(
-        `INSERT OR IGNORE INTO edges (from_id, to_id, kind, provenance, at_line, at_column, at_sites)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO edges
+           (from_id, to_id, kind, provenance, confidence, strategy, at_line, at_column, at_sites)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         edge.from,
         edge.to,
         edge.kind,
         edge.provenance ?? null,
+        edge.confidence ?? null,
+        edge.strategy ?? null,
         edge.at?.line ?? null,
         edge.at?.column ?? null,
-        edge.sites ? JSON.stringify(edge.sites) : null,
+        atSites,
+      );
+    if (Number(inserted.changes) > 0 || edge.confidence == null) return;
+    this.db
+      .prepare(
+        `UPDATE edges
+            SET provenance = COALESCE(?, provenance),
+                confidence = ?,
+                strategy = COALESCE(?, strategy),
+                at_line = COALESCE(?, at_line),
+                at_column = COALESCE(?, at_column),
+                at_sites = COALESCE(?, at_sites)
+          WHERE from_id = ?
+            AND to_id = ?
+            AND kind = ?
+            AND (confidence IS NULL OR confidence < ?)`,
+      )
+      .run(
+        edge.provenance ?? null,
+        edge.confidence,
+        edge.strategy ?? null,
+        edge.at?.line ?? null,
+        edge.at?.column ?? null,
+        atSites,
+        edge.from,
+        edge.to,
+        edge.kind,
+        edge.confidence,
       );
   }
 
@@ -354,12 +396,15 @@ function rowToNode(r: NodeRow): GraphNode {
   if (r.start_line !== null && r.end_line !== null) {
     node.range = { startLine: r.start_line, endLine: r.end_line };
   }
+  if (r.external) node.external = true;
   return node;
 }
 
 function rowToEdge(r: EdgeRow): GraphEdge {
   const edge: GraphEdge = { from: r.from_id, to: r.to_id, kind: r.kind as EdgeKind };
   if (r.provenance) edge.provenance = r.provenance as EdgeProvenance;
+  if (r.confidence != null) edge.confidence = Number(r.confidence);
+  if (r.strategy) edge.strategy = r.strategy as EdgeResolutionStrategy;
   if (r.at_line !== null && r.at_column !== null) {
     edge.at = { line: r.at_line, column: r.at_column };
   }

@@ -24,7 +24,25 @@ import { EDGE_KINDS, NODE_KINDS } from "../../graph/index.js";
  */
 
 const tierSchema = z.enum(["deep", "baseline"]);
-const provenanceSchema = z.enum(["resolved", "heuristic", "dispatch"]);
+const provenanceSchema = z.enum([
+  "resolved",
+  "heuristic",
+  "dispatch",
+  "prisma-ref",
+  "prisma",
+  "call-ref",
+  "call",
+  "type",
+  "route-test",
+  "env-ref",
+  "env",
+]);
+const strategySchema = z.enum([
+  "exact-type",
+  "arity-fallback",
+  "implicit-constructor",
+  "heuristic",
+]);
 const sourceRangeSchema = z.object({ startLine: z.number(), endLine: z.number() });
 const siteSchema = z.object({ line: z.number(), column: z.number() });
 
@@ -38,6 +56,7 @@ export const graphNodeSchema = z.object({
   qualifiedName: z.string(),
   range: sourceRangeSchema.optional(),
   tier: tierSchema,
+  external: z.boolean().optional(),
 });
 
 /** A {@link GraphEdge} on the wire. */
@@ -46,6 +65,8 @@ export const graphEdgeSchema = z.object({
   to: z.string(),
   kind: z.enum(EDGE_KINDS),
   provenance: provenanceSchema.optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  strategy: strategySchema.optional(),
   at: siteSchema.optional(),
   sites: z.array(siteSchema).optional(),
 });
@@ -54,6 +75,9 @@ const resolutionStatsSchema = z.object({
   callsTotal: z.number(),
   callsResolved: z.number(),
   unresolved: z.record(z.string(), z.number()),
+  unresolvedOther: z.number().optional(),
+  diagnostics: z.record(z.string(), z.number()).optional(),
+  diagnosticsOther: z.number().optional(),
 });
 
 /** Ama → sidecar: analyze these repo-relative `files` rooted at the absolute `root`.

@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { BaselineAnalyzer } from "../../../src/analyzers/baseline/analyzer.js";
 import { javaSpec } from "../../../src/analyzers/baseline/java.js";
 import type { AnalysisResult } from "../../../src/analyzers/types.js";
-import { symbolId } from "../../../src/graph/index.js";
+import { CALL_REF_PREFIX, symbolId } from "../../../src/graph/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -88,5 +88,51 @@ describe("Java Javalin routing (ama 0.4.0 S4)", () => {
     expect(links("GET /health", "App.health")).toBe(true);
     expect(links("POST /items", "App.createItem")).toBe(true);
     expect(links("PUT /items/:id", "App.updateItem")).toBe(true);
+  });
+});
+
+/**
+ * Some Java HTTP frameworks declare routes by returning `new Route(GET, "/path")` values from a
+ * `routes()` method. That constructor pattern should still produce route→handler edges, while
+ * utility calls that happen to look like `get("/path", value)` remain non-routes. */
+describe("Java constructor route declarations", () => {
+  const root = path.resolve(here, "../../fixtures/java-route-constructors");
+  const file = "com/api/RestSearchAction.java";
+  let result: AnalysisResult;
+  beforeAll(async () => {
+    result = await new BaselineAnalyzer(javaSpec).analyze(root, [file]);
+  });
+
+  const routeNames = () =>
+    result.nodes
+      .filter((n) => n.kind === "Route")
+      .map((n) => n.qualifiedName)
+      .sort();
+  const links = (routeName: string) =>
+    result.edges.some(
+      (e) =>
+        e.kind === "References" &&
+        e.from === symbolId({ file, qualifiedName: routeName }) &&
+        e.to === symbolId({ file, qualifiedName: "RestSearchAction.routes" }),
+    );
+
+  it("detects new Route(VERB, path) entries inside routes()", () => {
+    expect(routeNames()).toEqual(["GET /:index/_search", "GET /_search", "POST /_search"]);
+  });
+
+  it("References constructor-declared routes to the routes() handler method", () => {
+    expect(links("GET /_search")).toBe(true);
+    expect(links("POST /_search")).toBe(true);
+    expect(links("GET /:index/_search")).toBe(true);
+  });
+
+  it("does not treat static utility get(path, value) calls as routes", () => {
+    expect(routeNames()).not.toContain("GET /sys/fs/cgroup");
+  });
+
+  it("does not emit a project call candidate for JDK collection factories", () => {
+    expect(
+      result.edges.some((e) => e.provenance === "call-ref" && e.to === `${CALL_REF_PREFIX}of`),
+    ).toBe(false);
   });
 });

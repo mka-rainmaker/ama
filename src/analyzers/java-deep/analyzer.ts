@@ -10,12 +10,19 @@ import {
   type ClassFileMethod,
   parseClassFile,
 } from "../java-bytecode/classfile.js";
+import {
+  type ParsedMethodDescriptor,
+  parseMethodDescriptor,
+} from "../java-bytecode/descriptors.js";
 import type { AnalysisResult, Analyzer, ResolutionStats } from "../types.js";
-import { analyzeJavaSourceSemantics } from "./source.js";
+import { inferJavaRuntimeClasspathEntries, loadJavaClasspathSymbols } from "./classpath.js";
+import { type JavaExternalSymbols, analyzeJavaSourceSemantics } from "./source.js";
 
 const TYPE_KINDS = new Set<GraphNode["kind"]>(["Class", "Interface", "Enum"]);
 const SYNTHETIC = 0x1000;
 const BRIDGE = 0x0040;
+const DEFAULT_SOURCE_CHUNK_SIZE = 0;
+const DEFAULT_SOURCE_FILE_LIMIT = 8_000;
 
 interface TypeInfo {
   binaryName: string;
@@ -34,16 +41,6 @@ interface MethodRecord {
   method: ClassFileMethod;
   sourceName: string;
   descriptor: ParsedMethodDescriptor;
-}
-
-interface ParsedMethodDescriptor {
-  params: JavaType[];
-  returnType?: JavaType;
-}
-
-interface JavaType {
-  display: string;
-  binaryName?: string;
 }
 
 /**
@@ -71,7 +68,20 @@ export class JavaDeepAnalyzer implements Analyzer {
     const baseline = await this.baseline.analyze(root, files);
     if (files.length === 0) return { ...baseline, tier: "deep" };
 
-    const sourceSemantic = await analyzeJavaSourceSemantics(root, files, baseline);
+    const chunkSize = javaDeepSourceChunkSize();
+    const sourceFileLimit = javaDeepSourceFileLimit();
+    if (chunkSize <= 0 && sourceFileLimit > 0 && files.length > sourceFileLimit) {
+      console.error(
+        `[ama] Java source semantic analyzer skipped ${files.length} Java file(s); the deep in-process pass is capped at ${sourceFileLimit}. Returning Java baseline; set AMA_JAVA_DEEP_CHUNK_SIZE to opt into experimental chunked deep analysis.`,
+      );
+      return { ...baseline, tier: "baseline" };
+    }
+
+    const dependencySymbols = loadJavaClasspathSymbols(inferJavaSymbolClasspathEntries(root));
+    const sourceSemantic =
+      chunkSize > 0 && files.length > chunkSize
+        ? await this.analyzeSourceChunks(root, files, baseline, dependencySymbols, chunkSize)
+        : await analyzeJavaSourceSemantics(root, files, baseline, dependencySymbols);
     if (sourceSemantic) return sourceSemantic;
 
     const compiled = this.compile(root, files);
@@ -82,6 +92,53 @@ export class JavaDeepAnalyzer implements Analyzer {
     } finally {
       fs.rmSync(compiled, { recursive: true, force: true });
     }
+  }
+
+  private async analyzeSourceChunks(
+    root: string,
+    files: string[],
+    baseline: AnalysisResult,
+    dependencySymbols: JavaExternalSymbols,
+    chunkSize: number,
+  ): Promise<AnalysisResult | undefined> {
+    const nodes: GraphNode[] = [];
+    const edges: GraphEdge[] = [];
+    const nodeIds = new Set<string>();
+    const edgeKeys = new Set<string>();
+    const resolution: ResolutionStats = {
+      callsTotal: 0,
+      callsResolved: 0,
+      unresolved: Object.create(null) as Record<string, number>,
+      diagnostics: Object.create(null) as Record<string, number>,
+    };
+    const chunks = chunkFiles(files, chunkSize);
+    for (const chunk of chunks) {
+      const chunkBaseline = baselineForFiles(baseline, chunk);
+      const analyzed = await analyzeJavaSourceSemantics(
+        root,
+        chunk,
+        chunkBaseline,
+        dependencySymbols,
+      );
+      const result = analyzed ?? { ...chunkBaseline, tier: "baseline" as const };
+      if (!analyzed) {
+        const diagnostics =
+          resolution.diagnostics ?? (Object.create(null) as Record<string, number>);
+        resolution.diagnostics = diagnostics;
+        diagnostics["chunk-baseline-fallback"] = (diagnostics["chunk-baseline-fallback"] ?? 0) + 1;
+      }
+      mergeAnalysis(nodes, edges, nodeIds, edgeKeys, result);
+      if (result.resolution) mergeResolution(resolution, result.resolution);
+    }
+    const diagnostics = resolution.diagnostics ?? (Object.create(null) as Record<string, number>);
+    resolution.diagnostics = diagnostics;
+    diagnostics["chunked-analysis"] = chunks.length;
+    return {
+      nodes,
+      edges,
+      tier: "deep",
+      ...(resolution.callsTotal > 0 ? { resolution } : {}),
+    };
   }
 
   private compile(root: string, files: string[]): string | undefined {
@@ -105,7 +162,7 @@ export class JavaDeepAnalyzer implements Analyzer {
       "-sourcepath",
       sourceRoots.join(path.delimiter),
     ];
-    const classpath = process.env.AMA_JAVA_CLASSPATH;
+    const classpath = inferJavaClasspath(root);
     if (classpath) args.push("-classpath", classpath);
     args.push(...files.map((f) => path.resolve(root, f)));
 
@@ -203,11 +260,27 @@ export class JavaDeepAnalyzer implements Analyzer {
       if (!from) continue;
       for (const param of record.descriptor.params) {
         const target = param.binaryName ? typeByBinary.get(param.binaryName) : undefined;
-        if (target) addEdge(edges, edgeKeys, { from, to: target.id, kind: "UsesType" });
+        if (target) {
+          addEdge(edges, edgeKeys, {
+            from,
+            to: target.id,
+            kind: "UsesType",
+            confidence: 1,
+            strategy: "exact-type",
+          });
+        }
       }
       if (record.descriptor.returnType?.binaryName) {
         const target = typeByBinary.get(record.descriptor.returnType.binaryName);
-        if (target) addEdge(edges, edgeKeys, { from, to: target.id, kind: "Returns" });
+        if (target) {
+          addEdge(edges, edgeKeys, {
+            from,
+            to: target.id,
+            kind: "Returns",
+            confidence: 1,
+            strategy: "exact-type",
+          });
+        }
       }
       for (const call of record.method.calls) {
         resolution.callsTotal++;
@@ -218,7 +291,13 @@ export class JavaDeepAnalyzer implements Analyzer {
         }
         resolution.callsResolved++;
         if (from === to) continue;
-        addEdge(edges, edgeKeys, { from, to, kind: "Calls" });
+        addEdge(edges, edgeKeys, {
+          from,
+          to,
+          kind: "Calls",
+          confidence: 1,
+          strategy: "exact-type",
+        });
       }
     }
 
@@ -239,6 +318,109 @@ function inferSourceRoots(root: string, files: string[]): string[] {
     }
   }
   return [...roots];
+}
+
+function javaDeepSourceChunkSize(): number {
+  const raw = process.env.AMA_JAVA_DEEP_CHUNK_SIZE;
+  if (!raw) return DEFAULT_SOURCE_CHUNK_SIZE;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_SOURCE_CHUNK_SIZE;
+}
+
+function javaDeepSourceFileLimit(): number {
+  const raw = process.env.AMA_JAVA_DEEP_MAX_FILES;
+  if (!raw) return DEFAULT_SOURCE_FILE_LIMIT;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_SOURCE_FILE_LIMIT;
+}
+
+function chunkFiles(files: string[], chunkSize: number): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < files.length; i += chunkSize) {
+    chunks.push(files.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+function baselineForFiles(baseline: AnalysisResult, files: string[]): AnalysisResult {
+  const fileSet = new Set(files);
+  const nodes = baseline.nodes.filter((node) => fileSet.has(node.file));
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  return {
+    nodes,
+    edges: baseline.edges.filter((edge) => nodeIds.has(edge.from)),
+    tier: baseline.tier,
+  };
+}
+
+function mergeAnalysis(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  nodeIds: Set<string>,
+  edgeKeys: Set<string>,
+  result: AnalysisResult,
+): void {
+  for (const node of result.nodes) {
+    if (nodeIds.has(node.id)) continue;
+    nodeIds.add(node.id);
+    nodes.push(node);
+  }
+  for (const edge of result.edges) addEdge(edges, edgeKeys, edge);
+}
+
+function mergeResolution(into: ResolutionStats, from: ResolutionStats): void {
+  into.callsTotal += from.callsTotal;
+  into.callsResolved += from.callsResolved;
+  for (const [name, count] of Object.entries(from.unresolved)) {
+    into.unresolved[name] = (into.unresolved[name] ?? 0) + count;
+  }
+  const diagnostics = into.diagnostics ?? (Object.create(null) as Record<string, number>);
+  into.diagnostics = diagnostics;
+  for (const [name, count] of Object.entries(from.diagnostics ?? {})) {
+    diagnostics[name] = (diagnostics[name] ?? 0) + count;
+  }
+}
+
+export function inferJavaClasspath(
+  root: string,
+  envClasspath = process.env.AMA_JAVA_CLASSPATH,
+): string {
+  return inferJavaClasspathEntries(root, envClasspath).join(path.delimiter);
+}
+
+export function inferJavaClasspathEntries(
+  root: string,
+  envClasspath = process.env.AMA_JAVA_CLASSPATH,
+): string[] {
+  const entries = new Set<string>();
+  for (const entry of (envClasspath ?? "").split(path.delimiter)) {
+    if (entry) entries.add(entry);
+  }
+  for (const rel of [
+    "target/classes",
+    "target/test-classes",
+    "build/classes/java/main",
+    "build/classes/java/test",
+  ]) {
+    const full = path.join(root, rel);
+    if (fs.existsSync(full)) entries.add(full);
+  }
+  for (const rel of ["target/dependency", "build/libs"]) {
+    const dir = path.join(root, rel);
+    if (!fs.existsSync(dir)) continue;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.endsWith(".jar")) entries.add(path.join(dir, entry.name));
+    }
+  }
+  return [...entries];
+}
+
+function inferJavaSymbolClasspathEntries(root: string): string[] {
+  const entries = new Set(inferJavaClasspathEntries(root));
+  if (process.env.AMA_JAVA_INCLUDE_STDLIB !== "0") {
+    for (const entry of inferJavaRuntimeClasspathEntries()) entries.add(entry);
+  }
+  return [...entries];
 }
 
 function packageName(root: string, rel: string): string {
@@ -333,63 +515,6 @@ function methodQualifiedName(record: MethodRecord, overloads: Map<string, number
 
 function methodKey(owner: string, method: { name: string; descriptor: string }): string {
   return `${owner}#${method.name}#${method.descriptor}`;
-}
-
-function parseMethodDescriptor(descriptor: string): ParsedMethodDescriptor {
-  let i = 0;
-  if (descriptor[i] !== "(") return { params: [] };
-  i++;
-  const params: JavaType[] = [];
-  while (i < descriptor.length && descriptor[i] !== ")") {
-    const parsed = parseType(descriptor, i);
-    params.push(parsed.type);
-    i = parsed.next;
-  }
-  i++; // ')'
-  const ret = parseType(descriptor, i);
-  return { params, ...(ret.type.display !== "void" ? { returnType: ret.type } : {}) };
-}
-
-function parseType(descriptor: string, start: number): { type: JavaType; next: number } {
-  const ch = descriptor[start];
-  switch (ch) {
-    case "B":
-      return { type: { display: "byte" }, next: start + 1 };
-    case "C":
-      return { type: { display: "char" }, next: start + 1 };
-    case "D":
-      return { type: { display: "double" }, next: start + 1 };
-    case "F":
-      return { type: { display: "float" }, next: start + 1 };
-    case "I":
-      return { type: { display: "int" }, next: start + 1 };
-    case "J":
-      return { type: { display: "long" }, next: start + 1 };
-    case "S":
-      return { type: { display: "short" }, next: start + 1 };
-    case "Z":
-      return { type: { display: "boolean" }, next: start + 1 };
-    case "V":
-      return { type: { display: "void" }, next: start + 1 };
-    case "L": {
-      const end = descriptor.indexOf(";", start);
-      const internal = end >= 0 ? descriptor.slice(start + 1, end) : descriptor.slice(start + 1);
-      const binaryName = internal.replace(/\//g, ".");
-      return {
-        type: { display: lastSegment(binaryName.replace(/\$/g, ".")), binaryName },
-        next: end + 1,
-      };
-    }
-    case "[": {
-      const parsed = parseType(descriptor, start + 1);
-      return {
-        type: { display: `${parsed.type.display}[]`, binaryName: parsed.type.binaryName },
-        next: parsed.next,
-      };
-    }
-    default:
-      return { type: { display: "unknown" }, next: start + 1 };
-  }
 }
 
 function lastSegment(name: string): string {
