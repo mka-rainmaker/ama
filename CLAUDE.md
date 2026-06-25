@@ -10,8 +10,9 @@ this repo. When the two disagree, `AGENTS.md` wins.
 
 ## Current state
 
-Ama is **built, published, and public** (`@mka-rainmaker/ama`, v0.3) — `src/`, `tests/`, and `docs/`
-all exist, the suite is green. Deep tier = TypeScript (compiler API); baseline tier = tree-sitter for
+Ama is **built, published, and public** (`@mka-rainmaker/ama`, v0.5) — `src/`, `tests/`, and `docs/`
+all exist, the suite is green. Deep tier = TypeScript (compiler API) + Java (source semantics + JVM
+bytecode); baseline tier = tree-sitter for
 ~14 more languages, plus a heuristic Python call graph (incl. FastAPI test-impact) and framework-route
 detection across TS/Python/Go/PHP/Java/Rust. Self-contained, no-Node install bundles ship via the
 GitHub Actions release workflow (`curl | sh` / PowerShell) alongside the npm package.
