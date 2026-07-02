@@ -1,17 +1,12 @@
 import { randomUUID } from "node:crypto";
-import * as fs from "node:fs";
 import * as http from "node:http";
-import * as path from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { createDefaultIndexer } from "../indexer/indexer.js";
 import { isEntrypoint } from "../runtime/entrypoint.js";
 import { ensureBaselineWasmTier } from "../runtime/wasm-tier.js";
-import { InMemoryStore } from "../store/memory.js";
-import { SqliteStore } from "../store/sqlite.js";
-import type { Store } from "../store/types.js";
 import { createServer as createMcpServer } from "./server.js";
 import { AmaSession } from "./session.js";
+import { prepareStartupSession } from "./startup.js";
 
 const MCP_PATH = "/mcp";
 
@@ -114,35 +109,12 @@ async function readJson(req: http.IncomingMessage): Promise<unknown> {
  * here, unlike stdio, but stderr keeps logging uniform across transports). */
 export async function main(): Promise<void> {
   const port = Number(process.env.AMA_HTTP_PORT ?? 7077);
-  // With AMA_DB set, persist to (and reopen from) a file-backed store; with
-  // AMA_ROOT too, reopen that project's index at startup so a restart skips the
-  // full re-index and connect-time catch-up reconciles any drift.
-  const dbPath = process.env.AMA_DB;
-  const root = process.env.AMA_ROOT;
-  // Persist exactly one project to AMA_DB — the configured AMA_ROOT, or the first one
-  // indexed — and give every *other* project its own in-memory store, so a multi-project
-  // session never aliases several projects onto one shared db. (ama-mnj)
-  let createStore: ((projectRoot: string) => Store) | undefined;
-  if (dbPath) {
-    fs.mkdirSync(path.dirname(path.resolve(dbPath)), { recursive: true });
-    const db = dbPath;
-    let persisted = root ? path.resolve(root) : undefined;
-    createStore = (projectRoot) => {
-      persisted ??= projectRoot; // the first project indexed claims the persistent db
-      return projectRoot === persisted ? new SqliteStore(db) : new InMemoryStore();
-    };
-  }
-  const session = createStore
-    ? new AmaSession(createDefaultIndexer(createStore))
-    : new AmaSession();
-  if (dbPath && root) {
-    const stats = await session.open(root);
-    console.error(
-      `ama: index ready — ${stats.nodeCount} nodes / ${stats.fileCount} files (${root})`,
-    );
-  }
+  const { session, root, status } = await prepareStartupSession();
   const server = createHttpServer(session);
   await new Promise<void>((resolve) => server.listen(port, resolve));
+  console.error(
+    `ama: index ready — ${status.nodeCount} nodes / ${status.fileCount} files (${root})`,
+  );
   console.error(`ama MCP server (HTTP) on http://localhost:${port}${MCP_PATH}`);
 }
 
