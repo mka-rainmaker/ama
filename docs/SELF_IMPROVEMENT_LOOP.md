@@ -58,8 +58,8 @@ project root as its working directory. To activate it, **restart / relaunch Clau
 repository root** so it reads `.mcp.json` and spawns the Ama MCP process. Once connected, Ama's tools
 become available:
 
-- `index_repository(path)` — build/refresh the graph for a repo or project directory.
-- `index_status()` — current index state: node/edge counts + per-language coverage and tier.
+- `index_repository(path)` — force-refresh the graph or add another project directory.
+- `index_status()` — confirm the startup index: node/edge counts + per-language coverage and tier.
 - `search_symbol(query, limit?)` — find symbols by name.
 - `find_callers(symbol)` — who calls this symbol.
 - `find_callees(symbol)` — what this symbol calls.
@@ -70,7 +70,7 @@ become available:
 ## The loop
 
 1. `/mcp` → confirm Ama is connected (else STOP: build + restart).
-2. `index_repository(".")` — Ama indexes itself.
+2. `index_status()` — confirm Ama indexed itself at startup; use `index_repository(".")` only to force-refresh.
 3. `gh issue list` → pick one open issue.
 4. Understand it with Ama's **own** tools (`search_symbol` / `find_callers` / …), not Read/Grep.
 5. Change it test-first; re-index; `npm test` green.

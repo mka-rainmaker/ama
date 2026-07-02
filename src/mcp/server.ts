@@ -8,6 +8,7 @@ import { isEntrypoint } from "../runtime/entrypoint.js";
 import { ensureBaselineWasmTier } from "../runtime/wasm-tier.js";
 import { serverStamp } from "./build-info.js";
 import { AmaSession } from "./session.js";
+import { prepareStartupSession } from "./startup.js";
 
 /** JSON tool result helper. `value ?? null` so an `undefined` result (e.g. a
  * snippet/node for an unresolved symbol) serializes to `"null"` rather than the
@@ -34,6 +35,11 @@ function reply(session: AmaSession, value: unknown, hint?: string, signal?: unkn
   // unchanged, so it never collides with this object. (#52)
   if (signal !== undefined) content.push(text(JSON.stringify(signal, null, 2)));
   return { content };
+}
+
+async function prepareRead(session: AmaSession): Promise<void> {
+  await session.ensureIndexed();
+  await session.catchUpIfNeeded();
 }
 
 /** Slice search results to `limit` and, when the search returned more than that
@@ -72,8 +78,7 @@ const projectPathSchema = z
  */
 function queryTool<A>(session: AmaSession, run: (args: A) => unknown) {
   return async (args: A) => {
-    await session.ensureIndexed();
-    await session.catchUpIfNeeded();
+    await prepareRead(session);
     return reply(session, run(args));
   };
 }
@@ -94,8 +99,7 @@ function relationTool<A extends { projectPath?: string }>(
   run: (args: A) => unknown[],
 ) {
   return async (args: A) => {
-    await session.ensureIndexed();
-    await session.catchUpIfNeeded();
+    await prepareRead(session);
     const result = run(args);
     const ref = refOf(args);
     const signal =
@@ -209,7 +213,7 @@ export function selectTools(spec: string | undefined): Set<string> | null {
  */
 const AMA_INSTRUCTIONS = `Ama parses this codebase into a queryable graph of symbols and relationships. Prefer Ama's tools over grep/ripgrep and file reads for any STRUCTURAL question — where a symbol is defined, who calls or imports it, what implements an interface, what breaks if it changes — because one call returns a precise, graph-backed answer instead of many text matches.
 
-First call index_repository on the project root (or index_status to check what is indexed); after that the file watcher keeps the graph current. Then reach for: search_symbol / search_code (locate), get_code_snippet / file_skeleton (read), find_callers / find_callees / find_implementations / find_importers (relationships), impact_analysis / affected / explore (blast radius).
+Ama indexes the launch project (AMA_ROOT, or the server process cwd) at startup; call index_status first if you need to confirm counts. Use index_repository only to refresh explicitly or add another project root. Then reach for: search_symbol / search_code (locate), get_code_snippet / file_skeleton (read), find_callers / find_callees / find_implementations / find_importers (relationships), impact_analysis / affected / explore (blast radius).
 
 Every result reports its analyzer tier — deep (semantic) or baseline (syntactic). Trust deep-tier relationship results; on baseline tier, treat an empty caller/impact result as "not resolved", not "none", and confirm with a targeted search. Use grep only for plain text/log/config strings the graph does not model.`;
 
@@ -265,7 +269,7 @@ export function createServer(
       inputSchema: {},
     },
     tap("index_status", async () => {
-      await session.catchUpIfNeeded();
+      await prepareRead(session);
       return json(session.indexStatus());
     }),
   );
@@ -278,7 +282,10 @@ export function createServer(
         "Returns the repo-relative paths re-indexed and removed.",
       inputSchema: {},
     },
-    tap("sync_index", async () => json(await session.sync())),
+    tap("sync_index", async () => {
+      await session.ensureIndexed();
+      return json(await session.sync());
+    }),
   );
 
   tool(
@@ -320,7 +327,7 @@ export function createServer(
         exact?: boolean;
         projectPath?: string;
       }) => {
-        await session.catchUpIfNeeded();
+        await prepareRead(session);
         const max = limit ?? DEFAULT_SEARCH_LIMIT;
         const { results, lowConfidence } = session.searchSymbolWithConfidence(
           query,
@@ -780,7 +787,7 @@ export function createServer(
         limit,
         projectPath,
       }: { query: string; limit?: number; projectPath?: string }) => {
-        await session.catchUpIfNeeded();
+        await prepareRead(session);
         const max = limit ?? DEFAULT_SEARCH_LIMIT;
         const { results, viaTerms } = session.searchCodeWithConfidence(
           query,
@@ -833,11 +840,12 @@ export function createServer(
 
 /** Entry point: serve over stdio. stdout carries JSON-RPC only — log to stderr. */
 export async function main(): Promise<void> {
-  // Lazily index the launch directory (or AMA_ROOT) on the first query, so an agent that
-  // queries before calling index_repository gets a transparent first index, not an error. (#35)
-  const session = new AmaSession(undefined, process.env.AMA_ROOT ?? process.cwd());
+  const { session, root, status } = await prepareStartupSession();
   const server = createServer(session);
   await server.connect(new StdioServerTransport());
+  console.error(
+    `ama: index ready — ${status.nodeCount} nodes / ${status.fileCount} files (${root})`,
+  );
   console.error("ama MCP server running on stdio");
 }
 

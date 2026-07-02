@@ -160,9 +160,13 @@ Ama exposes 27 tools by default. To trade that for a small high-signal set, set 
 
 ## MCP tools
 
+When the MCP server starts, Ama indexes `AMA_ROOT` (or the server process cwd) automatically. Use
+`index_status()` to confirm counts; use `index_repository(path)` to force a refresh or add another
+project root.
+
 | Tool | What it does |
 |---|---|
-| `index_repository(path)` | Build the graph for a directory or project. Run first. |
+| `index_repository(path)` | Build/refresh the graph for a directory or add another project. |
 | `index_status()` | What's indexed: node/edge counts, per-language coverage + tier, pending edits. |
 | `search_symbol(query)` / `search_code(query)` | Find symbols by name (add `exact: true` for a precise dotted match), or search snippet text. |
 | `find_callers` / `find_callees` | Who calls a function/method, and what it calls. |
